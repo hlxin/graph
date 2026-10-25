@@ -717,13 +717,29 @@
               "witness": {
                 "type": "object"
               },
-              "cost": {
-                "$ref": "#/$defs/cost"
-              },
               "optimal": {
                 "type": "boolean"
               }
-            }
+            },
+            "anyOf": [
+              {
+                "properties": {
+                  "cost": {
+                    "$ref": "#/$defs/cost"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "cost_exact"
+                ],
+                "properties": {
+                  "cost": {
+                    "type": "null"
+                  }
+                }
+              }
+            ]
           },
           "else": {
             "properties": {
@@ -740,7 +756,7 @@
           }
         }
       ],
-      "description": "cost_exact and lower_bound_exact appear when the request's costs include a float (rational mode); lower_bound appears in an interrupted answer."
+      "description": "cost_exact and lower_bound_exact appear when the request's costs include a float (rational mode); there, cost and lower_bound are the nearest floats, or null when the exact value is beyond the floats. lower_bound appears in an interrupted answer."
     },
     "result": {
       "type": "object",
@@ -896,7 +912,8 @@
               ],
               "properties": {
                 "code": {
-                  "$ref": "#/$defs/text"
+                  "$ref": "#/$defs/text",
+                  "description": "unsupported: unsupported_operation, unsupported_mode, unsupported_contract, negative_cost; failed: invalid_request, invalid_cost, non_finite_cost, unknown_node, unknown_relation, unknown_node_type, unknown_edge, missing_cost, unrepresentable_result, internal_error; stale_snapshot: projection_mismatch, bindings_changed"
                 },
                 "message": {
                   "$ref": "#/$defs/text"

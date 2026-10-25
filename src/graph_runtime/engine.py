@@ -25,6 +25,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
+from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
 from .request import FAILED, Request, normalize_request
@@ -116,7 +117,16 @@ def execute(projection: Projection, request: Mapping | Request, *, timeout: floa
     cancelled = _cancel_check(cancel)
     if timeout is not None:
         deadline = clock() + timeout
+    try:
+        return _execute(projection, request, deadline, clock, cancelled, check_interval, current_bindings, started)
+    except Exception as exc:  # noqa: BLE001 - the contract reports a runtime failure as a result, never raises it
+        return _no_answer(FAILED, "internal_error", f"{type(exc).__name__}: {exc}", {"exception": type(exc).__name__},
+                          projection=projection.identity, started=started)
 
+
+def _execute(projection: Projection, request: Any, deadline: float | None, clock: Callable[[], float],
+             cancelled: Callable[[], bool] | None, check_interval: int, current_bindings: Mapping[str, str] | None,
+             started: float) -> Result:
     try:
         req = normalize_request(request)
     except RequestError as e:
@@ -162,15 +172,23 @@ def execute(projection: Projection, request: Mapping | Request, *, timeout: floa
         notes = [SCOPE_NOTE.format(projection=projection.identity)]
     notes += extra
     stats = {"expansions": ctl.expansions, "edges_examined": state.examined, "discovered": state.discovered}
-    return Result._create(status=INTERRUPTED if why else COMPLETED, operation=req.operation, request=req,
-                          projection=projection.identity, answer=answer, interruption=interruption, stats=stats,
-                          limitations=notes, started=started,
-                          timing={"bind_s": bound - started, "search_s": searched - bound, "witness_s": built - searched})
+    try:
+        return Result._create(status=INTERRUPTED if why else COMPLETED, operation=req.operation, request=req,
+                              projection=projection.identity, answer=answer, interruption=interruption, stats=stats,
+                              limitations=notes, started=started,
+                              timing={"bind_s": bound - started, "search_s": searched - bound,
+                                      "witness_s": built - searched})
+    except (ValueError, TypeError) as exc:        # a number too long for JSON, say: the answer exists but cannot travel
+        return _no_answer(FAILED, "unrepresentable_result", f"the answer cannot be written as JSON: {exc}", None,
+                          request=req, projection=projection.identity, started=started)
 
 
 def _no_answer(status: str, code: str, message: str, detail: Mapping | None, *, request: Request | None = None,
-               operation: str | None = None, projection: str | None = None, started: float | None = None) -> Result:
-    error = {"code": code, "message": message, **({"detail": dict(detail)} if detail else {})}
+               operation: Any = None, projection: str | None = None, started: float | None = None) -> Result:
+    """A result without an answer. What it quotes of the request is made safe for JSON first (:func:`json_safe`), so
+    that a request with unencodable text or an enormous number can still be refused in a result."""
+    error = {"code": code, "message": json_safe(message), **({"detail": json_safe(dict(detail))} if detail else {})}
+    operation = json_safe(operation) if isinstance(operation, str) else None
     return Result._create(status=status, operation=request.operation if request is not None else operation,
                           request=request, projection=projection, error=error,
                           limitations=[NO_ANSWER_NOTE.format(code=code)], started=started)
@@ -463,12 +481,16 @@ def _search_shortest(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Sim
 
 
 def _number(x: Any, rational: bool) -> tuple[Any, str | None]:
-    """A cost as JSON gives it: an integer stays exact; in rational mode, the nearest float and the exact value as
-    ``"p/q"`` (or ``"p"``)."""
+    """A cost as JSON gives it: an integer stays exact; in rational mode, the nearest float (null when the value is
+    beyond the floats) and the exact value as ``"p/q"`` (or ``"p"``)."""
     if not rational:
         return x, None
     x = Fraction(x)
-    return float(x), (str(x.numerator) if x.denominator == 1 else f"{x.numerator}/{x.denominator}")
+    try:
+        near = float(x)
+    except OverflowError:
+        near = None
+    return near, (str(x.numerator) if x.denominator == 1 else f"{x.numerator}/{x.denominator}")
 
 
 def _answer_shortest(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:

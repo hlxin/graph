@@ -10,7 +10,7 @@ A projection never changes once built. Its identity is a sha256 digest of its ca
 (:func:`_identity`), so two projections of the same records, in any order, share one identity, and a request names
 the identity of the projection it was made for.
 
-Candidate records (``kind: hypothesis_candidate``) are refused: the v0 projection holds source records only, so a
+Candidate records (``kind: hypothesis_candidate``, or ``epistemic_status: unverified``) are refused: the v0 projection holds source records only, so a
 proposed relationship can never become a traversable edge (docs/HYPOTHESES_AND_PROVENANCE.md).
 """
 
@@ -54,10 +54,12 @@ def _text(value: Any, what: str) -> str:
 
 
 def _is_candidate(record: Any) -> bool:
-    """Whether a record is a hypothesis candidate, which a v0 projection never holds."""
+    """Whether a record is a hypothesis candidate, which a v0 projection never holds: a ``HypothesisCandidate``, or a
+    mapping with ``kind: hypothesis_candidate`` or ``epistemic_status: unverified``."""
     if getattr(record, "kind", None) == "hypothesis_candidate":
         return True
-    return isinstance(record, Mapping) and (record.get("kind") == "hypothesis_candidate" or "epistemic_status" in record)
+    return isinstance(record, Mapping) and (record.get("kind") == "hypothesis_candidate"
+                                            or record.get("epistemic_status") == "unverified")
 
 
 def _names(values: Iterable[Any] | None, what: str) -> tuple[str, ...] | None:
@@ -279,7 +281,7 @@ class Projection:
         """The binding names whose value differs from ``current`` (or that one side lacks): empty while the projection
         still describes what it was built from."""
         names = set(self._bindings) | set(current)
-        return tuple(sorted(n for n in names if self._bindings.get(n) != current.get(n)))
+        return tuple(sorted((n for n in names if self._bindings.get(n) != current.get(n)), key=repr))
 
     def to_dict(self) -> dict:
         """A JSON-ready snapshot, with its identity; :meth:`from_dict` rebuilds and checks it."""
