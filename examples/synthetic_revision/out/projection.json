@@ -1,0 +1,95 @@
+{
+  "bindings": {
+    "policy": "public",
+    "source": "examples/synthetic_revision/records.json@1"
+  },
+  "contract": "graph-runtime/v0",
+  "edges": [
+    {
+      "id": "dep:model-input",
+      "relation": "DEPENDS_ON",
+      "source": "model:yield-model",
+      "target": "input:feedstock-table-v1"
+    },
+    {
+      "id": "dep:prediction-A-model",
+      "relation": "DEPENDS_ON",
+      "source": "prediction:catalyst-A",
+      "target": "model:yield-model"
+    },
+    {
+      "id": "dep:prediction-B-model",
+      "relation": "DEPENDS_ON",
+      "source": "prediction:catalyst-B",
+      "target": "model:yield-model"
+    },
+    {
+      "id": "dep:ranking-A",
+      "relation": "DEPENDS_ON",
+      "source": "ranking:screen-1",
+      "target": "prediction:catalyst-A"
+    },
+    {
+      "id": "dep:ranking-B",
+      "relation": "DEPENDS_ON",
+      "source": "ranking:screen-1",
+      "target": "prediction:catalyst-B"
+    },
+    {
+      "id": "dep:report-ranking",
+      "relation": "DEPENDS_ON",
+      "source": "report:summary",
+      "target": "ranking:screen-1"
+    }
+  ],
+  "identity": "sha256:42258cb4cd481477debeb3914a17ca510034bc5607410e04744109376f4b1ab5",
+  "kind": "graph_runtime.projection",
+  "node_types": [
+    "Input",
+    "Model",
+    "Prediction",
+    "Ranking",
+    "Report"
+  ],
+  "nodes": [
+    {
+      "id": "input:feedstock-table-v1",
+      "types": [
+        "Input"
+      ]
+    },
+    {
+      "id": "model:yield-model",
+      "types": [
+        "Model"
+      ]
+    },
+    {
+      "id": "prediction:catalyst-A",
+      "types": [
+        "Prediction"
+      ]
+    },
+    {
+      "id": "prediction:catalyst-B",
+      "types": [
+        "Prediction"
+      ]
+    },
+    {
+      "id": "ranking:screen-1",
+      "types": [
+        "Ranking"
+      ]
+    },
+    {
+      "id": "report:summary",
+      "types": [
+        "Report"
+      ]
+    }
+  ],
+  "relations": [
+    "DEPENDS_ON"
+  ]
+}

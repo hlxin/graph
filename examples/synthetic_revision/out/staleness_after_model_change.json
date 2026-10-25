@@ -1,0 +1,79 @@
+{
+  "candidate": "hc:sha256:4f497c3a2fc30617aa3feb35d1df2777f48e17b0a05861ac2e3b98d844e40a61",
+  "note": "Stale means the candidate must be re-examined against the revised input; it does not make the candidate false and does not change its lifecycle.",
+  "reasons": [
+    {
+      "code": "input_affected",
+      "field": "dependencies",
+      "message": "dependencies names nodes ['ranking:screen-1'] that depend on a revised node",
+      "nodes": [
+        "ranking:screen-1"
+      ],
+      "witnesses": {
+        "ranking:screen-1": [
+          {
+            "direction": "reverse",
+            "edge": "dep:prediction-A-model",
+            "from": "model:yield-model",
+            "relation": "DEPENDS_ON",
+            "to": "prediction:catalyst-A"
+          },
+          {
+            "direction": "reverse",
+            "edge": "dep:ranking-A",
+            "from": "prediction:catalyst-A",
+            "relation": "DEPENDS_ON",
+            "to": "ranking:screen-1"
+          }
+        ]
+      }
+    },
+    {
+      "code": "input_revised",
+      "field": "basis",
+      "message": "basis names revised nodes ['model:yield-model']",
+      "nodes": [
+        "model:yield-model"
+      ]
+    },
+    {
+      "code": "input_affected",
+      "field": "basis",
+      "message": "basis names nodes ['prediction:catalyst-A', 'ranking:screen-1'] that depend on a revised node",
+      "nodes": [
+        "prediction:catalyst-A",
+        "ranking:screen-1"
+      ],
+      "witnesses": {
+        "prediction:catalyst-A": [
+          {
+            "direction": "reverse",
+            "edge": "dep:prediction-A-model",
+            "from": "model:yield-model",
+            "relation": "DEPENDS_ON",
+            "to": "prediction:catalyst-A"
+          }
+        ],
+        "ranking:screen-1": [
+          {
+            "direction": "reverse",
+            "edge": "dep:prediction-A-model",
+            "from": "model:yield-model",
+            "relation": "DEPENDS_ON",
+            "to": "prediction:catalyst-A"
+          },
+          {
+            "direction": "reverse",
+            "edge": "dep:ranking-A",
+            "from": "prediction:catalyst-A",
+            "relation": "DEPENDS_ON",
+            "to": "ranking:screen-1"
+          }
+        ]
+      }
+    }
+  ],
+  "revision": 1,
+  "stale": true,
+  "unknown": []
+}

@@ -1,0 +1,33 @@
+"""GRAPH: Graph Runtime for Analysis, Provenance, Hypotheses. Reusable graph algorithms for scientific software.
+
+GRAPH executes graph operations for scientific applications and keeps the computational contract the same across
+them: explicit inputs (an immutable :class:`Projection` and a normalized :class:`Request`), four exact operations
+(reachability, typed path, shortest path, dependency impact) with structural witnesses, bounded work, reproducible
+results, and witnesses that can be checked against the input records (:func:`verify_result`). It transports
+hypothesis candidates (:class:`HypothesisCandidate`) without ever turning them into assertions. Scientific meaning
+stays with the applications that own it; GRAPH imports none of their vocabularies.
+
+>>> p = Projection.build(nodes=["a", "b"], edges=[{"id": "e1", "source": "a", "target": "b", "relation": "R"}])
+>>> r = execute(p, p.request("reachability", sources=["a"], scope=[("R", "forward")]))
+>>> r.status, r.reachable("b"), r.path_to("b")[0]["edge"]
+('completed', True, 'e1')
+"""
+
+from ._version import __version__
+from .engine import CancelToken, execute
+from .errors import CandidateError, GraphRuntimeError, ProjectionError, RequestError
+from .hypotheses import (HypothesisCandidate, order_candidates, staleness, validate_candidate, verify_revisions,
+                         witness_refs)
+from .projection import CONTRACT, FORWARD, REVERSE, EdgeRecord, NodeRecord, Projection
+from .request import OPERATIONS, Request, normalize_request
+from .result import COMPLETED, FAILED, INTERRUPTED, STALE, STATUSES, UNSUPPORTED, Result
+from .schemas import json_schema
+from .verify import verify_result
+
+__all__ = [
+    "CONTRACT", "OPERATIONS", "STATUSES", "COMPLETED", "INTERRUPTED", "UNSUPPORTED", "FAILED", "STALE", "FORWARD",
+    "REVERSE", "Projection", "NodeRecord", "EdgeRecord", "Request", "normalize_request", "execute", "CancelToken",
+    "Result", "verify_result", "HypothesisCandidate", "validate_candidate", "verify_revisions", "staleness",
+    "order_candidates", "witness_refs", "json_schema", "GraphRuntimeError", "ProjectionError", "RequestError",
+    "CandidateError", "__version__",
+]
