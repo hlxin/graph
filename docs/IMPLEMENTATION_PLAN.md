@@ -33,6 +33,18 @@ standard library only, and no application vocabulary.
 | Source records are unchanged by execution and candidate creation | Deep-copy comparisons after building, running every operation and creating and revising candidates. Caller objects are copied, never kept. The SCALE checkout's working tree is clean after the integration tests | `tests/test_projection.py`, `tests/test_results.py`, `integrations/scale/` |
 | Performance reports include input preparation and witness work, workload identity, versions, raw results and correctness parity | `benchmarks/bench.py` records projection build, bind, search, witness, result and JSON time per request; the workload's generator, parameters, seed and projection identity; versions; raw results; and parity with NetworkX | `benchmarks/` |
 
+An independent review read the runtime cold on 25 October 2026 and fuzzed it against its own oracles (about 50,000
+cases, with limits, cancellation and deadlines). It found no wrong answer in the four operations and no identity
+collision. It did find defects at the edges, each now fixed with a regression test (`tests/test_review_regressions.py`
+and `tests/test_hypotheses.py`):
+
+- `staleness` could report "not stale" for references it cannot decide; it is now three-valued.
+- Malformed requests could make `execute` raise.
+- `Result.from_dict` trusted `complete` and `found`.
+- Float costs beyond the floats crashed.
+- There were smaller validation gaps: duplicate observations, impossible or out-of-order dates, deletable
+  attributes, partial histories, and `verify_result` raising on malformed results.
+
 A passing suite is not proof that a production service or a scientific model is correct. The SCALE parity tests
 show that the adapter and the runtime reproduce what SCALE's engine and lifecycle compute, on SCALE's documents.
 

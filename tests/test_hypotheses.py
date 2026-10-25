@@ -193,7 +193,10 @@ def test_histories_are_append_only(proj):
                               at="2026-10-26")
     c3 = c2.withdraw(at="2026-10-27", reason="r")
     assert verify_revisions([c1, c2, c3]) == []
-    assert verify_revisions([c2, c3]) == []
+    assert verify_revisions([c2, c3], from_start=False) == []
+    assert [x["code"] for x in verify_revisions([c2, c3])] == ["broken_history"]     # a partial history says so
+    moved = edit(c3.to_dict(), extensions={"note": "rewritten in transport"})
+    assert "core_changed" in {x["code"] for x in verify_revisions([c1, c2, moved])}
     dropped = edit(c3.to_dict(), assessments=[])           # a transport that loses the opposing evidence
     assert validate_candidate(dropped) == []
     assert {p["code"] for p in verify_revisions([c1, c2, dropped])} == {"history_rewritten"}
@@ -205,24 +208,59 @@ def test_histories_are_append_only(proj):
     assert {p["code"] for p in verify_revisions([own1, own2])} == {"core_changed"}
 
 
-def test_staleness_follows_dependency_impact(proj):
-    c = make(proj, dependencies=[("node", "pred:p1")], basis=[("node", "rank:r")])
-    assert staleness(c, projection=proj)["stale"] is False
+def test_staleness_of_the_snapshot(proj):
+    c = make(proj, dependencies=[("node", "pred:p1")], basis=[("node", "rank:r"), ("edge", "dep4"),
+                                                               ("external", "doi:10.0000/x")])
+    s = staleness(c, projection=proj)
+    assert (s["question"], s["stale"], s["reasons"], s["undecided"]) == ("snapshot", False, [], [])
+    assert s["outside"] == [{"field": "basis", "type": "external", "ref": "doi:10.0000/x"}]
     newer = Projection.build(nodes=NODES, edges=EDGES, bindings={"source": "synthetic, revised"})
     s = staleness(c, projection=newer)
-    assert s["stale"] and s["reasons"][0]["code"] == "projection_changed"
-    impact = execute(proj, proj.request("dependency_impact", changed=["input:v1"],
-                                        scope=[("DEPENDS_ON", "reverse")]))
+    assert s["stale"] is True and s["reasons"][0]["code"] == "projection_changed"
+    with pytest.raises(ValueError):
+        staleness(c)
+
+
+def test_staleness_follows_dependency_impact(proj):
+    DEP_R = [("DEPENDS_ON", "reverse")]
+    c = make(proj, dependencies=[("node", "pred:p1")], basis=[("node", "rank:r")])
+    impact = execute(proj, proj.request("dependency_impact", changed=["input:v1"], scope=DEP_R))
     s = staleness(c, impact=impact)
-    assert s["stale"] and [r["code"] for r in s["reasons"]] == ["input_affected", "input_affected"]
-    assert [h["edge"] for h in s["reasons"][0]["witnesses"]["pred:p1"]] == ["dep1", "dep2"]
-    assert c.state == "active" and "does not make the candidate false" in s["note"]
+    assert s["stale"] is True and [r["code"] for r in s["reasons"]] == ["input_affected", "input_affected"]
+    assert [h["edge"] for h in s["reasons"][0]["witness"]] == ["dep1", "dep2"]
+    assert c.state == "active" and "does not make it false" in s["note"]
     s = staleness(make(proj, dependencies=[("node", "input:v1")]), impact=impact)
     assert s["reasons"][0]["code"] == "input_revised"
-    cut = execute(proj, proj.request("dependency_impact", changed=["input:v1"], scope=[("DEPENDS_ON", "reverse")],
+
+
+def test_staleness_never_clears_what_it_cannot_decide(proj):
+    """A node is cleared only by a completed impact without max_depth, on a projection that holds it; edge and
+    result references are never cleared by node impact."""
+    DEP_R = [("DEPENDS_ON", "reverse")]
+    model_change = execute(proj, proj.request("dependency_impact", changed=["model:m"], scope=DEP_R))
+    untouched = make(proj, dependencies=[("node", "input:v1")], basis=[("node", "input:v1")])
+    assert staleness(untouched, projection=proj, impact=model_change)["stale"] is False
+    s = staleness(untouched, impact=model_change)                  # no projection: membership unknown
+    assert s["stale"] is None and "unknown" in s["undecided"][0]["why"]
+    elsewhere = Projection.build(nodes=["other"], edges=[])
+    other = make(proj, basis=[("node", "input:v1")], dependencies=[])
+    assert staleness(other, projection=elsewhere, impact=model_change)["stale"] is None   # not the impact's projection
+    with_edge = make(proj, basis=[("edge", "dep1")], dependencies=[])
+    s = staleness(with_edge, projection=proj, impact=model_change)
+    assert s["stale"] is None and s["undecided"][0]["type"] == "edge"
+    shallow = execute(proj, proj.request("dependency_impact", changed=["input:v1"], scope=DEP_R, max_depth=1))
+    far = make(proj, dependencies=[("node", "rank:r")], basis=[("node", "rank:r")])
+    s = staleness(far, projection=proj, impact=shallow)
+    assert s["stale"] is None and "max_depth 1" in s["undecided"][0]["why"]
+    cut = execute(proj, proj.request("dependency_impact", changed=["input:v1"], scope=DEP_R,
                                      limits={"max_expansions": 1}))
-    s = staleness(c, impact=cut)
-    assert s["stale"] is False and s["unknown"] == ["pred:p1", "rank:r"]
+    s = staleness(far, projection=proj, impact=cut)
+    assert s["stale"] is None and "interrupted" in s["undecided"][0]["why"]
+    missing = HypothesisCandidate.create(statement="s", scope="synthetic", projection=proj,
+                                         producer={"name": "t", "version": "0"}, basis=[("node", "not-in-graph")],
+                                         proposed_tests=TESTS, at="2026-10-25")
+    s = staleness(missing, projection=proj, impact=model_change)
+    assert s["stale"] is None and "does not hold" in s["undecided"][0]["why"]
 
 
 def test_ordering_stays_within_one_method_and_candidate_set(proj):
@@ -249,3 +287,26 @@ def test_witness_references(proj):
     assert [r["ref"] for r in refs[1:]] == ["rank:r", "dep4", "pred:p1", "dep2", "model:m", "dep1", "input:v1"]
     c = make(proj, basis=refs)
     assert c.basis[0]["type"] == "result"
+
+
+def test_review_findings_on_candidates(proj):
+    with pytest.raises(CandidateError) as err:                      # identical observations cannot discriminate
+        make(proj, proposed_tests=[{"description": "d", "outcomes": [
+            {"observation": "rank rises", "bearing": "supports"}, {"observation": "Rank  rises", "bearing": "opposes"}]}])
+    assert err.value.code == "not_discriminating"
+    for bad_time in ("2026-99-99", "2026-02-30", "2026-10-25T25:00Z", "2026-10-25T10:00+25:00"):
+        with pytest.raises(CandidateError) as err:
+            make(proj, at=bad_time)
+        assert err.value.code == "invalid_time"
+    with pytest.raises(CandidateError) as err:                      # a withdrawal is not dated before the creation
+        make(proj).withdraw(at="1999-01-01", reason="r")
+    assert err.value.code == "invalid_time"
+    assert make(proj, at="2026-10-25T23:30:00-05:00").withdraw(at="2026-10-26T04:45:00Z", reason="r").state == "withdrawn"
+    assert make(proj, at="2026-10-25T10:00:00.123456789Z").revision == 1
+    with pytest.raises(CandidateError) as err:                      # text that is not valid Unicode is a problem, not a crash
+        make(proj, statement="bad \ud800 text")
+    assert err.value.code == "invalid_text"
+    c = make(proj)
+    for name in ("_data", "kind"):
+        with pytest.raises(AttributeError):
+            delattr(c, name)

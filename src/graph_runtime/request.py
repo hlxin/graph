@@ -64,6 +64,9 @@ class Request:
     def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError("a Request is immutable")
 
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("a Request is immutable")
+
     @classmethod
     def _make(cls, data: dict) -> "Request":
         r = object.__new__(cls)
@@ -153,7 +156,12 @@ def normalize_request(raw: Mapping | Request) -> Request:
         data["targets"] = _ids(raw["targets"], "targets")
         data["scope"] = _scope(raw["scope"], "scope")
         data["costs"] = _costs(raw["costs"])
-    return Request._make(data)
+    try:
+        return Request._make(data)
+    except UnicodeEncodeError:
+        raise _fail("invalid_request", "a request's text is valid Unicode (it holds an unpaired surrogate)") from None
+    except ValueError as exc:            # an integer too long for JSON (Python's integer string limit)
+        raise _fail("invalid_request", f"a request holds a number JSON cannot write: {exc}") from None
 
 
 def _limits(value: Any, op: str) -> dict[str, int]:

@@ -23,7 +23,7 @@ def test_the_example_records_read_back():
     assert cand.epistemic_status == "unverified" and cand.scores[0]["interpretation"] == "ordering"
     assert cand.basis[0] == {"type": "result", "ref": impact.result_id}
     stale = json.loads((EXAMPLE / "out" / "staleness_after_model_change.json").read_text())
-    assert stale["stale"] and "does not make the candidate false" in stale["note"]
+    assert stale["stale"] is True and "does not make it false" in stale["note"]
     try:
         import jsonschema
     except ImportError:

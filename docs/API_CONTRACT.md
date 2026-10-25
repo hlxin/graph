@@ -33,9 +33,9 @@ Projection.build(nodes=..., edges=..., relations=None, node_types=None, bindings
   alone (`tests/test_projection.py`).
 - **Immutable.** No attribute can be set, and no internal container is mutable. The records passed in are only
   read. `to_dict()` writes a JSON snapshot; `Projection.from_dict()` rebuilds it and checks its identity.
-- **Source records only.** A record marked as a hypothesis candidate (`kind: hypothesis_candidate`, an
-  `epistemic_status`, or a `HypothesisCandidate`) is refused (`ProjectionError`, code `candidate_record`). A
-  proposed relation is never a traversable edge.
+- **Source records only.** A record marked as a hypothesis candidate (`kind: hypothesis_candidate`,
+  `epistemic_status: unverified`, or a `HypothesisCandidate`) is refused (`ProjectionError`, code
+  `candidate_record`). A proposed relation is never a traversable edge.
 - **Staleness.** `projection.stale_bindings(current)` names the bindings that no longer match. A projection may be
   reused only while its source, schema/context bindings and policy scope are unchanged.
 
@@ -74,8 +74,10 @@ normalized request always states it.
 
 **Costs.** A cost is an integer of any size or a finite float, never negative. When every cost is an integer,
 paths are added as integers, so large costs keep their exact order. When the request gives any float, every cost
-is added as an exact rational. In that rational mode, `cost` is the nearest float and `cost_exact` is the exact
-value, `p/q` or `p`. Every edge in scope must have a cost.
+is added as an exact rational. In that rational mode, `cost` is the nearest float (null when the exact value is
+beyond the floats) and `cost_exact` is the exact value, `p/q` or `p`. Every edge in scope must have a cost. A
+request whose text is not valid Unicode, or which holds a number too long to write as JSON, fails as
+`invalid_request`.
 
 ## 3. Execution
 
@@ -84,7 +86,8 @@ execute(projection, request, *, timeout=None, deadline=None, cancel=None, curren
         clock=time.monotonic, check_interval=64) -> Result
 ```
 
-`execute` never raises for a problem with the request; the result states it. The checks run in this order:
+Once its own arguments are valid, `execute` never raises: a problem with the request, an answer that cannot be
+written as JSON, or a runtime failure is a result that states it. The checks run in this order:
 
 1. Normalization (`failed` or `unsupported`).
 2. The request's projection identity against this projection (`stale_snapshot`, `projection_mismatch`).
@@ -166,14 +169,17 @@ gave its edge. Answer: `{"found", "optimal", "cost", ["cost_exact"], "witness"}`
   in rational mode) brackets the minimum: if a target is reachable at all, the minimum cost lies in
   `[lower_bound, cost]`.
 - **Reproducible.** The same runtime, projection and request give the same `result_id`, unless a deadline or a
-  cancellation interrupted the search. `Result.from_dict` reads a result's JSON and checks its `result_id`.
+  cancellation interrupted the search.
+- **Read back.** `Result.from_dict` reads a result's JSON, another backend's included. It checks the `result_id`
+  and the contract's invariants (`graph_runtime.result.contract_problems`). `reachable`, `affected` and `found`
+  give a negative only for a `completed` result.
 
 **Error codes.**
 
 | Status | Codes |
 | --- | --- |
 | `unsupported` | `unsupported_operation`, `unsupported_mode`, `unsupported_contract`, `negative_cost` |
-| `failed` | `invalid_request`, `invalid_cost`, `non_finite_cost`, `unknown_node`, `unknown_relation`, `unknown_node_type`, `unknown_edge`, `missing_cost`, `internal_error` |
+| `failed` | `invalid_request`, `invalid_cost`, `non_finite_cost`, `unknown_node`, `unknown_relation`, `unknown_node_type`, `unknown_edge`, `missing_cost`, `unrepresentable_result`, `internal_error` |
 | `stale_snapshot` | `projection_mismatch`, `bindings_changed` |
 
 The result contract reports how an execution ended. It carries no scientific answer status: SCALE's `answered`,

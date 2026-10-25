@@ -19,10 +19,10 @@ the [developer note](GRAPH_Developer_Note_for_Claude.md).
 | `basis` | at least one reference `{"type": "node" \| "edge" \| "result" \| "external", "ref"}`; a result is named by its `result_id` |
 | `dependencies` | references whose revision makes the candidate stale |
 | `assumptions` | text, each one stated |
-| `proposed_tests` | at least one `{"id", "description", "outcomes": [{"observation", "bearing"}]}` whose outcomes discriminate: one `supports` the candidate and one `opposes` it (`inconclusive` may be added) |
+| `proposed_tests` | at least one `{"id", "description", "outcomes": [{"observation", "bearing"}]}` whose outcomes discriminate: one `supports` the candidate and one `opposes` it (`inconclusive` may be added), and no two describe the same observation |
 | `proposed_relations` | `{"source", "target", "relation"}`, never traversable |
 | `scores` | `{"value", "method", "method_version", "candidate_set", "direction": "higher_first" \| "lower_first", "interpretation": "ordering" \| "probability", "calibration"}` |
-| `lifecycle` | `active` first; then at most one of `withdrawn` (with a reason) or `superseded` (with a reason and `superseded_by`) |
+| `lifecycle` | `active` first; then at most one of `withdrawn` (with a reason) or `superseded` (with a reason and `superseded_by`), dated no earlier than the creation; every `at` is an ISO 8601 date or date-time of a real day |
 | `assessments` | `{"id", "stance": "supporting" \| "opposing" \| "inconclusive", "evidence": [references], "conditions", "assessor": {"name", "version"}, "at", "note"}` |
 | `extensions` | consumer data, not interpreted |
 | `record_digest` | the digest of every other field |
@@ -41,8 +41,9 @@ old one.
 - **Immutable records, append-only history.** `withdraw`, `supersede`, `attach_assessment` and `add_score` each
   return a new revision. The new revision appends to the lifecycle, assessments or scores, keeps everything the
   previous revision held, and names its digest; the original record is unchanged. `verify_revisions(history)`
-  detects a broken chain, a changed core field, and any dropped or rewritten item. A transport cannot lose opposing
-  evidence or a withdrawal unnoticed.
+  detects a broken chain, a history that does not start at revision 1 (unless `from_start=False` says it is
+  partial), a changed fixed field (the core fields, the kind, contract, epistemic status and extensions), and any
+  dropped or rewritten item. A transport cannot lose opposing evidence or a withdrawal unnoticed.
 - **Scores order, they do not measure.** An `ordering` score orders candidates within one method, method version and
   candidate set. `order_candidates` never ranks across sets or methods, lists unscored candidates apart, and leaves
   out inactive ones. A `probability` interpretation requires a calibration reference and a value in [0, 1]; whether
@@ -55,14 +56,28 @@ old one.
 
 ## Staleness
 
-`staleness(candidate, projection=..., impact=...)` says whether a candidate must be re-examined, and why:
+`staleness(candidate, projection=..., impact=...)` says whether a candidate must be re-examined. It asks one of two
+questions:
 
-- `projection_changed`: the candidate was formed on another projection.
-- `input_revised`: a node its basis or dependencies name was changed.
-- `input_affected`: such a node is affected in a `dependency_impact` result. The witness from the change is given.
+- **The snapshot** (`projection` alone, the current projection). A different identity from the one the candidate
+  was formed on makes it stale (`projection_changed`). The same identity means nothing it references inside the
+  projection has changed.
+- **The dependencies** (`impact`, a `dependency_impact` result of the revised nodes; `projection`, when its identity
+  is the impact's, so that GRAPH can check it holds a node). A referenced node that was revised (`input_revised`),
+  or that the impact reaches (`input_affected`, with the witness), makes the candidate stale.
 
-An interrupted impact cannot clear a node; those nodes are listed as `unknown`. Staleness is not falsity, and it
-changes nothing in the candidate.
+`stale` is three-valued, as GRAPH's answers are:
+
+| `stale` | Meaning |
+| --- | --- |
+| `true` | a reason was found; re-examine the candidate |
+| `false` | every node, edge and result reference was decided unaffected, for the question asked |
+| `null` | something could not be decided; `undecided` says what and why |
+
+A node is cleared only by a completed impact without `max_depth`, on a projection that holds it. An interrupted or
+depth-bounded impact, an unknown or different projection, and an edge or result reference (node impact does not
+follow them) all leave a reference undecided. External references are outside GRAPH's view, and are listed in
+`outside`. Staleness is not falsity, and it changes nothing in the candidate.
 
 ## Transport
 

@@ -48,6 +48,9 @@ class Result:
     def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError("a Result is immutable")
 
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("a Result is immutable")
+
     @classmethod
     def _create(cls, *, status: str, operation: str | None = None, request: Any = None, projection: str | None = None,
                 answer: Mapping | None = None, interruption: Mapping | None = None, error: Mapping | None = None,
@@ -87,12 +90,16 @@ class Result:
 
     @classmethod
     def from_dict(cls, data: Mapping) -> "Result":
-        """Read a result's JSON form; its ``result_id`` must match its content (``timing`` aside)."""
+        """Read a result's JSON form (another backend's, say): its ``result_id`` must match its content (``timing``
+        aside) and it must keep the contract's invariants (:func:`contract_problems`)."""
         if not isinstance(data, Mapping) or data.get("kind") != RESULT_KIND:
             raise ValueError(f"a result has kind {RESULT_KIND!r}")
         body = {k: thaw(v) for k, v in data.items() if k not in ("result_id", "timing")}
         if data.get("result_id") != digest(body):
             raise ValueError("the result's content does not match its result_id")
+        problems = contract_problems(body)
+        if problems:
+            raise ValueError("the result breaks the contract: " + "; ".join(problems))
         return cls._wrap({**body, "result_id": data["result_id"]}, data.get("timing"))
 
     # ------------------------------------------------------------------------------------------------ fields
@@ -193,7 +200,7 @@ class Result:
             return None
         if node_id in self._entries():
             return True
-        return False if self.complete else None
+        return False if self.status == COMPLETED else None
 
     def path_to(self, node_id: str) -> list[dict]:
         """The witness of a reached (or affected) node: its hops ``{edge, relation, direction, from, to}`` from a
@@ -219,7 +226,8 @@ class Result:
         """For typed and shortest paths: True (a witness is given), False (only when complete) or None (unknown)."""
         if self.operation not in _WITNESS_OPERATIONS:
             raise ValueError(f"found reads a typed_path or shortest_path result, not {self.operation}")
-        return None if self.answer is None else self.answer["found"]
+        found = None if self.answer is None else self.answer["found"]
+        return None if found is False and self.status != COMPLETED else found
 
     @property
     def witness(self) -> list[dict] | None:
@@ -228,3 +236,36 @@ class Result:
             raise ValueError(f"witness reads a typed_path or shortest_path result, not {self.operation}")
         w = (self.answer or {}).get("witness")
         return None if w is None else thaw(w["hops"])
+
+
+def contract_problems(data: Mapping) -> list[str]:
+    """What in a result's JSON breaks the contract's invariants, read without the input records (empty when it keeps
+    them): the status, ``complete`` exactly for ``completed``, an answer exactly when the request ran, an
+    interruption exactly when interrupted, an error exactly when not run, and ``found: false`` (or a proven optimum)
+    only in a complete answer. :func:`graph_runtime.verify_result` adds the witnesses, checked against the records."""
+    status = data.get("status")
+    if status not in STATUSES:
+        return [f"status {status!r} is not one of {list(STATUSES)}"]
+    out = []
+    if data.get("complete") is not (status == COMPLETED):
+        out.append("complete is true exactly when the status is completed")
+    ran = status in (COMPLETED, INTERRUPTED)
+    answer = data.get("answer")
+    if ran != isinstance(answer, Mapping):
+        out.append(f"a {status} result {'carries an answer' if ran else 'carries no answer'}")
+    if (status == INTERRUPTED) != isinstance(data.get("interruption"), Mapping):
+        out.append("an interrupted result, and only one, says what interrupted it")
+    if ran == isinstance(data.get("error"), Mapping):
+        out.append(f"a {status} result {'carries no error' if ran else 'carries an error with its code'}")
+    if isinstance(answer, Mapping) and data.get("operation") in _WITNESS_OPERATIONS:
+        found = answer.get("found")
+        if found not in (True, False, None):
+            out.append(f"found is true, false or null, not {found!r}")
+        if found is False and status != COMPLETED:
+            out.append("found is false only in a complete answer")
+        if found is None and status != INTERRUPTED:
+            out.append("found is unknown (null) only in an interrupted answer")
+        if data.get("operation") == "shortest_path" and found is True \
+                and answer.get("optimal") is not (status == COMPLETED):
+            out.append("a witness is proven optimal exactly when the search completed")
+    return out

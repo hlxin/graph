@@ -26,12 +26,13 @@ import json
 import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from ._canonical import canonical_json, digest, freeze, is_digest, thaw
 from .errors import CandidateError
 from .projection import CONTRACT, Projection
-from .result import Result
+from .result import COMPLETED, Result
 
 CANDIDATE_KIND = "hypothesis_candidate"
 EPISTEMIC_STATUS = "unverified"
@@ -46,13 +47,16 @@ CORE_FIELDS = ("statement", "scope", "projection", "producer", "basis", "depende
 APPEND_ONLY = ("scores", "lifecycle", "assessments")
 FIELDS = ("kind", "contract", "id", "revision", "previous", "epistemic_status", *CORE_FIELDS, *APPEND_ONLY,
           "extensions", "record_digest")
+FIXED_FIELDS = ("kind", "contract", "id", "epistemic_status", *CORE_FIELDS, "extensions")   # the same in every revision
 GENERATED_ID = "hc:sha256:"
-STALE_NOTE = ("Stale means the candidate must be re-examined against the revised input; it does not make the "
-              "candidate false and does not change its lifecycle.")
+STALE_NOTE = ("stale true: re-examine the candidate (that does not make it false, and nothing in it changes); "
+              "false: every reference GRAPH tracks was decided unaffected, for the question asked (the snapshot, or "
+              "the revisions in the impact); null: some could not be decided (undecided says why). External "
+              "references are outside GRAPH's view (outside).")
 ORDER_NOTE = ("An ordering score orders candidates within one method, version and candidate set only; it is a "
               "probability only with interpretation probability and a calibration reference, which the consuming "
               "application must assess.")
-_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$")
+_TIME = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}:\d{2})?)?$")
 
 
 # ---------------------------------------------------------------------------------------------- validation
@@ -143,6 +147,11 @@ def _text(value: Any, path: str, bad, *, optional: bool = False) -> bool:
     if not isinstance(value, str) or not value.strip():
         bad(path, "invalid_text", f"{path} is non-empty text" + (" or null" if optional else ""))
         return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        bad(path, "invalid_text", f"{path} is valid Unicode text (it holds an unpaired surrogate)")
+        return False
     return True
 
 
@@ -171,9 +180,44 @@ def _keys(value: Any, path: str, required: Sequence[str], optional: Sequence[str
     return ok
 
 
+def _moment(value: Any) -> tuple[date, datetime | None] | None:
+    """(the date, the date-time or None) of an ISO 8601 date or date-time that names a real day and time; None when
+    ``value`` is not one."""
+    m = _TIME.match(value) if isinstance(value, str) else None
+    if not m:
+        return None
+    try:
+        day = date.fromisoformat(m[1])
+        if m[2] is None:
+            return day, None
+        tz = None
+        if m[6] == "Z":
+            tz = timezone.utc
+        elif m[6]:
+            sign = 1 if m[6][0] == "+" else -1
+            tz = timezone(sign * timedelta(hours=int(m[6][1:3]), minutes=int(m[6][4:6])))
+        frac = int((m[5] or "0")[:6].ljust(6, "0"))
+        return day, datetime(day.year, day.month, day.day, int(m[2]), int(m[3]), int(m[4] or 0), frac, tzinfo=tz)
+    except ValueError:
+        return None
+
+
+def _before(later: tuple, earlier: tuple) -> bool:
+    """Whether a moment is earlier than another: by the instant when both are date-times with offsets, else by the
+    day (in UTC for a date-time with an offset)."""
+    (ld, lt), (ed, et) = later, earlier
+    if lt is not None and et is not None and lt.tzinfo is not None and et.tzinfo is not None:
+        return lt < et
+
+    def day(d: date, t: datetime | None) -> date:
+        return t.astimezone(timezone.utc).date() if t is not None and t.tzinfo is not None else d
+    return day(ld, lt) < day(ed, et)
+
+
 def _time(value: Any, path: str, bad) -> None:
-    if not isinstance(value, str) or not _TIME.match(value):
-        bad(path, "invalid_time", f"{path} is an ISO 8601 date or date-time (2026-10-25, 2026-10-25T14:00:00Z)")
+    if _moment(value) is None:
+        bad(path, "invalid_time", f"{path} is an ISO 8601 date or date-time of a real day (2026-10-25, "
+            "2026-10-25T14:00:00Z)")
 
 
 def _producer(value: Any, path: str, bad) -> None:
@@ -210,12 +254,17 @@ def _tests(value: Any, bad) -> None:
         _text(t["description"], f"{where}.description", bad)
         if not _list(t["outcomes"], f"{where}.outcomes", bad, at_least=2):
             continue
-        bearings = set()
+        bearings, observed = set(), set()
         for j, o in enumerate(t["outcomes"]):
             ow = f"{where}.outcomes[{j}]"
             if not _keys(o, ow, ("observation", "bearing"), (), bad):
                 continue
-            _text(o["observation"], f"{ow}.observation", bad)
+            if _text(o["observation"], f"{ow}.observation", bad):
+                key = " ".join(o["observation"].split()).casefold()
+                if key in observed:
+                    bad(f"{ow}.observation", "not_discriminating", "two outcomes of a proposed test describe the same "
+                        "observation, which cannot both support and oppose the candidate")
+                observed.add(key)
             if o["bearing"] not in BEARINGS:
                 bad(f"{ow}.bearing", "invalid_bearing", f"an outcome's bearing is one of {list(BEARINGS)}")
             bearings.add(o["bearing"])
@@ -270,6 +319,11 @@ def _lifecycle(record: Mapping, bad) -> None:
             bad(f"{where}.superseded_by", "invalid_transition", "only a superseded candidate names its successor")
     if len(events) > 2:
         bad("lifecycle", "invalid_transition", "withdrawn and superseded are final: a lifecycle has at most two events")
+    for i in range(1, len(events)):
+        a = _moment(events[i - 1].get("at")) if isinstance(events[i - 1], Mapping) else None
+        b = _moment(events[i].get("at")) if isinstance(events[i], Mapping) else None
+        if a is not None and b is not None and _before(b, a):
+            bad(f"lifecycle[{i}].at", "invalid_time", "a lifecycle event is not dated before the event it follows")
 
 
 def _assessments(value: Any, bad) -> None:
@@ -329,6 +383,9 @@ class HypothesisCandidate:
     def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError("a HypothesisCandidate is immutable; its changes are new revisions")
 
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("a HypothesisCandidate is immutable; its changes are new revisions")
+
     @classmethod
     def create(cls, *, statement: str, scope: str, projection: Projection | str, producer: Mapping[str, str],
                basis: Iterable[Any], proposed_tests: Iterable[Mapping], at: str, dependencies: Iterable[Any] = (),
@@ -354,11 +411,16 @@ class HypothesisCandidate:
                 "assumptions": _plain(list(assumptions), "assumptions"), "proposed_tests": tests,
                 "proposed_relations": _plain(list(proposed_relations), "proposed_relations")}
         record = {"kind": CANDIDATE_KIND, "contract": CONTRACT,
-                  "id": candidate_id if candidate_id is not None else _core_id(_plain(core, "candidate")),
+                  "id": candidate_id if candidate_id is not None else "hc:pending",
                   "revision": 1, "previous": None, "epistemic_status": EPISTEMIC_STATUS, **core,
                   "scores": [_score_record(s) for s in _plain(list(scores), "scores")],
                   "lifecycle": [{"state": "active", "at": at, "reason": reason, "superseded_by": None}],
                   "assessments": [], "extensions": _plain(extensions, "extensions")}
+        if candidate_id is None:            # the generated id is the digest of core fields that validate first
+            problems = _validate(_plain(record, "candidate"), sealed=False)
+            if problems:
+                raise CandidateError(problems)
+            record["id"] = _core_id(_plain(core, "candidate"))
         return cls._seal(record)
 
     @classmethod
@@ -509,17 +571,24 @@ def _score_record(s: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------------------------- histories, staleness
-def verify_revisions(revisions: Sequence["HypothesisCandidate | Mapping"]) -> list[dict]:
+def verify_revisions(revisions: Sequence["HypothesisCandidate | Mapping"], *, from_start: bool = True) -> list[dict]:
     """Problems in a candidate's revision history (consecutive revisions, oldest first): each revision is valid,
-    names the previous one's digest, keeps the core fields, and keeps every score, lifecycle event and assessment
-    the previous revision held, in order, adding only after them."""
+    names the previous one's digest, keeps every fixed field (the core fields, the kind, contract, epistemic status
+    and extensions), and keeps every score, lifecycle event and assessment the previous revision held, in order,
+    adding only after them. ``from_start``: the history begins at revision 1 (a partial history can only vouch for
+    the revisions it holds)."""
     out: list[dict] = []
     records = [r.to_dict() if isinstance(r, HypothesisCandidate) else thaw(r) for r in revisions]
+    if not records:
+        return [{"path": "revisions", "code": "broken_history", "message": "a history holds at least one revision"}]
     for i, r in enumerate(records):
         for p in validate_candidate(r):
             out.append({**p, "path": f"revisions[{i}].{p['path']}".rstrip(".")})
     if out:
         return out
+    if from_start and records[0]["revision"] != 1:
+        out.append({"path": "revisions[0].revision", "code": "broken_history",
+                    "message": f"the history starts at revision {records[0]['revision']}, not 1"})
     for i in range(1, len(records)):
         a, b = records[i - 1], records[i]
         where = f"revisions[{i}]"
@@ -528,8 +597,8 @@ def verify_revisions(revisions: Sequence["HypothesisCandidate | Mapping"]) -> li
         if b["revision"] != a["revision"] + 1 or b["previous"] != a["record_digest"]:
             out.append({"path": f"{where}.previous", "code": "broken_history",
                         "message": f"revision {b['revision']} does not follow revision {a['revision']}"})
-        for f in CORE_FIELDS:
-            if b[f] != a[f]:
+        for f in FIXED_FIELDS:
+            if f != "id" and b[f] != a[f]:
                 out.append({"path": f"{where}.{f}", "code": "core_changed",
                             "message": f"{f} never changes in a revision (a reformulation is a new candidate)"})
         for f in APPEND_ONLY:
@@ -541,33 +610,64 @@ def verify_revisions(revisions: Sequence["HypothesisCandidate | Mapping"]) -> li
 
 def staleness(candidate: HypothesisCandidate, *, projection: Projection | None = None,
               impact: Result | None = None) -> dict:
-    """Whether a candidate must be re-examined, and why: the projection it was formed on is not ``projection``, or a
-    node its basis or dependencies name was changed or is affected in ``impact`` (a dependency_impact result, whose
-    witness is given). An interrupted impact cannot clear a node: those are listed as unknown. Staleness is not
-    falsity and changes nothing in the candidate."""
+    """Whether a candidate must be re-examined, as one of two questions.
+
+    * The snapshot (``projection`` alone, the current projection): a different identity from the one the candidate
+      was formed on makes it stale; the same identity means nothing it references inside the projection changed.
+    * The dependencies (``impact``, a dependency_impact result of the revised nodes; ``projection``, when its identity
+      is the impact's, to check that it holds a node): a node the candidate references that was revised, or that
+      the impact reaches, makes it stale, with the witness. A node is cleared only by a completed impact without
+      max_depth, on a projection that holds it. An edge or a result reference is not something node impact decides.
+
+    ``stale`` is True when a reason was found, False only when every node, edge and result reference was decided,
+    None otherwise (``undecided`` says which and why). External references are outside GRAPH's view (``outside``).
+    Staleness is not falsity and changes nothing in the candidate."""
+    if projection is None and impact is None:
+        raise ValueError("staleness asks about the current projection, a dependency impact, or both")
+    refs = [(field, dict(r)) for field in ("dependencies", "basis") for r in candidate[field]]
     reasons: list[dict] = []
-    if projection is not None and projection.identity != candidate.projection:
-        reasons.append({"code": "projection_changed", "message": f"formed on projection {candidate.projection}; the "
-                        f"current projection is {projection.identity}"})
-    unknown: list[str] = []
-    if impact is not None:
+    undecided: list[dict] = []
+    outside = [{"field": f, "type": r["type"], "ref": r["ref"]} for f, r in refs if r["type"] == "external"]
+    if impact is None:
+        question = "snapshot"
+        relative_to: dict = {"projection": projection.identity}
+        if projection.identity != candidate.projection:
+            reasons.append({"code": "projection_changed", "message": f"formed on projection {candidate.projection}; "
+                            f"the current projection is {projection.identity}"})
+    else:
         if impact.operation != "dependency_impact" or impact.answer is None:
             raise ValueError("impact is a completed or interrupted dependency_impact result")
+        question = "dependencies"
         changed = set(impact.answer["changed"])
-        for field in ("dependencies", "basis"):
-            nodes = sorted({r["ref"] for r in candidate[field] if r["type"] == "node"})
-            hit = [n for n in nodes if n in changed]
-            if hit:
-                reasons.append({"code": "input_revised", "field": field, "nodes": hit,
-                                "message": f"{field} names revised nodes {hit}"})
-            reached = [n for n in nodes if n not in changed and impact.affected(n)]
-            if reached:
-                reasons.append({"code": "input_affected", "field": field, "nodes": reached,
-                                "witnesses": {n: impact.path_to(n) for n in reached},
-                                "message": f"{field} names nodes {reached} that depend on a revised node"})
-            unknown += [n for n in nodes if n not in changed and impact.affected(n) is None]
-    return {"candidate": candidate.id, "revision": candidate.revision, "stale": bool(reasons),
-            "unknown": sorted(set(unknown)), "reasons": reasons, "note": STALE_NOTE}
+        relative_to = {"impact": impact.result_id, "projection": impact.projection, "changed": sorted(changed)}
+        bound = impact.request["max_depth"]
+        holder = projection if projection is not None and projection.identity == impact.projection else None
+        for field, r in refs:
+            kind, ref = r["type"], r["ref"]
+            item = {"field": field, "type": kind, "ref": ref}
+            if kind == "external":
+                continue
+            if kind != "node":
+                undecided.append({**item, "why": f"dependency impact follows nodes; it does not decide an {kind} "
+                                                 "reference" if kind == "edge" else "dependency impact follows nodes; "
+                                                 f"it does not decide a {kind} reference"})
+            elif ref in changed:
+                reasons.append({"code": "input_revised", **item, "message": f"{field} names {ref}, which was revised"})
+            elif impact.affected(ref):
+                reasons.append({"code": "input_affected", **item, "witness": impact.path_to(ref),
+                                "message": f"{field} names {ref}, which depends on a revised node"})
+            elif impact.status != COMPLETED:
+                undecided.append({**item, "why": "the impact was interrupted before it could clear this node"})
+            elif bound is not None:
+                undecided.append({**item, "why": f"the impact stopped at max_depth {bound}"})
+            elif holder is None:
+                undecided.append({**item, "why": "without the projection the impact ran on, whether it holds this "
+                                                 "node is unknown"})
+            elif not holder.has_node(ref):
+                undecided.append({**item, "why": "the projection the impact ran on does not hold this node"})
+    return {"candidate": candidate.id, "revision": candidate.revision, "question": question,
+            "stale": True if reasons else (None if undecided else False), "reasons": reasons, "undecided": undecided,
+            "outside": outside, "relative_to": relative_to, "note": STALE_NOTE}
 
 
 def order_candidates(candidates: Iterable[HypothesisCandidate], *, method: str, method_version: str,

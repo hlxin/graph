@@ -6,8 +6,9 @@
 3. Record a hypothesis candidate: the revision might change the order of the two predictions in the ranking. Its
    basis is the impact result and the witness of the ranking; its proposed test (recompute the ranking) is a plan,
    not a completed validation; its 0.8 priority is an ordering value, not an 80 % probability.
-4. Ask whether the candidate is stale after a later change to the model: it is, with the witness that says why;
-   that makes it due for re-examination, not false.
+4. Ask whether the candidate is stale after a later change to the model: it is, with the witnesses that say why;
+   that makes it due for re-examination, not false. Its edge and result references are listed as undecided:
+   dependency impact follows nodes.
 
 Everything here is synthetic. It exercises transport and provenance and asserts no scientific result.
 
@@ -63,7 +64,7 @@ def outputs() -> dict[str, dict]:
     return {"projection.json": p.to_dict(),
             "impact_result.json": impact.to_dict(timing=False),
             "candidate.json": candidate.to_dict(),
-            "staleness_after_model_change.json": staleness(candidate, impact=later)}
+            "staleness_after_model_change.json": staleness(candidate, projection=p, impact=later)}
 
 
 def main(argv: list[str]) -> int:
