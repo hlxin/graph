@@ -1,0 +1,22 @@
+{
+  "data_status": "synthetic_example",
+  "note": "Invented records for exercising transport and provenance. They describe no real input, model, catalyst or result.",
+  "bindings": {"source": "examples/synthetic_revision/records.json@1", "policy": "public"},
+  "relations": ["DEPENDS_ON"],
+  "nodes": [
+    {"id": "input:feedstock-table-v1", "types": ["Input"]},
+    {"id": "model:yield-model", "types": ["Model"]},
+    {"id": "prediction:catalyst-A", "types": ["Prediction"]},
+    {"id": "prediction:catalyst-B", "types": ["Prediction"]},
+    {"id": "ranking:screen-1", "types": ["Ranking"]},
+    {"id": "report:summary", "types": ["Report"]}
+  ],
+  "edges": [
+    {"id": "dep:model-input", "source": "model:yield-model", "target": "input:feedstock-table-v1", "relation": "DEPENDS_ON"},
+    {"id": "dep:prediction-A-model", "source": "prediction:catalyst-A", "target": "model:yield-model", "relation": "DEPENDS_ON"},
+    {"id": "dep:prediction-B-model", "source": "prediction:catalyst-B", "target": "model:yield-model", "relation": "DEPENDS_ON"},
+    {"id": "dep:ranking-A", "source": "ranking:screen-1", "target": "prediction:catalyst-A", "relation": "DEPENDS_ON"},
+    {"id": "dep:ranking-B", "source": "ranking:screen-1", "target": "prediction:catalyst-B", "relation": "DEPENDS_ON"},
+    {"id": "dep:report-ranking", "source": "report:summary", "target": "ranking:screen-1", "relation": "DEPENDS_ON"}
+  ]
+}

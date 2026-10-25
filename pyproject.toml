@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# The distribution and import names are proposals (docs/GRAPH_Developer_Note_for_Claude.md): neither has been
+# reserved or checked for availability, and nothing has been published.
+name = "scale-graph-runtime"
+version = "0.1.0.dev0"
+description = "GRAPH (Graph Runtime for Analysis, Provenance, Hypotheses): reusable graph algorithms for scientific software."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []                    # the runtime is the standard library only
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+]
+
+[project.optional-dependencies]
+# networkx: an independent oracle in the tests, never a runtime dependency; jsonschema: the contract schemas' tests
+dev = ["pytest>=7", "networkx>=3.0", "jsonschema>=4.18"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+graph_runtime = ["schemas/*.json", "conformance/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

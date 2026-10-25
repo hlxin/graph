@@ -1,0 +1,1367 @@
+{
+ "contract": "graph-runtime/v0",
+ "description": "Backend conformance cases: every expectation is written by hand from the graphs. A completed answer must match exactly (witness choice aside, unless witness_edges names the one optimal witness); an interrupted one must list only what the full answer holds, with valid witnesses.",
+ "graphs": {
+  "G1": {
+   "nodes": [
+    {
+     "id": "a",
+     "types": [
+      "Sample"
+     ]
+    },
+    {
+     "id": "b",
+     "types": [
+      "Sample"
+     ]
+    },
+    {
+     "id": "c",
+     "types": [
+      "Catalyst"
+     ]
+    },
+    {
+     "id": "d",
+     "types": [
+      "Catalyst",
+      "Species"
+     ]
+    },
+    {
+     "id": "e",
+     "types": []
+    }
+   ],
+   "edges": [
+    {
+     "id": "e1",
+     "source": "a",
+     "target": "b",
+     "relation": "USES"
+    },
+    {
+     "id": "e2",
+     "source": "b",
+     "target": "c",
+     "relation": "USES"
+    },
+    {
+     "id": "e3",
+     "source": "a",
+     "target": "c",
+     "relation": "CITES"
+    },
+    {
+     "id": "e4",
+     "source": "c",
+     "target": "d",
+     "relation": "USES"
+    },
+    {
+     "id": "e5",
+     "source": "c",
+     "target": "d",
+     "relation": "USES"
+    },
+    {
+     "id": "e6",
+     "source": "d",
+     "target": "a",
+     "relation": "CITES"
+    }
+   ],
+   "relations": [
+    "CITES",
+    "MENTIONS",
+    "USES"
+   ],
+   "node_types": [
+    "Catalyst",
+    "Sample",
+    "Species"
+   ],
+   "bindings": {
+    "source": "conformance-g1@1",
+    "policy": "public"
+   }
+  },
+  "G2": {
+   "nodes": [
+    {
+     "id": "r1",
+     "types": []
+    },
+    {
+     "id": "r2",
+     "types": []
+    },
+    {
+     "id": "r3",
+     "types": []
+    },
+    {
+     "id": "r4",
+     "types": []
+    },
+    {
+     "id": "s1",
+     "types": []
+    },
+    {
+     "id": "s2",
+     "types": []
+    }
+   ],
+   "edges": [
+    {
+     "id": "d1",
+     "source": "r1",
+     "target": "s1",
+     "relation": "DEPENDS_ON"
+    },
+    {
+     "id": "d2",
+     "source": "r2",
+     "target": "r1",
+     "relation": "DEPENDS_ON"
+    },
+    {
+     "id": "d3",
+     "source": "r3",
+     "target": "r2",
+     "relation": "DEPENDS_ON"
+    },
+    {
+     "id": "d4",
+     "source": "r3",
+     "target": "s2",
+     "relation": "DEPENDS_ON"
+    },
+    {
+     "id": "d5",
+     "source": "s2",
+     "target": "s1",
+     "relation": "DEPENDS_ON"
+    }
+   ],
+   "relations": [
+    "DEPENDS_ON"
+   ],
+   "node_types": [],
+   "bindings": {}
+  },
+  "G3": {
+   "nodes": [
+    {
+     "id": "m",
+     "types": []
+    },
+    {
+     "id": "s",
+     "types": []
+    },
+    {
+     "id": "t",
+     "types": []
+    }
+   ],
+   "edges": [
+    {
+     "id": "big",
+     "source": "s",
+     "target": "t",
+     "relation": "R"
+    },
+    {
+     "id": "h1",
+     "source": "s",
+     "target": "m",
+     "relation": "R"
+    },
+    {
+     "id": "h2",
+     "source": "m",
+     "target": "t",
+     "relation": "R"
+    }
+   ],
+   "relations": [
+    "R"
+   ],
+   "node_types": [],
+   "bindings": {}
+  }
+ },
+ "cases": [
+  {
+   "name": "reachability-forward",
+   "covers": [
+    "witness",
+    "parallel edges"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "a": 0,
+     "b": 1,
+     "c": 2,
+     "d": 3
+    }
+   }
+  },
+  {
+   "name": "reachability-reverse",
+   "covers": [
+    "reverse traversal"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "d": 0,
+     "c": 1,
+     "b": 2,
+     "a": 3
+    }
+   }
+  },
+  {
+   "name": "reachability-cycle",
+   "covers": [
+    "cycles",
+    "several relations"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "a": 0,
+     "b": 1,
+     "c": 1,
+     "d": 2
+    }
+   }
+  },
+  {
+   "name": "reachability-undirected",
+   "covers": [
+    "both directions"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "b"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "USES",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "b": 0,
+     "a": 1,
+     "c": 1,
+     "d": 2
+    }
+   }
+  },
+  {
+   "name": "reachability-max-depth",
+   "covers": [
+    "bounded traversal"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "max_depth": 1
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "a": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "name": "reachability-declared-relation-without-edges",
+   "covers": [
+    "complete negative"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "MENTIONS",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "a": 0
+    }
+   }
+  },
+  {
+   "name": "reachability-expansion-budget",
+   "covers": [
+    "no certified negative under a budget"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "limits": {
+     "max_expansions": 3
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "reached": {
+     "a": 0,
+     "b": 1,
+     "c": 2,
+     "d": 3
+    }
+   }
+  },
+  {
+   "name": "reachability-output-limit-fits",
+   "covers": [
+    "a full answer that fits the limit is complete"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "limits": {
+     "max_results": 4
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "a": 0,
+     "b": 1,
+     "c": 2,
+     "d": 3
+    }
+   }
+  },
+  {
+   "name": "reachability-output-limit-exceeded",
+   "covers": [
+    "no certified negative under an output limit"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "limits": {
+     "max_results": 3
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "reached": {
+     "a": 0,
+     "b": 1,
+     "c": 2,
+     "d": 3
+    },
+    "count": 3
+   }
+  },
+  {
+   "name": "reachability-deadline-passed",
+   "covers": [
+    "deadline"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "context": {
+    "timeout": 0
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "deadline",
+    "reached": {
+     "a": 0,
+     "b": 1,
+     "c": 2,
+     "d": 3
+    }
+   }
+  },
+  {
+   "name": "reachability-cancelled",
+   "covers": [
+    "cancellation"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "context": {
+    "cancelled": true
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "cancelled",
+    "reached": {
+     "a": 0,
+     "b": 1,
+     "c": 2,
+     "d": 3
+    }
+   }
+  },
+  {
+   "name": "impact-reverse-dependencies",
+   "covers": [
+    "dependency impact"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "affected": {
+     "c": 1,
+     "b": 2,
+     "a": 3
+    }
+   }
+  },
+  {
+   "name": "impact-changed-node-reached-by-another-change",
+   "covers": [
+    "dependency impact",
+    "witness"
+   ],
+   "graph": "G2",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "s1",
+     "s2"
+    ],
+    "scope": [
+     {
+      "relation": "DEPENDS_ON",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "affected": {
+     "r1": 1,
+     "s2": 1,
+     "r3": 1,
+     "r2": 2
+    }
+   }
+  },
+  {
+   "name": "impact-direct-only",
+   "covers": [
+    "bounded traversal"
+   ],
+   "graph": "G2",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "DEPENDS_ON",
+      "direction": "reverse"
+     }
+    ],
+    "max_depth": 1
+   },
+   "expect": {
+    "status": "completed",
+    "affected": {
+     "r1": 1,
+     "s2": 1
+    }
+   }
+  },
+  {
+   "name": "typed-repeated-nodes",
+   "covers": [
+    "repeated nodes in typed patterns",
+    "reverse traversal"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "b"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "reverse"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "witness_edges": [
+     "e1",
+     "e1",
+     "e1"
+    ]
+   }
+  },
+  {
+   "name": "typed-around-a-cycle",
+   "covers": [
+    "cycles",
+    "repeated nodes in typed patterns"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "a"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "found": true
+   }
+  },
+  {
+   "name": "typed-node-types",
+   "covers": [
+    "typed path",
+    "parallel edges"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "c"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ],
+      "node_types": [
+       "Species"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "found": true
+   }
+  },
+  {
+   "name": "typed-complete-negative",
+   "covers": [
+    "complete negative"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "a"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ],
+      "node_types": [
+       "Species"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "found": false
+   }
+  },
+  {
+   "name": "typed-budget",
+   "covers": [
+    "no certified negative under a budget"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "e"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "USES",
+        "direction": "reverse"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "reverse"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "USES",
+        "direction": "reverse"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "reverse"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "USES",
+        "direction": "reverse"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "reverse"
+       }
+      ]
+     }
+    ],
+    "limits": {
+     "max_expansions": 2
+    }
+   },
+   "expect": {
+    "status": [
+     "interrupted",
+     "completed"
+    ],
+    "found": false
+   }
+  },
+  {
+   "name": "shortest-parallel-edges",
+   "covers": [
+    "parallel edges",
+    "integer costs"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "e1": 1,
+      "e2": 1,
+      "e4": 5,
+      "e5": 2
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost": 4,
+    "witness_edges": [
+     "e1",
+     "e2",
+     "e5"
+    ]
+   }
+  },
+  {
+   "name": "shortest-by-relation",
+   "covers": [
+    "integer costs"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": 2,
+      "CITES": 1
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost": 3
+   }
+  },
+  {
+   "name": "shortest-large-integers",
+   "covers": [
+    "large integer costs keep their order"
+   ],
+   "graph": "G3",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "big": 18446744073709551618,
+      "h1": 9223372036854775809,
+      "h2": 9223372036854775808
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost": 18446744073709551617,
+    "witness_edges": [
+     "h1",
+     "h2"
+    ]
+   }
+  },
+  {
+   "name": "shortest-exact-floats",
+   "covers": [
+    "exact arithmetic"
+   ],
+   "graph": "G3",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "big": 1.1529215046068472e+18,
+      "h1": 1.152921504606847e+18,
+      "h2": 255.0
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost_exact": "1152921504606847231",
+    "witness_edges": [
+     "h1",
+     "h2"
+    ]
+   }
+  },
+  {
+   "name": "shortest-source-is-target",
+   "covers": [
+    "zero cost"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a",
+     "d"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": 1
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost": 0,
+    "witness_edges": []
+   }
+  },
+  {
+   "name": "shortest-unreachable",
+   "covers": [
+    "complete negative"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "e"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "USES",
+      "direction": "reverse"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "reverse"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": 1,
+      "CITES": 1
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": false
+   }
+  },
+  {
+   "name": "shortest-budget",
+   "covers": [
+    "no certified negative under a budget"
+   ],
+   "graph": "G3",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "big": 10,
+      "h1": 1,
+      "h2": 1
+     }
+    },
+    "limits": {
+     "max_expansions": 1
+    }
+   },
+   "expect": {
+    "status": [
+     "interrupted",
+     "completed"
+    ],
+    "cost": 2,
+    "witness_edges": [
+     "h1",
+     "h2"
+    ]
+   }
+  },
+  {
+   "name": "stale-projection",
+   "covers": [
+    "stale snapshot"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "context": {
+    "request_projection": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   },
+   "expect": {
+    "status": "stale_snapshot",
+    "error_code": "projection_mismatch"
+   }
+  },
+  {
+   "name": "stale-bindings",
+   "covers": [
+    "stale snapshot"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "context": {
+    "current_bindings": {
+     "source": "conformance-g1@2",
+     "policy": "public"
+    }
+   },
+   "expect": {
+    "status": "stale_snapshot",
+    "error_code": "bindings_changed"
+   }
+  },
+  {
+   "name": "unsupported-operation",
+   "covers": [
+    "unsupported"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "personalized_pagerank",
+    "sources": [
+     "a"
+    ]
+   },
+   "expect": {
+    "status": "unsupported",
+    "error_code": "unsupported_operation"
+   }
+  },
+  {
+   "name": "unsupported-mode",
+   "covers": [
+    "exact only"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "mode": "approximate",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "unsupported",
+    "error_code": "unsupported_mode"
+   }
+  },
+  {
+   "name": "unsupported-negative-cost",
+   "covers": [
+    "negative costs refused"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": -1
+     }
+    }
+   },
+   "expect": {
+    "status": "unsupported",
+    "error_code": "negative_cost"
+   }
+  },
+  {
+   "name": "failed-missing-cost",
+   "covers": [
+    "missing costs refused"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "e1": 1,
+      "e2": 1,
+      "e4": 1
+     }
+    }
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "missing_cost"
+   }
+  },
+  {
+   "name": "failed-unknown-node",
+   "covers": [
+    "explicit inputs"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "z"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "unknown_node"
+   }
+  },
+  {
+   "name": "failed-unknown-relation",
+   "covers": [
+    "explicit inputs"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USED",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "unknown_relation"
+   }
+  }
+ ]
+}
