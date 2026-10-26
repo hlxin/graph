@@ -52,7 +52,7 @@ VERDICTS = (HOLDS, FAILS, UNKNOWN)
 REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
 _RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators",   # by verifying the certificate
-              "incidence")
+              "incidence", "critical_path")
 _NODE_FIELDS = frozenset({"node", "nodes", "left", "right", "idom", "source", "target", "from", "to", "dominators"})
 _EDGE_FIELDS = frozenset({"edge", "edges"})
 _REFUTING = {"node_gone", "witness_gone", "type_changed", "rule_changed", "reaches_unlisted", "reaches_shallower",

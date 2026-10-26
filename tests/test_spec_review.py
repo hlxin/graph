@@ -400,6 +400,33 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                         b.add_edge(('L', u), ('R', v))
             size = len(nx.bipartite.maximum_matching(b, top_nodes=[('L', u) for u in left])) // 2
             assert (exp['matching_size'], exp['left_count'], exp['deficiency']) == (size, len(left), len(left) - size)
+        elif op == 'critical_path':
+            import networkx as nx
+            raw = case['request']
+            pairs = {(s['relation'], s['direction']) for s in r['scope']}
+            hopg = nx.MultiDiGraph()
+            hopg.add_nodes_from(node_id(n) for n in g['nodes'])
+            for e in g['edges']:
+                c = Fraction(raw['costs']['by_edge'][e['id']]) if raw.get('costs') else 1
+                if (e['relation'], 'forward') in pairs:
+                    hopg.add_edge(e['source'], e['target'], w=c)
+                if (e['relation'], 'reverse') in pairs:
+                    hopg.add_edge(e['target'], e['source'], w=c)
+            if raw.get('sources'):
+                hopg = hopg.subgraph(set(raw['sources']).union(*(nx.descendants(hopg, s) for s in raw['sources'])))
+            if 'acyclic' in exp:
+                assert exp['acyclic'] is nx.is_directed_acyclic_graph(hopg), case['name']
+            if 'makespan' in exp:
+                assert Fraction(exp['makespan']) == nx.dag_longest_path_length(hopg, weight='w'), case['name']
+            if 'schedule_times' in exp:
+                order = list(nx.topological_sort(hopg))
+                early, late = {}, {}
+                for v in order:
+                    early[v] = max((early[u] + d['w'] for u, _, d in hopg.in_edges(v, data=True)), default=0)
+                span = max(early.values())
+                for v in reversed(order):
+                    late[v] = min((late[w] - d['w'] for _, w, d in hopg.out_edges(v, data=True)), default=span)
+                assert exp['schedule_times'] == {v: [early[v], late[v], late[v] - early[v]] for v in order}
         elif op == 'incidence':
             from test_incidence import sympy_answer
             raw = case['request']

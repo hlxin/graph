@@ -1712,6 +1712,60 @@
    "bindings": {
     "source": "conformance-g18@1"
    }
+  },
+  "G19": {
+   "nodes": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f"
+   ],
+   "edges": [
+    {
+     "id": "k1",
+     "source": "a",
+     "target": "b",
+     "relation": "BEFORE"
+    },
+    {
+     "id": "k2",
+     "source": "a",
+     "target": "c",
+     "relation": "BEFORE"
+    },
+    {
+     "id": "k3",
+     "source": "b",
+     "target": "d",
+     "relation": "BEFORE"
+    },
+    {
+     "id": "k4",
+     "source": "c",
+     "target": "d",
+     "relation": "BEFORE"
+    },
+    {
+     "id": "k5",
+     "source": "d",
+     "target": "e",
+     "relation": "BEFORE"
+    },
+    {
+     "id": "k6",
+     "source": "c",
+     "target": "e",
+     "relation": "BEFORE"
+    }
+   ],
+   "relations": [
+    "BEFORE"
+   ],
+   "bindings": {
+    "source": "conformance-g19@1"
+   }
   }
  },
  "cases": [
@@ -8443,6 +8497,194 @@
     "status": "interrupted",
     "interruption": "expansion_budget",
     "rank": null
+   }
+  },
+  {
+   "name": "critical-path-schedule",
+   "covers": [
+    "makespan",
+    "critical path",
+    "earliest, latest and slack",
+    "an isolated node"
+   ],
+   "graph": "G19",
+   "request": {
+    "operation": "critical_path",
+    "scope": [
+     {
+      "relation": "BEFORE",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "k1": 3,
+      "k2": 2,
+      "k3": 4,
+      "k4": 4,
+      "k5": 1,
+      "k6": 2
+     }
+    },
+    "answer": "schedule",
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "acyclic": true,
+    "makespan": 8,
+    "critical_edges": [
+     "k1",
+     "k3",
+     "k5"
+    ],
+    "schedule_times": {
+     "a": [
+      0,
+      0,
+      0
+     ],
+     "b": [
+      3,
+      3,
+      0
+     ],
+     "c": [
+      2,
+      3,
+      1
+     ],
+     "d": [
+      7,
+      7,
+      0
+     ],
+     "e": [
+      8,
+      8,
+      0
+     ],
+     "f": [
+      0,
+      8,
+      8
+     ]
+    }
+   }
+  },
+  {
+   "name": "critical-path-layers",
+   "covers": [
+    "every hop takes 1: layers",
+    "the first predecessor attaining the maximum"
+   ],
+   "graph": "G19",
+   "request": {
+    "operation": "critical_path",
+    "scope": [
+     {
+      "relation": "BEFORE",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "acyclic": true,
+    "makespan": 3,
+    "critical_edges": [
+     "k1",
+     "k3",
+     "k5"
+    ]
+   }
+  },
+  {
+   "name": "critical-path-from-sources",
+   "covers": [
+    "only what the sources reach"
+   ],
+   "graph": "G19",
+   "request": {
+    "operation": "critical_path",
+    "scope": [
+     {
+      "relation": "BEFORE",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "k1": 3,
+      "k2": 2,
+      "k3": 4,
+      "k4": 4,
+      "k5": 1,
+      "k6": 2
+     }
+    },
+    "sources": [
+     "c"
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "acyclic": true,
+    "makespan": 5,
+    "critical_edges": [
+     "k4",
+     "k5"
+    ]
+   }
+  },
+  {
+   "name": "critical-path-cycle",
+   "covers": [
+    "a cycle instead of an order"
+   ],
+   "graph": "G19",
+   "request": {
+    "operation": "critical_path",
+    "scope": [
+     {
+      "relation": "BEFORE",
+      "direction": "forward"
+     },
+     {
+      "relation": "BEFORE",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "acyclic": false
+   }
+  },
+  {
+   "name": "critical-path-expansion-budget",
+   "covers": [
+    "an interrupted search claims nothing"
+   ],
+   "graph": "G19",
+   "request": {
+    "operation": "critical_path",
+    "scope": [
+     {
+      "relation": "BEFORE",
+      "direction": "forward"
+     }
+    ],
+    "limits": {
+     "max_expansions": 2
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "claims_nothing": true
    }
   }
  ]

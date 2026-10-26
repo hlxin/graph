@@ -45,6 +45,9 @@ states consistently, and required costs only for edges actually in scope. Revisi
   cover (section 4)
 - the `dominators` operation: the nodes every walk from the sources to a node passes through (its dominator tree, or
   each target's chain), certified by a low-high order of the tree, checked arc by arc (section 4)
+- the `critical_path` operation: the canonical topological order of an acyclic graph, its makespan and a critical
+  path, every node's earliest and latest time and slack, or a cycle; certified by the order with earliest times
+  (section 4)
 - the `incidence` operation: the exact rank of the matrix of edge coefficients between row and column nodes, and
   canonical bases of its kernels (a reaction network's conservation laws and steady combinations), certified by a
   nonsingular minor and an independent kernel basis (section 4)
@@ -158,6 +161,7 @@ no wildcard: a scope lists what it follows.
 | `max_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as costs, non-negative; null: every edge 1), `node_capacity` (what each node other than the sources and targets passes; null: no limit), `certificate` (default false) | `max_expansions` |
 | `matching` | `left` (`{"node_types", "nodes"}`, at least one: the nodes to pair), `scope` (from a left node to its candidate partners), `certificate` (default false) | `max_expansions` |
 | `dominators` | `sources`, `scope`, `targets` (null: every node reached, with its immediate dominator; else each target's dominators), `certificate` (default false) | `max_expansions` |
+| `critical_path` | `scope` (a hop from u to v: u comes first), `sources` (only what they reach; null: every node), `costs` (as for shortest paths; null: every hop takes 1), `answer` (`path`, the default: the makespan and a critical path; `schedule`: every node's times too), `certificate` (default false) | `max_expansions` |
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
@@ -595,6 +599,29 @@ single node dominates, has none (null).
 Answer: `{"reached", "tree": [{"node", "idom"}] or null, "chains": [{"target", "reachable", "dominators"}] or null,
 "certificate"}`.
 
+**Critical path.** Read as precedence (a hop from u to v: u comes before v, the hop's cost the time between), an
+acyclic graph is a schedule (Kelley and Walker's critical path method, 1959): a node's earliest time is its longest
+path from a node nothing precedes, the makespan (`cost`) the longest of these, and a critical path one that long; a
+node's latest time is the makespan less its longest path to a node nothing follows, and its slack, latest less
+earliest, is how far it can slip without delaying the whole. Build systems, workflows, the depth of a derivation or a
+provenance chain, reaction steps in sequence.
+
+- **Order.** Kahn's algorithm (1962), taking the smallest node first among those whose predecessors are all placed:
+  the lexicographically smallest topological order. Each node scheduled (or, with `sources`, reached) is one
+  expansion. Costs are exact; without costs every hop takes 1, and earliest times are layers.
+- **Answer.** `acyclic`; when true, `cost` (the makespan) and `path`, a critical path ending at the smallest node whose
+  earliest time is the makespan, each hop's predecessor the first in canonical order that attains the maximum; with
+  `answer: "schedule"`, `schedule`: every node by ID with `earliest`, `latest` and `slack`. When false, `cycle`: a
+  cycle among the nodes no order can place (`hops`), and with `sources` the hops that reach it from one (`reach`).
+- **Certificate.** With `certificate: true` on an acyclic answer, `{"kind": "topological", "order": [{"node",
+  "earliest"}]}`: the order with each node's earliest time. A checker confirms the order covers what is scheduled,
+  every hop between its nodes goes forward, and the times satisfy the longest-path recurrence exactly, whose solution
+  in an acyclic graph is unique: the makespan, the critical path and the schedule's latest times follow, hop by hop.
+- **Limits.** An interrupted search claims nothing: every field is null.
+
+Answer: `{"acyclic", "cycle": {"hops", "reach"} or null, "cost", "path": {"source", "target", "length", "hops"},
+"schedule": [{"node", "earliest", "latest", "slack"}] or null, "certificate"}`.
+
 **Incidence.** Exact linear algebra of an incidence structure. The matrix N has a row for each row node and a column
 for each column node (both in ascending ID); N[i][j] adds the coefficients of the edges in scope joining row i and
 column j, whichever way they point. For a reaction network's stoichiometric matrix (species by reactions, consumption
@@ -734,6 +761,9 @@ The result contract reports how an execution ended. It carries no scientific ans
   - for dominators, from a certificate: the order a preorder of the tree, every hop in scope from a listed node
     landing on a listed node whose dominator is an ancestor of the hop's tail, and every node low-high; the tree or
     chains read from it
+  - for a critical path, a cycle's hops closing on themselves; from a certificate, the order covering what is
+    scheduled with every hop forward, the earliest times by the longest-path recurrence, and from them the makespan,
+    the critical path's costs and the schedule's latest times
   - for incidence, the matrix rebuilt from the records, every listed vector multiplied by it to zero, each basis
     independent, and from a certificate the minor's determinant nonzero: the rank and the kernels' completeness
   - for periodicity, against the cell's records: the tree's hops, every hop from a listed node's image leading to a
@@ -745,7 +775,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 153 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 158 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -774,7 +804,8 @@ A ranking holds while its estimates still prove it on the new projection: put in
 leave no negative residual, and the intervals and certified prefix they prove are within the ones the answer gives. It
 is always checked in full.
 
-Components, biconnectivity, a maximum flow, a matching, dominators and incidence are revalidated by their certificates, which
+Components, biconnectivity, a maximum flow, a matching, dominators, incidence and critical paths are revalidated by
+their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
 kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest
