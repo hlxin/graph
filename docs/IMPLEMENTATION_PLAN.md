@@ -13,18 +13,26 @@ section 6. Status as of 25 October 2026, contract `graph-runtime/v0.1`, runtime 
 | 3 | Candidate-hypothesis validation and transport, without source mutation | Done | `hypotheses.py`, [HYPOTHESES_AND_PROVENANCE.md](HYPOTHESES_AND_PROVENANCE.md), the synthetic example |
 | 4 | The first real consumer adapter and scientific parity fixtures | First cut | SCALE's adapter, staged in `integrations/scale/`, with two read-only workflows and parity against SCALE's own engine; it still has to go to SCALE as a pull request |
 | 5 | Measure the whole request; evaluate one alternative backend only if needed | Started | every result's `timing` (bind, search, witness, result) and `benchmarks/bench.py` (build, serialization, workload identity, versions, raw results, parity); no alternative backend yet, and none is needed so far |
-| 6 | Prepare the extraction path; exercise a real second consumer | Not started | the private repository `hlxin/graph` holds the runtime; no second consumer (STATES, RATES or Cathanor) has an adapter yet |
+| 6 | Prepare the extraction path; exercise a real second consumer | Second consumer exercised | STATES's adapter, staged in `integrations/states/`: context extraction as bounded reachability over the lifted periodic substrate, with parity against STATES's own `extract_context` ([STATES_INTEGRATION.md](STATES_INTEGRATION.md)); the private repository `hlxin/graph` holds the runtime; no release yet |
 
 The note's criterion for a separately versioned package is a real second workflow that validates the same
-interface. That criterion is not met yet: SCALE is the only consumer so far, and the synthetic example does not
-count. The separate repository exists by decision, and the runtime keeps its boundary so that it can stay small:
-standard library only, and no application vocabulary.
+interface. STATES now provides one. Its context extraction runs on the unchanged v0.1 interface, with no new
+operation and no STATES vocabulary in the runtime:
+
+- a projection of its lifted substrate graph
+- reachability with `max_depth` and `max_results`
+- witnesses
+- stale bindings
+
+On 70 records and 760 contexts it matches STATES's own code. What remains for a release is the other half of the
+criterion: a reason for independent releases. Both adapters are still staged here, and nothing is published. The
+runtime keeps its boundary so that it can stay small: standard library only, and no application vocabulary.
 
 ## Acceptance evidence
 
 | Requirement (note, section 6) | Evidence | Where |
 | --- | --- | --- |
-| Exact results agree with independent small-graph checks and the consumer's reference behaviour | Every operation is checked on random graphs against an independent oracle (about 4,700 executions, with and without random limits), against NetworkX (reachability and integer-cost shortest paths), and against 49 hand-written conformance cases. SCALE parity covers 14 competency questions, 1,654 generated chains on 31 documents, and 18,951 records resting on injected retractions in 134 documents | `tests/test_oracle.py`, `tests/test_conformance.py`, `integrations/scale/` |
+| Exact results agree with independent small-graph checks and the consumer's reference behaviour | Every operation is checked on random graphs against an independent oracle (about 4,700 executions, with and without random limits), against NetworkX (reachability and integer-cost shortest paths), and against 49 hand-written conformance cases. SCALE parity covers 14 competency questions, 1,654 generated chains on 31 documents, and 18,951 records resting on injected retractions in 134 documents. STATES parity covers 760 contexts (38,033 atom images, 243,869 relations and ports, 679 limit checks) on 70 records | `tests/test_oracle.py`, `tests/test_conformance.py`, `integrations/scale/`, `integrations/states/` |
 | Witnesses survive parallel edges, cycles, reverse traversal and repeated nodes in typed patterns | Named scenarios for each (`e4`/`e5` twins, the `a-b-c-d-a` cycle, reverse hops, a witness `e1, e1, e1` that revisits nodes). Random graphs include parallel edges and self-loops, and `verify_result` re-checks every witness against the records | `tests/test_operations.py`, `tests/test_oracle.py` |
 | Large integer costs keep their order; missing, negative and non-finite costs are refused | Costs of `2**64 + 1` versus `2**64 + 2`, which a float sum cannot tell apart; floats added as exact rationals; each refusal code tested (`missing_cost`, `negative_cost` as unsupported, `non_finite_cost`, `invalid_cost`) | `tests/test_operations.py`, `tests/test_requests.py` |
 | Output limits, cancellation, deadlines and exhausted budgets cannot certify a negative | Each limit, with exact-fit and one-short cases. Random limits on every operation: an interrupted answer only lists what the full answer holds, and never says `found: false`. The JSON Schema and the conformance suite refuse a result that claims otherwise | `tests/test_limits.py`, `tests/test_oracle.py`, `tests/test_schemas.py`, `tests/test_conformance.py` |
@@ -68,4 +76,5 @@ a per-edge cost table. These are the first places to optimize, before any altern
 1. Review the contract (work item 1) and settle anything it should change before a consumer depends on it.
 2. Propose the SCALE adapter to SCALE as a pull request, under SCALE's process.
 3. Profile and reduce result-making and per-edge cost binding (work item 5): lighter freezing, streaming digests.
-4. Build a second consumer's adapter, from STATES or RATES, on a real workflow (work item 6).
+4. Propose the STATES adapter to STATES, under its own process.
+5. A third workflow, RATES (its site graphs), when one needs an operation GRAPH has.

@@ -67,6 +67,13 @@ The SCALE integration tests run in SCALE's environment and only read SCALE
 PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale -p no:cacheprovider
 ```
 
+The STATES integration tests run in STATES's environment in the same way, and only read STATES
+([docs/STATES_INTEGRATION.md](docs/STATES_INTEGRATION.md)):
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python -m pytest integrations/states -p no:cacheprovider
+```
+
 ## Layout
 
 | Path | What it holds |
@@ -74,6 +81,7 @@ PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale
 | `src/graph_runtime/` | The runtime (standard library only): `projection`, `request`, `engine`, `result`, `verify`, `hypotheses`, `schemas/`, `conformance/` |
 | `tests/` | Unit, scenario, oracle-parity (independent oracle and NetworkX), limit, schema and conformance tests |
 | `integrations/scale/` | SCALE's adapter (application-owned, staged here) and its parity tests against SCALE's own engine |
+| `integrations/states/` | STATES's adapter (application-owned, staged here) and its parity tests against STATES's own context extraction |
 | `examples/` | The synthetic revision example |
 | `docs/` | The developer note, the contract, the hypothesis contract, the implementation plan and the SCALE integration |
 
@@ -86,3 +94,4 @@ PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale
 - [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md): the six work items, their status and the evidence for
   each acceptance requirement.
 - [docs/SCALE_INTEGRATION.md](docs/SCALE_INTEGRATION.md): the SCALE baseline, the adapter and its parity results.
+- [docs/STATES_INTEGRATION.md](docs/STATES_INTEGRATION.md): the STATES baseline, the adapter and its parity results.

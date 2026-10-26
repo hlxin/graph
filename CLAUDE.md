@@ -11,6 +11,7 @@ python3 -m pytest                                    # runtime tests (needs pyte
 PYTHONPATH=src python3 examples/synthetic_revision/run.py --check
 python3 benchmarks/bench.py --sizes small,medium     # raw results go to benchmarks/runs/ (ignored)
 PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale -p no:cacheprovider   # SCALE parity
+PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python -m pytest integrations/states -p no:cacheprovider  # STATES parity
 ```
 
 ## Layout
@@ -19,7 +20,8 @@ PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale
   `engine` (the four operations, limits), `result` (the result contract), `verify` (independent witness checks),
   `hypotheses` (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend cases).
 - `tests/`: `oracle.py` holds the independent oracles and the random graph generator.
-- `integrations/scale/`: SCALE's adapter (application-owned, staged here) and its parity tests.
+- `integrations/scale/`, `integrations/states/`: the SCALE and STATES adapters (application-owned, staged here) and
+  their parity tests.
 
 ## Invariants
 
@@ -42,6 +44,7 @@ copied from the engine's output. Raise `CONTRACT` in `projection.py` when a cons
 
 ## Repository
 
-`hlxin/graph` on GitHub (private). Commit or push only when asked. SCALE (`../scale`) is read-only from here: run its
-code only with `PYTHONDONTWRITEBYTECODE=1` and `-p no:cacheprovider`, and never write into it. A change to SCALE goes
-through SCALE's own process (`../scale/AGENTS.md`).
+`hlxin/graph` on GitHub (private). Commit or push only when asked. SCALE (`../scale`) and STATES (`../STATES`) are
+read-only from here: run their code only with `PYTHONDONTWRITEBYTECODE=1` and `-p no:cacheprovider`, and never write
+into them (other sessions may be working in them). A change to SCALE goes through SCALE's own process
+(`../scale/AGENTS.md`).
