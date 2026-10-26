@@ -47,7 +47,7 @@ def check_parity(env, doc, spec, plan, p, tally):
     root = (plan.get("match") or {}).get("as", "self")
     answer = env["run"](doc, spec, adapter.structural(plan))
     traced = adapter.trace(doc, spec, plan, p)
-    if answer["status"] == "schema_gap":            # SCALE: the schema cannot express it; GRAPH: it names nothing declared
+    if answer["status"] == "schema_gap":     # SCALE: the schema cannot express it; GRAPH: it names nothing declared
         assert all(r["status"] == "failed" and r["error"]["code"] in ("unknown_relation", "unknown_node_type")
                    for r in traced["records"]), answer["schema_gaps"]
         tally["schema_gap"] += 1
@@ -181,7 +181,7 @@ def test_trace_checks_reused_projection_bindings(scale_env, binding):
                and not r["links"] and not r["evidence"] for r in rows)
 
 
-# ---------------------------------------------------------------------------------------------- what rests on retractions
+# ------------------------------------------------------------------------------------- what rests on retractions
 def compare_resting(doc, spec, tally):
     """GRAPH's dependency impact against scale.lifecycle.resting on one document: the same records, each resting on
     the same retracted sources and datasets."""
@@ -225,7 +225,8 @@ def loadable_documents(scale_env):
                     from scale import layout, pgraph
                     doc = load_doc(path)
                     manifest = layout.graph_manifests(repo, experimental=True)["catalysis"]
-                    spec = pgraph.load_spec(pgraph.pinned(manifest, (doc.get("graph") or {}).get("schema_version"), doc))
+                    version = (doc.get("graph") or {}).get("schema_version")
+                    spec = pgraph.load_spec(pgraph.pinned(manifest, version, doc))
             except Exception:              # noqa: BLE001 - not a document the tools read (a fixture, a part)
                 continue
             if isinstance(doc, dict) and isinstance(doc.get("nodes"), list) and isinstance(doc.get("links"), list):
@@ -264,7 +265,8 @@ def with_retracted_dataset(doc, source, included):
     out = copy.deepcopy(doc)
     d = "ex:graph-parity/dataset"
     out["nodes"] += [copy.deepcopy(NOTICE), {"id": d, "label": "Dataset", "props": {"title": "a retracted table"}}]
-    out["links"] += [{"id": "ex:graph-parity/reported", "source": d, "target": source, "type": "REPORTED_IN", "props": {}},
+    out["links"] += [{"id": "ex:graph-parity/reported", "source": d, "target": source, "type": "REPORTED_IN",
+                      "props": {}},
                      {"id": "ex:graph-parity/retracts", "source": NOTICE["id"], "target": d, "type": "RETRACTS",
                       "props": {"scope": "full"}}]
     out["links"] += [{"id": f"ex:graph-parity/includes-{k}", "source": d, "target": r, "type": "INCLUDES", "props": {}}
@@ -284,7 +286,8 @@ def test_retractions_injected_into_every_document_match_scale(scale_env):
         compare_resting(with_retractions(doc, sources[::3]), spec, tally)
         label = {n["id"]: n["label"] for n in doc["nodes"]}
         citing = sorted(n["id"] for n in doc["nodes"] if any(
-            isinstance(ev, dict) and ev.get("source") == sources[0] for ev in (n.get("props") or {}).get("evidence") or []))
+            isinstance(ev, dict) and ev.get("source") == sources[0]
+            for ev in (n.get("props") or {}).get("evidence") or []))
         others = sorted(n["id"] for n in doc["nodes"] if n["id"] not in citing and label[n["id"]] != "Source")
         compare_resting(with_retracted_dataset(doc, sources[0], citing[::2] + others[:2]), spec, tally)
         tally["documents"] += 1

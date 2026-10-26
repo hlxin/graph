@@ -9,14 +9,29 @@ from types import MappingProxyType
 from typing import Any
 
 
+_ATOMS = (str, int, float, bool, type(None))
+encode_text = json.encoder.encode_basestring       # how canonical JSON writes a string (the C encoder when present)
+
+
 def canonical_json(value: Any) -> str:
     """Sorted keys, no insignificant whitespace, text kept as it is (UTF-8), NaN and infinities refused."""
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
 
 
+def canonical_object(parts: Mapping[str, str]) -> str:
+    """The canonical JSON of an object whose values are already canonical JSON (``parts``: key -> encoded value):
+    the same text :func:`canonical_json` writes for the object, without encoding its values again."""
+    return "{" + ",".join(f"{encode_text(k)}:{parts[k]}" for k in sorted(parts)) + "}"
+
+
+def sha256_text(text: str) -> str:
+    """``sha256:<hex>`` of a text's UTF-8 bytes."""
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def digest(value: Any) -> str:
     """``sha256:<hex>`` of the canonical JSON of ``value``."""
-    return "sha256:" + hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+    return sha256_text(canonical_json(value))
 
 
 def json_safe(value: Any) -> Any:
@@ -52,16 +67,16 @@ def is_digest(text: Any) -> bool:
 def freeze(value: Any) -> Any:
     """A read-only copy: mappings become mapping proxies over fresh dicts, lists and tuples become tuples."""
     if isinstance(value, Mapping):
-        return MappingProxyType({k: freeze(v) for k, v in value.items()})
+        return MappingProxyType({k: v if type(v) in _ATOMS else freeze(v) for k, v in value.items()})
     if isinstance(value, (list, tuple)):
-        return tuple(freeze(v) for v in value)
+        return tuple(v if type(v) in _ATOMS else freeze(v) for v in value)
     return value
 
 
 def thaw(value: Any) -> Any:
     """A plain, JSON-ready copy of a frozen value: dicts and lists that share nothing with it."""
     if isinstance(value, Mapping):
-        return {k: thaw(v) for k, v in value.items()}
+        return {k: v if type(v) in _ATOMS else thaw(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [thaw(v) for v in value]
+        return [v if type(v) in _ATOMS else thaw(v) for v in value]
     return value

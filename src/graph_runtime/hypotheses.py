@@ -58,7 +58,9 @@ STALE_NOTE = ("stale true: re-examine the candidate (that does not make it false
 ORDER_NOTE = ("An ordering score orders candidates within one method, version and candidate set only; it is a "
               "probability only with interpretation probability and a calibration reference, which the consuming "
               "application must assess.")
-_TIME = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2})(?:T([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]+))?)?(Z|[+-][0-9]{2}:[0-9]{2})?)?")
+_TIME = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2})"                       # the date
+                   r"(?:T([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]+))?)?"   # then a time, seconds optional
+                   r"(Z|[+-][0-9]{2}:[0-9]{2})?)?")                       # and an offset, optional
 
 
 # ---------------------------------------------------------------------------------------------- validation
@@ -307,8 +309,8 @@ def _score(s: Any, where: str, bad) -> None:
     _text(s["calibration"], f"{where}.calibration", bad, optional=True)
     if s["interpretation"] == "probability":
         if not isinstance(s["calibration"], str) or not s["calibration"].strip():
-            bad(f"{where}.calibration", "uncalibrated_probability", "a score read as a probability names its calibration "
-                "reference; an uncalibrated score is an ordering value")
+            bad(f"{where}.calibration", "uncalibrated_probability", "a score read as a probability names its "
+                "calibration reference; an uncalibrated score is an ordering value")
         if v is not None and not 0 <= v <= 1:
             bad(f"{where}.value", "invalid_score", "a probability lies between 0 and 1")
 
@@ -559,8 +561,8 @@ class HypothesisCandidate:
     def _transition(self, state: str) -> None:
         if self.state != "active":
             raise CandidateError([{"path": "lifecycle", "code": "invalid_transition",
-                                   "message": f"a {self.state} candidate cannot become {state}: withdrawn and superseded "
-                                              "are final (a reformulation is a new candidate)"}])
+                                   "message": f"a {self.state} candidate cannot become {state}: withdrawn and "
+                                              "superseded are final (a reformulation is a new candidate)"}])
 
     def withdraw(self, *, at: str, reason: str) -> "HypothesisCandidate":
         """A revision in which the candidate is withdrawn (a change of scope or formulation, say: not a finding that

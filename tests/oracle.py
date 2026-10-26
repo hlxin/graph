@@ -47,11 +47,13 @@ def least_depths(edges, sources, scope, max_depth=None, strict=False):
 
 def typed_ends(nodes, edges, sources, pattern, targets=None):
     """The nodes a walk matching the pattern can end at (within targets, when given), by layered sets."""
-    types = {n if isinstance(n, str) else n["id"]: set([] if isinstance(n, str) else n.get("types") or []) for n in nodes}
+    types = {n if isinstance(n, str) else n["id"]: set([] if isinstance(n, str) else n.get("types") or [])
+             for n in nodes}
     frontier = set(sources)
     for pos in pattern:
         want = None if pos.get("node_types") is None else set(pos["node_types"])
-        frontier = {v for u, v, _ in hops_of(edges, pos["scope"]) if u in frontier and (want is None or types[v] & want)}
+        frontier = {v for u, v, _ in hops_of(edges, pos["scope"])
+                    if u in frontier and (want is None or types[v] & want)}
     return frontier if targets is None else frontier & set(targets)
 
 
