@@ -673,7 +673,7 @@ async function revalidationSlide() {
 async function verificationSlide() {
   const s = contentSlide("Trust and results", "How we know the answers are right",
     "Four independent checks, none of which trusts the engine's own output.");
-  const n = K.verification.length, gap = 0.25, tw = (CW - gap * (n - 1)) / n, th = 1.3;
+  const n = K.verification.length, gap = 0.25, tw = (CW - gap * (n - 1)) / n, th = 1.15;
   K.verification.forEach((v, i) => {
     const x = MX + i * (tw + gap);
     card(s, x, TOP, tw, th, { fill: C.text2, name: `count ${v.label}` });
@@ -688,7 +688,8 @@ async function verificationSlide() {
     ["LuListChecks", "Hand-worked cases", "Language-neutral cases whose expectations are worked out by hand, never copied from the engine; any backend must pass them."],
     ["LuGitCompare", "Consumer parity", "SCALE: 18,951 records on injected retractions, 1,654 generated chains. STATES: 760 contexts, 38,033 atom images."],
   ];
-  const my = TOP + th + 0.3, mh = BOTTOM - my - 0.45, mw = (CW - 3 * 0.3) / 4;
+  const reviewW = CW, reviewH = K.reviews.reduce((a, t) => a + height(t, reviewW, 12, 1.2, { bold: false }), 0) + 0.08;
+  const my = TOP + th + 0.25, mh = BOTTOM - my - reviewH - 0.2, mw = (CW - 3 * 0.3) / 4;
   for (let i = 0; i < methods.length; i++) {
     const [ic, head, body] = methods[i];
     const x = MX + i * (mw + 0.3);
@@ -698,8 +699,8 @@ async function verificationSlide() {
     check(`method ${head}`, 1.25 + height(body, mw - 0.44, 14), mh - 0.1);
     text(s, rich(body, { fontSize: 14, color: C.text1 }), { x: x + 0.22, y: my + 1.25, w: mw - 0.44, h: mh - 1.35 });
   }
-  text(s, "Also: an independent review that fuzzed the runtime (about 50,000 cases), and a Codex review of the contract (v0.1). Golden test: 1,200 pinned result_ids.", { x: MX, y: BOTTOM - 0.32, w: CW, h: 0.32, fontSize: 12, color: C.accent6, italic: true });
-  s.addNotes("Counts as of this build: python3 -m pytest (499 pass), src/graph_runtime/conformance/cases.json (133 cases), SCALE parity (16 tests) and STATES parity (6 tests) in their environments; 73 of 73 real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: git log 8917563, 7ff04db.");
+  text(s, K.reviews.map((t, i) => ({ text: t, options: { fontSize: 12, color: C.accent6, italic: true, paraSpaceAfter: 3, breakLine: i < K.reviews.length - 1 } })), { x: MX, y: BOTTOM - reviewH, w: reviewW, h: reviewH, valign: "bottom" });
+  s.addNotes("Counts as of this build: python3 -m pytest (514 pass), src/graph_runtime/conformance/cases.json (143 cases), SCALE parity (16 tests) and STATES parity (6 tests) in their environments; 73 of 73 real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: git log 8917563, 7ff04db; Codex adversarial reviews before commit: git log 99fb868 (a request field named kind was overwritten by the digest's record kind, now connectivity; unlisted groups and stray trees in the components certificate) and 573ce2b (an interrupted max flow's upper bound was not verified).");
 }
 
 async function speedSlide() {
@@ -733,17 +734,21 @@ async function headToHeadSlide() {
     objectName: "STATES chart",
   });
   text(s, "Identical answers on all 760 parity contexts. The largest context: 3.9 s through a lifted box, 29 ms on the periodic cell.", { x: MX, y: TOP + ch + 0.1, w, h: 0.6, fontSize: 13, color: C.text1 });
-  const S2 = K.structureChart;
+  const N = K.networkxChart;
   const x2 = MX + w + 0.4;
-  s.addChart(pres.charts.BAR, [{ name: "seconds", labels: S2.labels, values: S2.values }], {
-    x: x2, y: TOP, w, h: ch, barDir: "bar", catAxisOrientation: "maxMin", valAxisHidden: true,
-    chartColors: S2.graph.map((g) => (g ? HEX.accent1 : HEX.accent6)), barGapWidthPct: 45,
-    showValue: true, dataLabelPosition: "outEnd", dataLabelFormatCode: "0.00",
-    ...chartStyle({ title: "100k nodes, 500k edges (about 250k in scope): seconds" }),
-    objectName: "structure chart",
+  s.addChart(pres.charts.BAR, [
+    { name: "GRAPH", labels: N.labels, values: N.graph },
+    { name: "networkx", labels: N.labels, values: N.networkx },
+  ], {
+    x: x2, y: TOP, w, h: ch, barDir: "bar", barGrouping: "clustered", catAxisOrientation: "maxMin", valAxisHidden: true,
+    chartColors: [HEX.accent1, HEX.accent6], barGapWidthPct: 40,
+    showValue: true, dataLabelPosition: "outEnd", dataLabelFormatCode: "0.0#",
+    ...chartStyle({ title: "Seconds, against networkx (pure Python too)", showLegend: true, legendPos: "b", legendFontFace: CHART_FONT, legendFontSize: 12, legendColor: HEX.dk1 }),
+    objectName: "networkx chart",
   });
-  text(s, "networkx is pure Python too. GRAPH's components and biconnectivity answers come with certificates.", { x: x2, y: TOP + ch + 0.1, w, h: 0.6, fontSize: 13, color: C.text1 });
-  s.addNotes(`Left: ${S1.source}. Mean of 42 contexts: STATES's extract_context 58.5 ms; GRAPH through a lift 305 ms (222 ms lift + 0.34 ms query); GRAPH on the cell 17.1 ms (10.6 ms projection + 0.76 ms query). The cell's projection depends only on the record, so it can be built once and reused. Right: ${S2.source}. Teal: GRAPH; gray: networkx. Heavily loaded machine: compare ratios.`);
+  text(s, N.caption, { x: x2, y: TOP + ch + 0.1, w, h: 0.6, fontSize: 13, color: C.text1 });
+  check("networkx caption", height(N.caption, w, 13), 0.6);
+  s.addNotes(`Left: ${S1.source}. Mean of 42 contexts: STATES's extract_context 58.5 ms; GRAPH through a lift 305 ms (222 ms lift + 0.34 ms query); GRAPH on the cell 17.1 ms (10.6 ms projection + 0.76 ms query). The cell's projection depends only on the record, so it can be built once and reused. Heavily loaded machine: compare ratios. Right: ${N.source}. Articulation points: GRAPH's biconnectivity (which also finds bridges) against networkx's articulation_points; max flow: 5 sources, 5 targets, integer capacities, against networkx maximum_flow_value; matching: against networkx hopcroft_karp_matching. GRAPH's answers come with certificates.`);
 }
 
 async function timelineSlide() {
@@ -759,8 +764,8 @@ async function timelineSlide() {
       text(s, [{ text: r.day.toUpperCase(), options: { fontSize: 12, bold: true, color: C.accent1, charSpacing: 1 } }], { x: lx + 0.3, y, w: tw - 1.4, h: pitch, valign: "middle" });
       return;
     }
-    const d = r.isNew ? 0.2 : 0.16;
-    s.addShape(pres.shapes.OVAL, { x: lx - d / 2, y: y + pitch / 2 - d / 2, w: d, h: d, fill: { color: r.isNew ? C.accent2 : C.accent1 }, line: { color: C.background1, width: 1.5 }, objectName: `milestone ${r.when}` });
+    const d = r.latest ? 0.2 : 0.16;
+    s.addShape(pres.shapes.OVAL, { x: lx - d / 2, y: y + pitch / 2 - d / 2, w: d, h: d, fill: { color: r.latest ? C.accent2 : C.accent1 }, line: { color: C.background1, width: 1.5 }, objectName: `milestone ${r.when}` });
     text(s, [{ text: r.when, options: { fontSize: 13, color: C.accent6 } }], { x: x0, y, w: lx - x0 - 0.2, h: pitch, align: "right", valign: "middle" });
     check(`timeline ${r.when}`, height(r.what, tw - 1.35, 14) , pitch + 0.02);
     text(s, rich(r.what, { fontSize: 14, color: C.text1 }), { x: lx + 0.3, y, w: tw - 1.35, h: pitch, valign: "middle" });
@@ -782,13 +787,12 @@ async function timelineSlide() {
     ...chartStyle({ title: "Hand-worked conformance cases", catAxisLabelFontSize: 11, dataLabelFontSize: 11 }),
     objectName: "conformance growth chart",
   });
-  s.addNotes("Source: git log (20 commits, 550c362 to 7b39f7d) and the working tree (components and biconnectivity: src/graph_runtime/structure.py, tests/test_structure.py, not yet committed). Conformance case counts are from the commit messages (34 at v0, then 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121) and cases.json now (133). Tests: 178 at v0 (550c362), 499 now. Commit times are local (-0400).");
+  s.addNotes(`Source: git log (23 commits, 550c362 to 573ce2b; some rows group neighbouring commits). Conformance case counts are from the commit messages (34 at v0, then 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133) and cases.json now (${K.growth.cases[K.growth.cases.length - 1]}). Tests: ${K.growth.tests}. Commit times are local (-0400).`);
 }
 
 async function roadmapSlide() {
   pres.addSection({ title: "Roadmap" });
-  const s = contentSlide("Roadmap", "Roadmap: the next increments",
-    "From two literature surveys run with Codex. Structural decomposition, which both recommend, is done; these come next.");
+  const s = contentSlide("Roadmap", "Roadmap: the next increments", K.roadmapLede);
   const cols = [
     { key: "name", label: "INCREMENT", w: 2.95 },
     { key: "answers", label: "WHAT IT ANSWERS", w: 3.55 },

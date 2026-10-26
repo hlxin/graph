@@ -18,7 +18,7 @@ const meta = {
   date: "October 2026",
   version: "0.1.0.dev0",
   contract: "graph-runtime/v0.2",
-  operations: 13, // the request operations (src/graph_runtime/request.py, OPERATIONS)
+  operations: 15, // the request operations (src/graph_runtime/request.py, OPERATIONS)
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -192,9 +192,9 @@ const families = [
     key: "structure",
     family: "Structure",
     slideTitle: "Structure: pieces and weak points",
-    lede: "Recommended by both literature surveys. Implemented and tested; not yet committed.",
+    lede: "Recommended by both literature surveys. Both answers prove themselves on request, from the records alone.",
     icon: "LuSplit",
-    source: "docs/API_CONTRACT.md §4: Components, Biconnectivity; src/graph_runtime/structure.py",
+    source: "docs/API_CONTRACT.md §4: Components, Biconnectivity; git log 99fb868",
     ops: [
       {
         name: "components",
@@ -203,7 +203,6 @@ const families = [
         algorithm: "Breadth-first search (weak) or Tarjan's depth-first search (1972) for strong components. Linear time.",
         proofLabel: "Certificate proves",
         proof: "Spanning trees prove each listed component connected (strong: one out, one in); a closed partition in topological order proves nothing outside belongs with it.",
-        isNew: true,
       },
       {
         name: "biconnectivity",
@@ -212,7 +211,32 @@ const families = [
         algorithm: "One depth-first search with low points (Hopcroft and Tarjan, 1973). Linear time.",
         proofLabel: "Certificate proves",
         proof: "The depth-first forest: a checker confirms it is one, recomputes every low point from the records, and each claim follows.",
-        isNew: true,
+      },
+    ],
+  },
+  {
+    key: "flows",
+    family: "Structure and flows",
+    slideTitle: "Flows: throughput, cuts and pairings",
+    lede: "Each answer is proven optimal by its dual: a minimum cut for a flow, a vertex cover for a matching.",
+    icon: "LuWaves",
+    source: "docs/API_CONTRACT.md §4: Max flow, Matching; §6; git log 573ce2b",
+    ops: [
+      {
+        name: "max_flow",
+        title: "Throughput, and the cut that limits it",
+        theory: "As much as the capacities let through from the sources to the targets (Ford and Fulkerson, 1956). Unit capacities count edge- or node-disjoint paths (Menger, 1927).",
+        algorithm: "Dinic's algorithm (1970) in exact integers: breadth-first levels in the residual graph, then a blocking flow; the residual graph is built only where the search reads it.",
+        proofLabel: "Certificate proves",
+        proof: "The cut's source side: a checker confirms the flow and recomputes a cut of the same value from the records, so both are optimal (max-flow min-cut theorem).",
+      },
+      {
+        name: "matching",
+        title: "As many distinct pairings as possible",
+        theory: "A maximum matching of a left set to partners outside it, no node in two pairs: samples to instruments, claims to reviewers.",
+        algorithm: "Hopcroft and Karp (1973): breadth-first phases along alternating paths from the unpaired left nodes, then augmentation along the shortest ones.",
+        proofLabel: "Certificate proves",
+        proof: "König's vertex cover (1931): as many nodes as pairs, touching every candidate hop, so no matching is larger. When pairs fall short, Hall's condition shows why.",
       },
     ],
   },
@@ -225,7 +249,7 @@ const overview = [
   { family: "Patterns", icon: "LuNetwork", ops: ["pattern"], answers: "Multi-step questions: trees counted exactly, cycles by a worst-case optimal join." },
   { family: "Ranking", icon: "LuBarChart3", ops: ["personalized_pagerank"], answers: "Relevance around chosen nodes, as proven intervals." },
   { family: "Periodic", icon: "LuAtom", ops: ["periodicity"], answers: "Periodic projections: crystals, slabs and polymers searched from one cell." },
-  { family: "Structure", icon: "LuSplit", ops: ["components", "biconnectivity"], answers: "Pieces, loops and single points of failure.", isNew: true },
+  { family: "Structure and flows", icon: "LuSplit", ops: ["components", "biconnectivity", "max_flow", "matching"], answers: "Pieces, single points of failure, throughput and distinct pairings." },
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -246,12 +270,15 @@ const statesChart = {
   source: "docs/STATES_INTEGRATION.md, Cost (benchmarks/consumers.py, 26 October 2026)",
 };
 
-// components and biconnectivity on 100k nodes / 500k edges (about 250k in scope), seconds.
-const structureChart = {
-  labels: ["GRAPH weak components", "GRAPH strong components", "networkx strong components", "GRAPH biconnectivity", "networkx articulation points"],
-  values: [0.45, 0.38, 0.34, 0.57, 0.36],
-  graph: [true, true, false, true, false],
-  source: "Benchmark of the uncommitted structure increment (components, biconnectivity), October 2026",
+// GRAPH against networkx (pure Python too), seconds. Components, articulation points (GRAPH: biconnectivity, which
+// also finds bridges) and max flow (5 sources, 5 targets, integer capacities) on 100k nodes / 500k edges (about 250k
+// in scope for the structure runs); matching on 50k + 50k nodes with 250k candidate edges.
+const networkxChart = {
+  labels: ["Strong components", "Articulation points", "Max flow", "Matching"],
+  graph: [0.38, 0.57, 4.5, 2.5],
+  networkx: [0.34, 0.36, 6.4, 2.1],
+  caption: "100k nodes, 500k edges (matching: 50k + 50k nodes, 250k edges). Also: weak components 0.45 s; max flow with unit capacities 3.8 s.",
+  source: "Structure benchmark (99fb868 increment) and git log 573ce2b; max flow and matching measured on the owner's machine",
 };
 
 // Revalidation (git log e365fdc; README).
@@ -265,16 +292,22 @@ const revalidation = {
 
 // Verification counts at the time of the build. Update with every increment.
 const verification = [
-  { big: "499", label: "runtime tests pass" },
-  { big: "133", label: "hand-worked conformance cases" },
+  { big: "514", label: "runtime tests pass" },
+  { big: "143", label: "hand-worked conformance cases" },
   { big: "16", label: "SCALE parity tests" },
   { big: "6", label: "STATES parity tests" },
   { big: "73 / 73", label: "real consumer requests agree" },
 ];
 
+// How increments are reviewed (git log 99fb868, 573ce2b). Shown under the checks on the verification slide.
+const reviews = [
+  "Also: an independent review that fuzzed the runtime (about 50,000 cases), a Codex review of the contract (v0.1), and a golden test of 1,200 pinned result_ids.",
+  "Each increment now gets a Codex adversarial review before it is committed: it caught a request_id collision and two certificate holes (structure) and an unverified interrupted upper bound (flows), all fixed with regression tests.",
+];
+
 // ---------------------------------------------------------------------------------------------------------------
 // Development timeline (git log). `when` is local time, -0400.
-const timelineLede = "Twenty commits on 25–26 October 2026: from four operations to thirteen, the last two awaiting commit.";
+const timelineLede = "Twenty-three commits on 25–26 October 2026: from four operations to fifteen.";
 const timeline = [
   { day: "25 Oct 2026" },
   { when: "17:17", what: "v0: projections, 4 operations, results; SCALE parity" },
@@ -285,26 +318,26 @@ const timeline = [
   { day: "26 Oct 2026" },
   { when: "00:14", what: "Certificates, revalidation; JSON tools, CLI, MCP" },
   { when: "00:27", what: "`bottleneck_path`" },
-  { when: "04:25", what: "Compiled hop lists · `regular_path`" },
-  { when: "04:44", what: "`derivation`" },
+  { when: "04:25", what: "Compiled hop lists · `regular_path` · `derivation`" },
   { when: "05:12", what: "Periodic projections · `periodicity`" },
-  { when: "05:19", what: "Certified personalized PageRank" },
-  { when: "05:30", what: "Cyclic patterns (worst-case optimal join)" },
-  { when: "next", what: "`components` · `biconnectivity` (not yet committed)", isNew: true },
+  { when: "05:19", what: "Certified PageRank · cyclic patterns" },
+  { when: "10:09", what: "`components` · `biconnectivity`" },
+  { when: "10:15", what: "These slides" },
+  { when: "10:29", what: "`max_flow` · `matching`", latest: true },
 ];
 
 // Hand-worked conformance cases after each increment (commit messages; cases.json now).
 const growth = {
-  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure"],
-  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133],
-  operations: "4 → 13",
-  tests: "178 → 499",
+  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows"],
+  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143],
+  operations: "4 → 15",
+  tests: "178 → 514",
 };
 
 // ---------------------------------------------------------------------------------------------------------------
 // Roadmap: the next increments (plan.md after the two Codex surveys, codex_literature.md and codex_domains.md).
+const roadmapLede = "From two literature surveys run with Codex. Structure and flows, which both recommend, are done; these come next.";
 const roadmap = [
-  { name: "Max-flow, min-cut, matching", icon: "LuDroplets", answers: "Capacity bottlenecks, separators, disjoint routes, assignments.", cert: "A flow and a cut of equal value; a matching and a König cover.", ref: "Dinic 1970; Hopcroft–Karp 1973" },
   { name: "Dominators", icon: "LuMilestone", answers: "The nodes every route from a source must pass through.", cert: "A dominator tree with a low-high order, checked against the edges.", ref: "Lengauer–Tarjan 1979; Georgiadis–Tarjan 2015" },
   { name: "Exact incidence algebra", icon: "LuSigma", answers: "Exact rank and kernels: conservation laws for RATES, Petri nets.", cert: "Elimination identities, kernel equations; Farkas for infeasibility.", ref: "Feinberg 1987 (deficiency, in adapters)" },
   { name: "Support certificates", icon: "LuShieldCheck", answers: "Support answers checked and revalidated without recomputing.", cert: "Derivation ranks and closure under every rule prove the least fixpoint.", ref: "Dowling–Gallier 1984; McConnell et al. 2011" },
@@ -329,6 +362,6 @@ const boundaries = {
 };
 
 module.exports = {
-  meta, families, overview, speedTiles, statesChart, structureChart, revalidation, verification, timelineLede, timeline,
-  growth, roadmap, boundaries,
+  meta, families, overview, speedTiles, statesChart, networkxChart, revalidation, verification, reviews, timelineLede,
+  timeline, growth, roadmapLede, roadmap, boundaries,
 };
