@@ -13,6 +13,7 @@ states consistently, and required costs only for edges actually in scope. Revisi
 
 - type and relation hierarchies (section 1)
 - the `pattern` operation: tree patterns, enumerated without dead ends and counted without listing (section 4)
+- the `support` operation: what loses all or some of its support when nodes fail, under AND/OR rules (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -90,6 +91,7 @@ no wildcard: a scope lists what it follows.
 | `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}` | `max_expansions` |
 | `dependency_impact` | `changed` (node IDs), `scope` (the direction in which a change propagates), `max_depth` | `max_expansions`, `max_results` |
 | `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
+| `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
 normalized request always states it.
@@ -206,6 +208,31 @@ along the kept hops, without listing them.
 
 Answer: `{"exists", "total", "rows": [{"nodes", "edges", "links"}], "count", "coverage"}`.
 
+**Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
+SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for
+example from a claim to its evidence items, or from an item to the source it cites.
+
+- **Rules.** A node with no support stands: it is a ground, such as a source or an axiom. A node of an `all_of` type
+  (through the hierarchy) stands when every support stands. Any other node stands when one of its supports does.
+  Parallel hops to one support count once. A failed node never stands.
+- **Least fixpoint.** What stands is the least fixpoint of these rules, so support in a circle grounds nothing. A
+  node supported only by a cycle that has lost its way to a ground falls with it.
+- **Before and after.** The analysis computes what stands with nothing failed, and with the failed nodes held down.
+  `lost` lists the nodes that stood before and do not now. `weakened` lists the nodes that still stand but lost a
+  support that stood before. Nodes that never stood (`ungrounded`) are counted, never listed as lost.
+- **Entries.** Each entry gives the node's `supports` (distinct support nodes), how many still stand
+  (`standing`), and `failing`: the first hop, in canonical order, to each support that fell. `causes` are the
+  failed nodes it rests on through fallen supports. A failed node's own cause is itself, so a failure behind
+  another failure is not named twice.
+- **Cost.** Only the region the failures reach is read: their dependents, and everything those depend on. The rest
+  of the projection cannot change the answer.
+- **Limits.** An expansion budget, a deadline or a cancellation that stops the analysis leaves `lost`, `weakened`
+  and `counts` null: unknown, never empty. `max_results` bounds the nodes listed, lost ones first. More than that is
+  an `output_limit` interruption, and the counts stay exact.
+
+Answer: `{"failed", "lost": [{"node", "supports", "standing", "failing": [hop], "causes"}], "weakened": [...],
+"counts": {"lost", "weakened", "ungrounded"}}`.
+
 ## 5. Results
 
 | Field | Meaning |
@@ -266,9 +293,12 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that every witness hop names an input edge with that relation, in the requested scope and direction
   - that hops chain from a requested source to what they witness, and match typed-path positions and node types
   - that shortest-path costs are the exact sum of the hop costs
+  - for support, everything: it recomputes what stands before and after from the records, by re-evaluating each
+    node's rule until nothing changes rather than by the engine's counting, and compares every listed node, count,
+    failing hop and cause
 
-  It does not check completeness or minimality; the oracle tests do.
-- `graph_runtime.conformance.run_conformance(execute)` runs 62 language-neutral cases (`conformance/cases.json`),
+  For the path operations it does not check completeness or minimality; the oracle tests do.
+- `graph_runtime.conformance.run_conformance(execute)` runs 70 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -280,7 +310,7 @@ These are later extensions:
 
 - approximate modes and ranking (personalized PageRank, learned graph reasoning)
 - GPU execution and alternative backends (to be introduced after profiling, behind the conformance suite)
-- generic AND/hypergraph execution
+- generic AND/hypergraph execution beyond `support`'s two rules (hyperedges, weighted or counted support)
 - property filters on values
 - traversal of candidate relations: a combined view needs its own contract, one that keeps candidate identity in
   every edge and witness

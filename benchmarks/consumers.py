@@ -114,6 +114,12 @@ def scale_rows() -> list[dict]:
         rows.append({"workflow": "resting on retractions", "document": rel,
                      "records": len(doc["nodes"]) + len(doc["links"]), "native_s": native_s,
                      "graph_whole_s": whole_s, "same_answer": set(got["records"]) == set(want)})
+        whole_s, got = best(lambda: adapter.resting_support(doc, spec))
+        rows.append({"workflow": "resting all or in part (support)", "document": rel,
+                     "records": len(doc["nodes"]) + len(doc["links"]), "native_s": native_s,
+                     "graph_whole_s": whole_s,
+                     "same_answer": {r: g["rests"] for r, g in got["records"].items()} ==
+                     {r: w["rests"] for r, w in want.items()}})
     return rows
 
 

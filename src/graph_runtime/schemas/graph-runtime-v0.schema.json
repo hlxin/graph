@@ -368,6 +368,53 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "failed",
+            "scope",
+            "all_of"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "support"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_sets"
+            },
+            "failed": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "all_of": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
         }
       ]
     },
@@ -1338,7 +1385,8 @@
                   "dependency_impact",
                   "typed_path",
                   "shortest_path",
-                  "pattern"
+                  "pattern",
+                  "support"
                 ]
               }
             }
@@ -1696,6 +1744,99 @@
             "properties": {
               "answer": {
                 "$ref": "#/$defs/pattern_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "support"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/support_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              },
+              "operation": {
+                "const": "support"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "properties": {
+                  "lost": {
+                    "type": "array"
+                  },
+                  "weakened": {
+                    "type": "array"
+                  },
+                  "counts": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "pattern"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "pattern"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "support"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "support"
               }
             }
           }
@@ -2646,6 +2787,109 @@
         }
       },
       "description": "exists and total are null only when the search was interrupted before it knew them; total counts every row even when an output limit lists fewer."
+    },
+    "support_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "supports",
+        "standing",
+        "failing",
+        "causes"
+      ],
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/id"
+        },
+        "supports": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "standing": {
+          "$ref": "#/$defs/count"
+        },
+        "failing": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/hop"
+          }
+        },
+        "causes": {
+          "$ref": "#/$defs/ids"
+        }
+      },
+      "description": "A node that lost support: how many supports it has, how many still stand, the hops to the supports that stood before and do not now, and the failed nodes it rests on through them."
+    },
+    "support_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "failed",
+        "lost",
+        "weakened",
+        "counts"
+      ],
+      "properties": {
+        "failed": {
+          "$ref": "#/$defs/ids"
+        },
+        "lost": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/support_entry"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weakened": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/support_entry"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "counts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lost",
+                "weakened",
+                "ungrounded"
+              ],
+              "properties": {
+                "lost": {
+                  "$ref": "#/$defs/count"
+                },
+                "weakened": {
+                  "$ref": "#/$defs/count"
+                },
+                "ungrounded": {
+                  "$ref": "#/$defs/count"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "lost: nodes that stood before the failure and do not now; weakened: nodes that still stand but lost a support. lost, weakened and counts are null only when the analysis was interrupted before its end; counts are exact even when an output limit lists fewer nodes."
     }
   }
 }

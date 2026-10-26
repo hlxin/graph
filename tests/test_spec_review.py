@@ -12,7 +12,8 @@ from graph_runtime import (CONTRACT, CandidateError, HypothesisCandidate, Projec
 from graph_runtime._canonical import digest
 from graph_runtime._validation import shape_problems
 from graph_runtime.conformance import check_case, load_cases, run_conformance
-from oracle import closed_nodes, expand_scope, least_cost, least_depths, pattern_rows, typed_ends
+from oracle import (closed_nodes, expand_scope, least_cost, least_depths, pattern_rows, support_answer,
+                    typed_ends)
 from test_hypotheses import TESTS
 
 
@@ -261,6 +262,15 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
         elif op == 'typed_path':
             want = bool(typed_ends(g['nodes'], g['edges'], r['sources'], r['pattern'], r.get('targets')))
             assert exp['found'] is want, case['name']
+        elif op == 'support':
+            raw, graph = case['request'], suite['graphs'][case['graph']]     # the oracle expands the hierarchies
+            want = support_answer(graph['nodes'], graph['edges'], raw['failed'], raw['scope'], raw.get('all_of'),
+                                  graph.get('type_parents'), rp, relations)
+            if 'counts' in exp:
+                assert exp['counts'] == want['counts'], case['name']
+            for key in ('lost', 'weakened'):
+                if key in exp:
+                    assert exp[key] == want[key], case['name']
         elif op == 'pattern':
             raw = case['request']             # the brute force expands the hierarchies itself
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],
@@ -379,8 +389,11 @@ def test_the_runtime_never_loads_the_optional_retrieval_module_or_numpy():
 
 
 def test_bundled_shape_checks_match_independent_jsonschema_on_mutations():
+    p = graph()
+    support = execute(p, p.request('support', failed=['a'], scope=[('R', 'forward')])).to_dict()
     records = [('projection', graph().to_dict()), ('request', result().to_dict()['request']),
                ('result', result().to_dict()), ('result', result('shortest_path').to_dict()),
+               ('result', support), ('request', support['request']),
                ('hypothesis_candidate', candidate().to_dict())]
     replacements = [None, True, 0, 1.0, '', [], {}]
 

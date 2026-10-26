@@ -44,10 +44,11 @@ def test_every_result_and_request_validates():
             {"operation": "typed_path", "sources": ids[:1], "targets": rng.choice([None, ids[-1:]]),
              "pattern": [{"scope": random_scope(rng), "node_types": rng.choice([None, ["A"]])}] * rng.randint(1, 3)},
             {"operation": "shortest_path", "sources": ids[:1], "targets": ids[-2:], "scope": scope, "costs": costs},
+            {"operation": "support", "failed": ids[:2], "scope": scope, "all_of": rng.choice([None, ["A"]])},
         ]
         for raw in requests:
             limits = {"max_expansions": rng.randint(0, 4)}
-            if raw["operation"] in ("reachability", "dependency_impact"):
+            if raw["operation"] in ("reachability", "dependency_impact", "support"):
                 limits["max_results"] = rng.randint(0, 4)
             cancel = [CancelToken(), lambda: True][i % 2]
             for extra, ctx in (({}, {}), ({"limits": limits}, {}), ({}, {"cancel": cancel})):
