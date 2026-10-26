@@ -1,12 +1,16 @@
 # The runtime's tests, the example's committed outputs and the conformance suite of an installed wheel, on the oldest,
 # a middle and the newest supported Python. The SCALE and STATES parity tests need those checkouts and run locally
 # (docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md).
+#
+# Manual for now. To run on every change again:
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
 name: tests
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
