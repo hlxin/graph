@@ -740,6 +740,12 @@ A ranking holds while its estimates still prove it on the new projection: put in
 leave no negative residual, and the intervals and certified prefix they prove are within the ones the answer gives. It
 is always checked in full.
 
+Components, biconnectivity, a maximum flow, a matching and dominators are revalidated by their certificates, which
+prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
+`witness_gone`); otherwise it holds exactly when its certificate still checks against the new projection's records
+(as `verify_result` checks it), and is unknown (`certificate_broken`, with the first problem found) when it does not,
+or (`no_certificate`) when it has none. These are always checked in full.
+
 A derivation holds while every listed node keeps its rule and every use is still a hop in scope, and its certificate's
 conditions still hold over the targets' region in the new projection. An edit far from the answer can join the
 region, so a derivation is always checked in full (`checked` is `answer`, with or without a diff).
@@ -750,7 +756,7 @@ The verdict is one of three:
 | --- | --- | --- |
 | `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
 | `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `rule_changed` (a derivation's ground is no longer one, or an `all_of` node's inputs changed), `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
-| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support, components, biconnectivity, max_flow, matching, dominators), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
+| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
 
 Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",
 "operation", "result_id", "request_id", "from_projection", "to_projection", "verdict", "reasons", "reason_count",
