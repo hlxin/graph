@@ -80,18 +80,29 @@ All compared contexts agreed.
 
 ## Cost
 
-GRAPH answers each context in about 0.12 ms, but the adapter first lifts a whole box of periodic images. That box is
-(2·shells + 1) images along every periodic axis, and for large three-dimensional cells it far exceeds the context it
-serves (`benchmarks/consumers.py`):
+GRAPH answers each context in under a millisecond once it has a projection. The question is what the projection
+costs. The adapter has two ways to make one:
 
-| Contexts | STATES's `extract_context` | GRAPH: lift | GRAPH: query |
+- **A lift** (`lifted_projection`): a box of periodic images around the roots, (2·shells + 1) images along every
+  periodic axis, which for large three-dimensional cells far exceeds the context it serves.
+- **The cell** (`periodic_projection`, `context(..., periodic=True)`): a GRAPH periodic projection of the record's
+  substrate cell, whose edges carry their image shifts. The search expands only the images it reaches, and names them
+  as the lift does (`<atom>@<i>,<j>,<k>`, `e<edge>@<image>`). It gives the same images, shells, witnesses, relations,
+  ports and interruptions as the lift on every compared context (760, `test_the_periodic_cell_answers_every_context_as_the_lift_does`).
+
+Measured with `benchmarks/consumers.py` on 42 contexts (shells 1 to 3 of the example records with contacts), on 26
+October 2026, on a machine under heavy load from other work (absolute times are about four times those of the
+first measurement; compare the columns). Every answer agreed:
+
+| Contexts | STATES's `extract_context` | GRAPH through a lift (lift, then query) | GRAPH on the cell (projection, then query) |
 | --- | --- | --- | --- |
-| Mean of 42 contexts | 15.3 ms | 52 ms | 0.12 ms |
-| Smallest lift (450 nodes) | 2.6 ms | 2.1 ms | 0.05 ms |
-| Largest lift (58,320 nodes for a 140-image context) | 26.5 ms | 724 ms | 0.24 ms |
+| Mean of 42 | 58.5 ms | 305 ms (222 ms + 0.34 ms) | 17.1 ms (10.6 ms + 0.76 ms) |
+| Largest lift (58,320 nodes, 300,617 edges, for a 140-image context) | 92.4 ms | 3,858 ms | 28.7 ms |
+| Smallest lift (450 nodes) | 9.5 ms | 12.0 ms | 2.6 ms |
 
-A lift pays off when it is reused, for every shell count or root set of a record. For one-off contexts, the
-implementation plan proposes a periodic projection that expands images only as a traversal reaches them.
+On the cell, GRAPH is faster than STATES's own code on all 42 contexts (3.4 times on average), and 18 times faster than
+through a lift (134 times on the largest). The cell's projection depends only on the record, so it can be built once
+and reused for every root set and shell count: each context then costs the query alone.
 
 ## What stays with STATES
 

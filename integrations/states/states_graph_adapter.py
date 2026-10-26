@@ -21,6 +21,7 @@ from itertools import product
 from typing import Any
 
 from graph_runtime import COMPLETED, Projection, Result, execute
+from graph_runtime.periodic import PeriodicProjection
 
 NEIGHBOR = "neighbor"
 SCOPE = [{"relation": NEIGHBOR, "direction": "forward"}, {"relation": NEIGHBOR, "direction": "reverse"}]
@@ -111,29 +112,86 @@ def lifted_projection(state: Mapping, roots: list[tuple[int, tuple[int, int, int
     return p, {"box": box, "nodes": nodes, "edges": lifted}
 
 
-def bindings_of(state: Mapping, box: Sequence[tuple[int, int]]) -> dict[str, str]:
-    """What a lift describes: the deposited record (its STATES record id), its schema, and the box of images lifted."""
+def bindings_of(state: Mapping, box: Sequence[tuple[int, int]] | None) -> dict[str, str]:
+    """What a projection describes: the deposited record (its STATES record id), its schema, and the box of images
+    lifted (or, for a periodic projection, none: every image)."""
     from states.identity import record_id
     return {"source": f"states record {record_id(state)}", "schema": str(state.get("schema")),
-            "policy": "substrate atom images; box " + " ".join(f"{lo}..{hi}" for lo, hi in box)}
+            "policy": "substrate atom images; " + ("box " + " ".join(f"{lo}..{hi}" for lo, hi in box)
+                                                   if box is not None else "periodic, every image")}
 
 
-def context(state: Mapping, roots: Sequence | None = None, shells: int = 2, max_atoms: int = 1000) -> dict:
+def touching(state: Mapping, reached: Mapping[str, Any]) -> list[dict]:
+    """The lifted substrate edges with an end at a reached atom image, as the lift writes them: for each reached image
+    and each substrate edge at its atom, the edge's image that starts there (its ``i`` atom) or ends there (its ``j``
+    atom, from the image less the shift)."""
+    atoms = state["atoms"]
+    inside = {i for i, a in enumerate(atoms) if a["role"] == "substrate"}
+    at: dict[int, list[tuple[int, Mapping]]] = {}
+    for n, e in enumerate(state["edges"]):
+        if e["i"] in inside and e["j"] in inside:
+            at.setdefault(e["i"], []).append((n, e))
+            if e["j"] != e["i"]:
+                at.setdefault(e["j"], []).append((n, e))
+    out = {}
+    for node in reached:
+        atom, img = parse_image_id(node)
+        for n, e in at.get(atom, ()):
+            shift = tuple(e["shift"])
+            starts = []
+            if e["i"] == atom:
+                starts.append(img)
+            if e["j"] == atom:
+                starts.append(tuple(a - b for a, b in zip(img, shift)))
+            for k in starts:
+                far = tuple(a + b for a, b in zip(k, shift))
+                out[edge_id(n, k)] = {"id": edge_id(n, k), "source": image_id(e["i"], k),
+                                      "target": image_id(e["j"], far), "relation": e["kind"]}
+    return [out[k] for k in sorted(out)]
+
+
+def periodic_projection(state: Mapping, bindings: Mapping[str, str] | None = None) -> PeriodicProjection:
+    """The record's substrate as a periodic projection: one cell, never lifted. Its nodes are the substrate atoms (ID:
+    the atom's index), typed by element; its edges every substrate-substrate edge (ID ``e<index>``) with its kind as
+    relation and its image shift; it repeats along the record's periodic axes. Its images are named as the lift names
+    them (``<atom>@<i>,<j>,<k>``, ``e<edge>@<image>``), so the two give the same answers."""
+    atoms, pbc = state["atoms"], state["pbc"]
+    substrate = [i for i, a in enumerate(atoms) if a["role"] == "substrate"]
+    inside = set(substrate)
+    nodes = [{"id": str(a), "types": [f"element:{atoms[a]['element']}"]} for a in substrate]
+    edges = [{"id": f"e{n}", "source": str(e["i"]), "target": str(e["j"]), "relation": e["kind"],
+              "shift": [int(x) for x in e["shift"]]}
+             for n, e in enumerate(state["edges"]) if e["i"] in inside and e["j"] in inside]
+    kinds = sorted({e["relation"] for e in edges} | {NEIGHBOR})
+    if bindings is None:
+        bindings = bindings_of(state, None)
+    return PeriodicProjection.build(nodes=nodes, edges=edges, dimensions=3, periodic=[bool(x) for x in pbc],
+                                    relations=kinds, bindings=bindings)
+
+
+def context(state: Mapping, roots: Sequence | None = None, shells: int = 2, max_atoms: int = 1000, *,
+            periodic: bool = False) -> dict:
     """STATES's context extraction answered by GRAPH: every substrate atom image within ``shells`` neighbor hops of
     the roots (with its shell and its witness), the complete relations among them (``edges``) and the relations that
     leave them (``ports``). ``max_atoms`` bounds the atom images, roots included: a context that would exceed it is
-    reported ``interrupted`` (STATES raises), never truncated into a complete-looking one."""
+    reported ``interrupted`` (STATES raises), never truncated into a complete-looking one.
+
+    By default the substrate is lifted to a box of images first (:func:`lifted_projection`). With ``periodic``, the
+    search runs on the cell itself (:func:`periodic_projection`) and reads only the images it reaches."""
     if isinstance(shells, bool) or not isinstance(shells, int) or shells < 0:
         raise Unsupported("shells is a non-negative integer")
     if isinstance(max_atoms, bool) or not isinstance(max_atoms, int) or max_atoms < 1:
         raise Unsupported("max_atoms is a positive integer")
     refs, policy = roots_of(state, roots)
-    p, lift = lifted_projection(state, refs, shells)
+    if periodic:
+        p, lift = periodic_projection(state), None
+    else:
+        p, lift = lifted_projection(state, refs, shells)
     res: Result = execute(p, p.request("reachability", sources=[image_id(a, img) for a, img in refs], scope=SCOPE,
                                        max_depth=shells, limits={"max_results": max_atoms}))
     out = {"status": res.status, "complete": res.complete, "result_id": res.result_id, "projection": p.identity,
            "root_policy": policy, "roots": [{"atom": a, "image": list(img)} for a, img in refs],
-           "requested_shells": shells, "box": lift["box"]}
+           "requested_shells": shells, "box": lift["box"] if lift else None}
     if res.answer is None:
         return {**out, "error": dict(res.error)}
     reached = {}
@@ -149,7 +207,7 @@ def context(state: Mapping, roots: Sequence | None = None, shells: int = 2, max_
     if res.status != COMPLETED:          # an interrupted context lists what it holds, and claims no relations
         return {**out, "interruption": dict(res.interruption)}
     edges, ports = [], []
-    for e in lift["edges"]:
+    for e in (lift["edges"] if lift else touching(state, reached)):
         a, b = e["source"] in reached, e["target"] in reached
         index = int(e["id"][1:].partition("@")[0])
         ends = (parse_image_id(e["source"]), parse_image_id(e["target"]))

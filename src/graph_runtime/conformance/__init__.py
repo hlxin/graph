@@ -39,7 +39,7 @@ def run_conformance(execute: Callable[..., Any] | None = None) -> dict:
     failures = []
     for case in suite["cases"]:
         graph = suite["graphs"][case["graph"]]
-        p = Projection.build(**graph)
+        p = _projection(graph)
         ctx = case.get("context") or {}
         request = {**case["request"], "projection": ctx.get("request_projection", p.identity)}
         kwargs: dict[str, Any] = {}
@@ -66,6 +66,14 @@ def run_conformance(execute: Callable[..., Any] | None = None) -> dict:
     return {"cases": len(suite["cases"]), "passed": len(suite["cases"]) - len(failures), "failures": failures}
 
 
+def _projection(graph: Mapping) -> Any:
+    """A case's projection: a periodic projection's cell when the graph states its dimensions."""
+    if "dimensions" in graph:
+        from ..periodic import PeriodicProjection
+        return PeriodicProjection.build(**graph)
+    return Projection.build(**graph)
+
+
 def _cost(answer: Mapping, field: str) -> Any:
     exact = answer.get(f"{field}_exact")
     return Fraction(exact) if exact is not None else answer.get(field)
@@ -79,8 +87,9 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     if status not in statuses:
         return [f"status {status!r} ({(data.get('error') or {}).get('code')}), expected {statuses}"]
     problems = list(verify_result(data, nodes=graph["nodes"], edges=graph["edges"],
-                                  type_parents=graph.get("type_parents"), relation_parents=graph.get("relation_parents")))
-    p = Projection.build(**graph)
+                                  type_parents=graph.get("type_parents"), relation_parents=graph.get("relation_parents"),
+                                  dimensions=graph.get("dimensions")))
+    p = _projection(graph)
     ctx = case.get("context") or {}
     raw = {**case["request"], "projection": ctx.get("request_projection", p.identity)}
     if data.get("projection") != p.identity:
@@ -129,6 +138,20 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
         got = {e["node"]: [e["rule"], [h["edge"] for h in e["uses"]]] for e in answer.get("derivation") or []}
         if got != exp["derivation_rules"]:
             problems.append(f"derivation {got}, expected the canonical {exp['derivation_rules']}")
+    if "via_edges" in exp and done:                         # the canonical witness of chosen nodes
+        entries = {e["node"]: e for e in answer.get("reached") or answer.get("affected") or []}
+        got = {n: (entries.get(n) or {}).get("via", {}) and entries[n]["via"]["edge"] for n in exp["via_edges"]}
+        if got != exp["via_edges"]:
+            problems.append(f"witness edges {got}, expected the canonical {exp['via_edges']}")
+    if "components" in exp and done:                       # periodicity: seeds, rank, basis and copies
+        got = [[list(x["seeds"]), x["rank"], [list(r) for r in x["basis"]], x["copies"]]
+               for x in answer.get("components") or []]
+        if got != exp["components"]:
+            problems.append(f"components {got}, expected {exp['components']}")
+    if "component_nodes" in exp and done:
+        got = [{n["node"]: list(n["image"]) for n in x["nodes"]} for x in answer.get("components") or []]
+        if got != exp["component_nodes"]:
+            problems.append(f"component nodes {got}, expected {exp['component_nodes']}")
     if "count" in exp and answer.get("count") != exp["count"]:
         problems.append(f"count {answer.get('count')}, expected {exp['count']}")
     if "discovered" in exp and data["stats"]["discovered"] != exp["discovered"]:

@@ -462,3 +462,29 @@ def derivation_values(nodes, edges, scope, all_of=None, grounds=None, costs=None
         if new == value:
             return value
         value = new
+
+
+def lift_periodic(graph, sources, radius):
+    """A periodic cell's records lifted to the images within ``radius`` (per axis) of the sources' images, named as
+    a periodic projection names them (``<id>@<k1>,...``): what a finite projection of the same search holds."""
+    from itertools import product
+    dims = graph["dimensions"]
+    box = set()
+    for s in sources:
+        center = tuple(int(x) for x in s.rpartition("@")[2].split(","))
+        for off in product(range(-radius, radius + 1), repeat=dims):
+            box.add(tuple(a + b for a, b in zip(center, off)))
+
+    def name(x, k):
+        return f"{x}@{','.join(map(str, k))}"
+    nodes = [{"id": name(node_id(n), k), "types": [] if isinstance(n, str) else n.get("types", [])}
+             for k in box for n in graph["nodes"]]
+    edges = []
+    for e in graph["edges"]:
+        for k in box:
+            far = tuple(a + b for a, b in zip(k, e["shift"]))
+            if far in box:
+                edges.append({"id": name(e["id"], k), "source": name(e["source"], k),
+                              "target": name(e["target"], far), "relation": e["relation"]})
+    return {**{k: v for k, v in graph.items() if k not in ("dimensions", "periodic")}, "nodes": nodes,
+            "edges": edges}

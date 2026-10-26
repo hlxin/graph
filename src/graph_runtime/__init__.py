@@ -1,9 +1,10 @@
 """GRAPH: Graph Runtime for Analysis, Provenance, Hypotheses. Reusable graph algorithms for scientific software.
 
 GRAPH executes graph operations for scientific applications and keeps the computational contract the same across them:
-explicit inputs (an immutable :class:`Projection`, with optional type and relation hierarchies, and a normalized
-:class:`Request`), seven exact operations (reachability, typed path, shortest path, bottleneck path, dependency
-impact, tree patterns and support under failure) with structural witnesses, bounded work, reproducible results, and
+explicit inputs (an immutable :class:`Projection`, with optional type and relation hierarchies, or a
+:class:`PeriodicProjection` of one cell of an infinite periodic graph, and a normalized :class:`Request`), nine exact
+operations (reachability, typed path, shortest path, bottleneck path, regular path, dependency impact, tree patterns,
+support under failure and lightest derivations) with structural witnesses, bounded work, reproducible results, and
 witnesses that can be checked against the input records (:func:`verify_result`); certificates prove negatives and
 optima, and a cached result is revalidated on an edited projection without a new search (:func:`revalidate`). It
 transports hypothesis candidates (:class:`HypothesisCandidate`) without ever turning them into assertions. The
@@ -22,6 +23,7 @@ from .engine import CancelToken, execute
 from .errors import CandidateError, GraphRuntimeError, ProjectionError, RequestError, RetrievalError
 from .hypotheses import (HypothesisCandidate, order_candidates, staleness, validate_candidate, verify_revisions,
                          witness_refs)
+from .periodic import PeriodicProjection
 from .projection import CONTRACT, FORWARD, REVERSE, EdgeRecord, NodeRecord, Projection
 from .request import OPERATIONS, Request, normalize_request
 from .result import COMPLETED, FAILED, INTERRUPTED, STALE, STATUSES, UNSUPPORTED, Result
@@ -31,7 +33,8 @@ from .verify import verify_result
 
 __all__ = [
     "CONTRACT", "OPERATIONS", "STATUSES", "COMPLETED", "INTERRUPTED", "UNSUPPORTED", "FAILED", "STALE", "FORWARD",
-    "REVERSE", "Projection", "NodeRecord", "EdgeRecord", "Request", "normalize_request", "execute", "CancelToken",
+    "REVERSE", "Projection", "PeriodicProjection", "NodeRecord", "EdgeRecord", "Request", "normalize_request",
+    "execute", "CancelToken",
     "Result", "verify_result", "revalidate", "revalidate_all", "Revalidation", "ProjectionDiff",
     "HypothesisCandidate", "validate_candidate", "verify_revisions", "staleness", "order_candidates", "witness_refs",
     "json_schema", "GraphRuntimeError", "ProjectionError", "RequestError", "RetrievalError", "CandidateError",

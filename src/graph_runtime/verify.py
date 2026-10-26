@@ -28,11 +28,15 @@ from .result import COMPLETED, INTERRUPTED, Result, contract_problems
 
 def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iterable[Mapping],
                   type_parents: Mapping[str, Iterable[str]] | None = None,
-                  relation_parents: Mapping[str, Iterable[str]] | None = None) -> list[str]:
+                  relation_parents: Mapping[str, Iterable[str]] | None = None,
+                  dimensions: int | None = None) -> list[str]:
     """Problems found in ``result`` (empty when it checks out). ``nodes``, ``edges`` and the hierarchies: the records
     the projection was built from, as :meth:`graph_runtime.Projection.build` takes them. A hop is in scope when its
     edge's relation, or a relation above it, is in the scope with the hop's direction; a node has a type when it
-    declares it or a type below it."""
+    declares it or a type below it.
+
+    Records whose edges carry a ``shift`` (or ``dimensions`` given) are a periodic projection's cell: the result is
+    then checked against the infinite graph they stand for, image by image (:mod:`graph_runtime.periodic`)."""
     try:
         data = dict(result._data) if isinstance(result, Result) else dict(result)      # read, never changed
         problems = contract_problems(data)
@@ -42,13 +46,20 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
         if not isinstance(request, Mapping):
             return ["a completed or interrupted result carries its normalized request"]
         type_up = _ancestors(type_parents)
-        types_of: dict[str, set[str]] = {}
-        for n in nodes:
-            declared = set() if isinstance(n, str) else set(n.get("types") or ())
-            types_of[n if isinstance(n, str) else n["id"]] = declared.union(*(type_up.get(t, ()) for t in declared))
         edges = list(edges)
-        check = _Checker(problems, {e["id"]: (e["source"], e["target"], e["relation"]) for e in edges}, types_of,
-                         _ancestors(relation_parents))
+        if dimensions is not None or any("shift" in e for e in edges):
+            from .periodic import PeriodicRecords, _ImageTypes, _LiftedEdges
+            records = PeriodicRecords(nodes, edges, dimensions)
+            check = _PeriodicChecker(problems, _LiftedEdges(records), _ImageTypes(records, type_up),
+                                     _ancestors(relation_parents), records)
+        else:
+            types_of: dict[str, set[str]] = {}
+            for n in nodes:
+                declared = set() if isinstance(n, str) else set(n.get("types") or ())
+                types_of[n if isinstance(n, str) else n["id"]] = declared.union(
+                    *(type_up.get(t, ()) for t in declared))
+            check = _Checker(problems, {e["id"]: (e["source"], e["target"], e["relation"]) for e in edges},
+                             types_of, _ancestors(relation_parents))
         op, status = data.get("operation"), data["status"]
         if op in ("reachability", "dependency_impact"):
             check.node_set(op, request, answer, status)
@@ -66,6 +77,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.regular(request, answer, status)
         elif op == "derivation":
             check.derivation(request, answer)
+        elif op == "periodicity":
+            check.periodicity(request, answer)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -199,7 +212,7 @@ def _nearest(x: Fraction) -> float | None:
 
 
 class _Checker:
-    def __init__(self, problems: list[str], edge_of: dict, types_of: dict, relation_up: dict):
+    def __init__(self, problems: list[str], edge_of: Mapping, types_of: Mapping, relation_up: dict):
         self.problems, self.edge_of, self.types_of, self.relation_up = problems, edge_of, types_of, relation_up
         self._ends: tuple[dict, dict] | None = None
 
@@ -851,3 +864,53 @@ class _Checker:
             low = Fraction(low) if rational and low is not None else low
             if low is None or low > reported:
                 self.bad("an unproven witness comes with a lower bound no greater than its cost")
+
+
+class _PeriodicChecker(_Checker):
+    """The checker over a periodic projection's infinite graph: edges and types are looked up image by image, and an
+    image's hops are enumerated from the cell's records (:class:`graph_runtime.periodic.PeriodicRecords`)."""
+
+    def __init__(self, problems: list[str], edge_of: Mapping, types_of: Mapping, relation_up: dict, records: Any):
+        super().__init__(problems, edge_of, types_of, relation_up)
+        self.records = records
+
+    def hops_from(self, u: Any, allowed: set) -> list[tuple[str, Any, str]]:
+        return [(eid, v, rel) for eid, v, rel, direction in self.records.hops(u)
+                if self.in_scope(rel, direction, allowed)]
+
+    def periodicity(self, request: Mapping, answer: Mapping) -> None:
+        """Each component against the cell's records: its tree's hops are edges in scope between the images it names;
+        every hop in scope from a listed node's image leads to a listed node, by a lattice vector from that node's
+        listed image (so nothing outside the listed nodes belongs, and every cycle's net lies in the lattice); and the
+        cycles are exactly the edges among the listed nodes whose net is not zero, with the nets the records give.
+        With the witnesses, which write each basis row as a combination of these nets, the basis generates exactly the
+        component's translation lattice."""
+        from .lattice import coefficients
+        from .periodic import image_id
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        for n, c in enumerate(answer.get("components") or []):
+            where = f"component {n}"
+            images = {x["node"]: tuple(x["image"]) for x in c["nodes"]}
+            basis = [tuple(r) for r in c["basis"]]
+            for x in c["nodes"]:
+                via = x["via"]
+                if via is not None:
+                    self.hop(f"{where}: the tree hop to {x['node']!r}", via["from"], image_id(x["node"], x["image"]),
+                             via["edge"], via["relation"], via["direction"], allowed)
+            nets = {}
+            for node, img in sorted(images.items()):
+                for eid, v, _ in self.hops_from(image_id(node, img), allowed):
+                    base, _, text = v.rpartition("@")
+                    if base not in images:
+                        self.bad(f"{where}: the hop {eid} leads from {node!r} to {base!r}, which it does not list")
+                        continue
+                    offset = [int(t) - q for t, q in zip(text.split(","), images[base])]
+                    if coefficients(basis, offset) is None:
+                        self.bad(f"{where}: the hop {eid} closes a cycle whose net {offset} is not in the lattice")
+                    edge = eid.rpartition("@")[0]
+                    if eid == image_id(edge, img) and self.records.edges[edge][0] == node and any(offset):
+                        nets[edge] = tuple(offset)                # the edge from its source: its cycle's net
+            listed = {cyc["edge"]: tuple(cyc["net"]) for cyc in c["cycles"]}
+            if listed != nets:
+                self.bad(f"{where}: its cycles are not the edges among its nodes with a nonzero net "
+                         f"({sorted(set(listed) ^ set(nets))[:5]} differ)")

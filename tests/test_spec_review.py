@@ -13,7 +13,7 @@ from graph_runtime._canonical import digest
 from graph_runtime._validation import shape_problems
 from graph_runtime.conformance import check_case, load_cases, run_conformance
 from oracle import (bottleneck, closed_nodes, derivation_values, expand_scope, least_cost, least_depths,
-                    pattern_rows, regular_ends, support_answer, typed_ends)
+                    lift_periodic, node_id, pattern_rows, regular_ends, support_answer, typed_ends)
 from test_hypotheses import TESTS
 
 
@@ -248,6 +248,9 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             continue
         g, r = suite['graphs'][case['graph']], case['request']
         op = r['operation']
+        if 'dimensions' in g and op != 'periodicity':  # a periodic cell: the oracle reads a lift that holds the search
+            seeds = r.get('sources') or r.get('changed')
+            g = lift_periodic(g, seeds, (r.get('max_depth') or 0) + 1)
         rp, relations = g.get('relation_parents') or {}, g.get('relations') or []
         if 'scope' in r:                          # hierarchies written out by the oracle, not by the runtime
             r = {**r, 'scope': expand_scope(r['scope'], rp, relations)}
@@ -258,7 +261,10 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             strict = op == 'dependency_impact'
             want = least_depths(g['edges'], r['changed' if strict else 'sources'], r['scope'],
                                 r.get('max_depth'), strict)
-            assert exp['affected' if strict else 'reached'] == want, case['name']
+            if exp['status'] == 'completed':
+                assert exp['affected' if strict else 'reached'] == want, case['name']
+            else:
+                assert exp.get('affected' if strict else 'reached', want) == want, case['name']
         elif op == 'typed_path':
             want = bool(typed_ends(g['nodes'], g['edges'], r['sources'], r['pattern'], r.get('targets')))
             assert exp['found'] is want, case['name']
@@ -299,6 +305,13 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 assert exp['underived'] == [t for t in sorted(raw['targets']) if t not in values], case['name']
             else:
                 assert all(values[t] == v for t, v in exp['derived'].items()), case['name']
+        elif op == 'periodicity':
+            from test_periodicity import oracle as lattice_oracle
+            graph = suite['graphs'][case['graph']]
+            names = [node_id(n) for n in graph['nodes']]
+            for seeds, rank, basis, copies in exp['components']:
+                want, reached = lattice_oracle(names, graph['edges'], graph['dimensions'], seeds[0], 12)
+                assert [list(r) for r in want] == basis and set(seeds) <= reached, case['name']
         elif op == 'pattern':
             raw = case['request']             # the brute force expands the hierarchies itself
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],

@@ -26,6 +26,9 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - the `derivation` operation: the best derivation of each target in an AND/OR graph (a node of an `all_of` type needs
   every input, any other node one), for a sum of costs, the least highest cost or the greatest lowest, with a
   derivation as witness, certified by values no rule improves on (section 4)
+- periodic projections: one cell of an infinite periodic graph, with image shifts on its edges, searched by
+  reachability and dependency impact without lifting it (section 1), and the `periodicity` operation: each
+  component's translation lattice (rank, Hermite normal form basis, interpenetration), witnessed (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -69,6 +72,29 @@ Projection.build(nodes=..., edges=..., relations=None, node_types=None, bindings
 - **Staleness.** `projection.stale_bindings(current)` names the bindings that no longer match. A projection may be
   reused only while its source, schema/context bindings and policy scope are unchanged.
 
+**Periodic projections.** A crystal, a slab or a polymer is an infinite graph that repeats: the derived graph of a
+finite quotient graph whose edges carry integer image shifts (a voltage graph; the quotient graph of a crystal net).
+`PeriodicProjection.build(nodes=..., edges=..., dimensions=None, periodic=None, ...)` holds one cell: the nodes and
+edges as a projection takes them, each edge with a `shift`, a list of `dimensions` integers (by default the shifts'
+length), and `periodic`, the axes it repeats along (by default all; along any other, shifts and images are 0). It
+stands for the infinite graph whose nodes are the images `<node>@<k1>,...,<kd>` of the cell's nodes, for every integer
+vector k, written in plain decimal, and whose edges are the images of its edges: edge e from u to v with shift s joins
+`u@k` to `v@(k + s)`, and that image is `<e>@<k>`, named by its source's image.
+
+- **Requests and answers** name images by these IDs, and every rule of the contract applies to the infinite graph,
+  canonical order included (by image IDs). A finite lift that holds every image a search reaches gives the same
+  answer, witnesses and counters.
+- **Searches read only the images they reach.** No box of images is built first.
+- **Operations.** Reachability, dependency impact and periodicity (section 4) run on a periodic projection; the
+  other operations are `unsupported` (`unsupported_operation`), and periodicity runs on nothing else. A search with no
+  depth bound that keeps finding images ends at a limit, interrupted: the infinite graph never yields a complete
+  unbounded answer, unless the component is finite.
+- **Identity** is computed as a projection's, over a header that adds `kind` `graph_runtime.periodic_projection`,
+  `dimensions` and `periodic`, and edge lines `[id, source, target, relation, [shift]]`. `to_dict()` and `from_dict()`
+  write and read snapshots (the `periodic_projection` schema).
+- **Checking.** `verify_result` checks a periodic result against the cell's records (edges with `shift`, or
+  `dimensions` given), image by image. Revalidation does not take periodic projections.
+
 Errors: `ProjectionError` with code `duplicate_node_id`, `duplicate_edge_id`, `dangling_edge`,
 `undeclared_relation`, `undeclared_node_type`, `invalid_record`, `invalid_bindings`, `invalid_hierarchy`,
 `hierarchy_cycle`, `candidate_record`, or (when
@@ -106,6 +132,7 @@ no wildcard: a scope lists what it follows.
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
 | `bottleneck_path` | `sources`, `targets`, `scope`, `weights` (as costs, but any finite number), `objective` (`max_min`, the default, or `min_max`), `certificate` (default false) | `max_expansions` |
 | `regular_path` | `sources`, `path` (a path expression: text, a list or a tree, normalized to the tree), `targets` (null: any node), `answer` (`witness`, the default, or `reached`), `certificate` (default false) | `max_expansions`, `max_results` |
+| `periodicity` | `nodes` (images of a periodic projection's nodes), `scope` (every relation in both directions: it is followed both ways) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
@@ -349,6 +376,30 @@ for any other node, each hop's cost with its input's value. By induction on deri
 these values; the derivation shows each derived value is reached, so it is the best, and a target worth a null bound
 has no derivation. A complete answer carries one; an interrupted answer only when its bound says something.
 
+**Periodicity.** How each requested image's component repeats, on a periodic projection: the classic analysis of a
+periodic net through its quotient graph, which crystallography uses to tell molecules, chains, layers and frameworks
+apart (Chung, Hahn and Klee, 1984; Delgado-Friedrichs and O'Keeffe, 2003), here exact and witnessed.
+
+- **Tree.** From the image's node, a breadth-first spanning tree over the cell's nodes that the scope reaches (each
+  read once, one expansion; hops in canonical order) gives each of them the image the tree reaches, its potential.
+- **Lattice.** Every edge among those nodes closes a cycle whose net shift, `p(source) + shift - p(target)`, is a
+  translation the component has; these nets generate all of them. `basis` is the lattice's Hermite normal form (row
+  style: echelon, positive pivots, entries above a pivot reduced below it), unique for the lattice; `rank` its number
+  of rows: 0 a finite component, 1 a chain, 2 a layer, 3 a framework. `copies` is its index among the integer
+  vectors of the space it spans: how many translated copies of the component run through the same space (a
+  framework's degree of interpenetration).
+- **Components.** An image belongs to a component when its node is among the component's and its offset from that
+  node's image is in the lattice; otherwise it seeds another, translated component (a parallel layer, or an
+  interpenetrating copy). Components are listed in order of their first seed.
+- **Witnesses.** The tree's hops (named by lifted edge IDs) prove the potentials, `cycles` lists each edge with a
+  nonzero net and its net, and `witnesses` writes each basis row as a combination of those nets: each row is a
+  translation the component has. Every cycle's net is in the lattice the basis generates, so the basis generates
+  exactly the component's translations.
+
+Answer: `{"components": [{"seeds", "nodes": [{"node", "image", "via"}], "rank", "basis", "copies", "cycles":
+[{"edge", "net"}], "witnesses": [[{"edge", "times"}]]}], "count"}`. An interrupted analysis lists the components it
+finished.
+
 **Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
 SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for
 example from a claim to its evidence items, or from an item to the source it cites.
@@ -443,6 +494,8 @@ The result contract reports how an execution ended. It carries no scientific ans
   - for a derivation, every listed node's rule against the records (given: a ground; all: a node of an `all_of`
     type using one hop to each distinct input; one: any other node) and every use as a hop in scope; and the
     certificate's conditions at every node of the targets' region, which it finds from the records
+  - for periodicity, against the cell's records: the tree's hops, every hop from a listed node's image leading to a
+    listed node by a lattice vector, and the cycles being exactly the edges with a nonzero net, with those nets
   - for a regular path, every hop of a witness or of the tree against the path's automaton, which it builds itself
     (writing repetitions out first, then nullable, first, last and follow sets by their textbook definitions): each
     state may follow the one before it, each hop is in its step's scope and lands on its step's types, and a witness
@@ -450,7 +503,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 100 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 112 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
