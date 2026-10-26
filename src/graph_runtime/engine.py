@@ -243,6 +243,12 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
             plan.steps.append(SimpleNamespace(parent=index[st["from"]], child=index[st["var"]], fwd=fwd, rev=rev,
                                               tmask=tmask, nodes=nodes, edges=edges, optional=st["optional"],
                                               edge_var=st["edge_var"]))
+    elif op == "bottleneck_path":
+        plan.certificate, plan.objective = req["certificate"], req["objective"]
+        plan.sources = _nodes(p, req["sources"], "sources")
+        plan.targets = set(_nodes(p, req["targets"], "targets"))
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        plan.weight = _costs(p, req["weights"], plan.fwd, plan.rev, "weights")[0]
     elif op == "support":
         plan.failed = _nodes(p, req["failed"], "failed")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
@@ -295,10 +301,11 @@ def _types(p: Projection, types: Any, field: str) -> int:
     return mask
 
 
-def _costs(p: Projection, costs: Any, fwd: list[bool], rev: list[bool]) -> tuple[list, list, Any, bool]:
+def _costs(p: Projection, costs: Any, fwd: list[bool], rev: list[bool],
+           field: str = "costs") -> tuple[list, list, Any, bool]:
     """(the cost the request gives each edge in scope, its exact value, zero, rational): integers are added as
     integers; when the request gives any float, every cost is added as an exact fraction instead, so that no sum is
-    rounded and every comparison is exact."""
+    rounded and every comparison is exact. ``field`` names the table in messages (bottleneck weights use it too)."""
     (kind, table), = costs.items()
     rel = p._edge_rel
     in_scope = [ei for ei in range(len(p._edge_ids)) if fwd[rel[ei]] or rev[rel[ei]]]
@@ -306,24 +313,25 @@ def _costs(p: Projection, costs: Any, fwd: list[bool], rev: list[bool]) -> tuple
     if kind == "by_relation":
         unknown = sorted(r for r in table if r not in p._rel_index)
         if unknown:
-            raise RequestError(FAILED, "unknown_relation", f"costs.by_relation names relations the projection does not "
-                               f"declare: {unknown}", {"field": "costs", "relations": unknown})
+            raise RequestError(FAILED, "unknown_relation", f"{field}.by_relation names relations the projection does "
+                               f"not declare: {unknown}", {"field": field, "relations": unknown})
         scoped = sorted({p._relations[rel[ei]] for ei in in_scope})
         missing = [r for r in scoped if r not in table]
         if missing:
-            raise RequestError(FAILED, "missing_cost", f"costs.by_relation gives no cost for the relations in scope "
-                               f"{missing}", {"relations": missing})
+            raise RequestError(FAILED, "missing_cost", f"{field}.by_relation gives nothing for the relations in "
+                               f"scope {missing}", {"field": field, "relations": missing})
         for ei in in_scope:
             given[ei] = table[p._relations[rel[ei]]]
     else:
         unknown = sorted(e for e in table if e not in p._edge_index)
         if unknown:
-            raise RequestError(FAILED, "unknown_edge", f"costs.by_edge names {len(unknown)} edge(s) the projection "
-                               f"does not hold: {unknown[:10]}", {"edges": unknown[:100]})
+            raise RequestError(FAILED, "unknown_edge", f"{field}.by_edge names {len(unknown)} edge(s) the "
+                               f"projection does not hold: {unknown[:10]}", {"field": field, "edges": unknown[:100]})
         missing = [p._edge_ids[ei] for ei in in_scope if p._edge_ids[ei] not in table]
         if missing:
-            raise RequestError(FAILED, "missing_cost", f"costs.by_edge gives no cost for {len(missing)} edge(s) in "
-                               f"scope: {missing[:10]}", {"edges": missing[:100], "count": len(missing)})
+            raise RequestError(FAILED, "missing_cost", f"{field}.by_edge gives nothing for {len(missing)} edge(s) "
+                               f"in scope: {missing[:10]}", {"field": field, "edges": missing[:100],
+                                                             "count": len(missing)})
         for ei in in_scope:
             given[ei] = table[p._edge_ids[ei]]
     rational = any(isinstance(x, float) for x in table.values())
@@ -732,6 +740,146 @@ def _answer_pattern(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -
     return answer, ([WITNESS_NOTE] if rows else [])
 
 
+# ---------------------------------------------------------------------------------------------- bottleneck path
+def _search_bottleneck(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
+    """The best bottleneck from any source to any target, then the fewest hops among the paths that reach it.
+
+    A path's value is its weakest edge's weight (``max_min``: the higher the better) or its highest (``min_max``: the
+    lower the better). Values are compared, never added, so any finite weights are exact.
+
+    1. Nodes are settled best value first, ties by node ID; a hop gives the node it leads to the worse of the two
+       values. The first target settled has the best value, and every node settled before it with a strictly
+       better value is closed under the hops strictly better than it: none of them is a target.
+    2. A breadth-first search over the hops at least as good as that value, from the sources, finds a path with the
+       fewest hops among those that reach it, in canonical order."""
+    max_min = plan.objective == "max_min"
+    combine = min if max_min else max
+    start = math.inf if max_min else -math.inf          # the value of a path with no edge
+    better = (lambda a, b: a > b) if max_min else (lambda a, b: a < b)
+    key = (lambda v: -v) if max_min else (lambda v: v)
+    val: dict[int, Any] = {}
+    parent: dict[int, tuple[int, int, int]] = {}
+    settled: set[int] = set()
+    st = SimpleNamespace(goal=None, val=val, parent=parent, settled=settled, bound=None, path=None, better=better,
+                         examined=0, discovered=0, interruption=None)
+    at_zero = [s for s in plan.sources if s in plan.targets]
+    if at_zero:                                   # a source that is a target: the path with no edge
+        st.goal, st.path = at_zero[0], []
+        st.discovered = len(plan.sources)
+        return st
+    heap = [(key(start), s) for s in plan.sources]
+    for s in plan.sources:
+        val[s] = start
+    heapq.heapify(heap)
+    weight, examined = plan.weight, 0
+    while heap:                                   # 1: the best value
+        k, u = heapq.heappop(heap)
+        if u in settled or k != key(val[u]):
+            continue                              # an entry superseded by a better one
+        if u in plan.targets:
+            st.goal = u
+            break
+        why = ctl.stop()
+        if why:                                   # nothing unsettled is better than this (a source: nothing known)
+            st.interruption, st.bound = why, (None if val[u] == start else val[u])
+            break
+        settled.add(u)
+        for ei, v, flag in _hops(p, u, plan.fwd, plan.rev):
+            examined += 1
+            if v in settled:
+                continue
+            nv = combine(val[u], weight[ei])
+            if v not in val or better(nv, val[v]):
+                val[v] = nv
+                parent[v] = (u, ei, flag)
+                heapq.heappush(heap, (key(nv), v))
+    st.discovered = len(val)
+    if st.goal is not None:                       # 2: the fewest hops at that value
+        best = val[st.goal]
+        good = (lambda w: w >= best) if max_min else (lambda w: w <= best)
+        seen: dict[int, tuple[int, int, int] | None] = {s: None for s in plan.sources}
+        queue = deque(plan.sources)
+        found = None
+        while queue and found is None:
+            u = queue.popleft()
+            why = ctl.stop()
+            if why:                               # the value is known; the fewest hops are not
+                st.interruption, st.bound = why, best
+                break
+            for ei, v, flag in _hops(p, u, plan.fwd, plan.rev):
+                examined += 1
+                if v not in seen and good(weight[ei]):
+                    seen[v] = (u, ei, flag)
+                    if v in plan.targets:
+                        found = v
+                        break
+                    queue.append(v)
+        if found is not None:
+            path, v = [], found
+            while seen[v] is not None:
+                path.append(seen[v] + (v,))
+                v = seen[v][0]
+            st.path, st.goal = path[::-1], found
+    st.examined = examined
+    return st
+
+
+def _answer_bottleneck(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
+    ids = p._node_ids
+
+    def witness(path: list) -> dict:
+        hops = [{**_via(p, u, ei, flag), "to": ids[v], "weight": plan.weight[ei]} for u, ei, flag, v in path]
+        source = ids[path[0][0]] if path else ids[st.goal]
+        return {"source": source, "target": ids[path[-1][3]] if path else ids[st.goal], "length": len(hops),
+                "hops": hops}
+
+    def phase_one_path(t: int) -> list:
+        path, v = [], t
+        while v in st.parent:
+            u, ei, flag = st.parent[v]
+            path.append((u, ei, flag, v))
+            v = u
+        return path[::-1]
+
+    def threshold(t: Any) -> dict | None:
+        """The settled nodes strictly better than ``t``: closed under the hops strictly better than ``t``, with every
+        source and no target, so no path to a target is strictly better than ``t``."""
+        if not plan.certificate:
+            return None
+        return {"kind": "threshold", "threshold": t,
+                "reached": [ids[v] for v in sorted(st.settled | set(plan.sources)) if st.better(st.val[v], t)]}
+
+    if st.interruption is None and st.goal is not None:
+        if not st.path and st.goal in plan.sources:           # no edge: nothing to prove
+            return {"found": True, "optimal": True, "value": None, "witness": witness([]), "certificate": None}, \
+                [WITNESS_NOTE]
+        value = _path_value(plan, st.path)
+        cert = threshold(value)
+        return ({"found": True, "optimal": True, "value": value, "witness": witness(st.path), "certificate": cert},
+                [WITNESS_NOTE] + ([CERTIFIED_NOTE] if cert else []))
+    if st.interruption is None:
+        cert = ({"kind": "closure", "reached": [ids[v] for v in sorted(st.val)]} if plan.certificate else None)
+        return ({"found": False, "optimal": None, "value": None, "witness": None, "certificate": cert},
+                [CERTIFIED_NOTE] if cert else [])
+    cert = threshold(st.bound) if st.bound is not None else None
+    notes = [CERTIFIED_NOTE] if cert else []
+    known = [t for t in plan.targets if t in st.val]
+    if st.goal is not None:                       # stopped choosing among the best paths: phase 1's path
+        known = [st.goal]
+    if not known:
+        return {"found": None, "optimal": None, "value": None, "bound": st.bound, "witness": None,
+                "certificate": cert}, notes
+    t = min(known, key=lambda x: (-st.val[x], x) if plan.objective == "max_min" else (st.val[x], x))
+    path = phase_one_path(t)
+    return ({"found": True, "optimal": False, "value": _path_value(plan, path), "bound": st.bound,
+             "witness": witness(path), "certificate": cert}, [TENTATIVE_NOTE, WITNESS_NOTE] + notes)
+
+
+def _path_value(plan: SimpleNamespace, path: list) -> Any:
+    weights = [plan.weight[ei] for _, ei, _, _ in path]
+    return (min if plan.objective == "max_min" else max)(weights)
+
+
 # ---------------------------------------------------------------------------------------------- support
 def _search_support(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
     """What stops standing when the failed nodes fail, and what stands on less than before.
@@ -871,4 +1019,5 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "typed_path": (_search_typed, _answer_typed),
                "shortest_path": (_search_shortest, _answer_shortest),
                "pattern": (_search_pattern, _answer_pattern),
-               "support": (_search_support, _answer_support)}
+               "support": (_search_support, _answer_support),
+               "bottleneck_path": (_search_bottleneck, _answer_bottleneck)}

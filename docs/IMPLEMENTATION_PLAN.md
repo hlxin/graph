@@ -9,7 +9,7 @@ section 6. Status as of 25 October 2026, contract `graph-runtime/v0.2`, runtime 
 | # | Work item | Status | What exists |
 | --- | --- | --- | --- |
 | 1 | Record the baseline and agree on the small contract | Done; **the contract awaits review** | [API_CONTRACT.md](API_CONTRACT.md) and the JSON Schema; the SCALE baseline in [SCALE_INTEGRATION.md](SCALE_INTEGRATION.md) |
-| 2 | The immutable view and four exact operations with structural witnesses | Done, and extended from SCALE (below) | `projection.py`, `request.py`, `engine.py`, `result.py`, `verify.py`; unit, scenario, oracle and limit tests; 74 conformance cases. Contract v0.2 adds type and relation hierarchies, two operations (`pattern` and `support`), certificates and revalidation |
+| 2 | The immutable view and four exact operations with structural witnesses | Done, and extended from SCALE (below) | `projection.py`, `request.py`, `engine.py`, `result.py`, `verify.py`; unit, scenario, oracle and limit tests; 78 conformance cases. Contract v0.2 adds type and relation hierarchies, three operations (`pattern`, `support`, `bottleneck_path`), certificates and revalidation |
 | 3 | Candidate-hypothesis validation and transport, without source mutation | Done | `hypotheses.py`, [HYPOTHESES_AND_PROVENANCE.md](HYPOTHESES_AND_PROVENANCE.md), the synthetic example |
 | 4 | The first real consumer adapter and scientific parity fixtures | First cut | SCALE's adapter, staged in `integrations/scale/`, with two read-only workflows and parity against SCALE's own engine; it still has to go to SCALE as a pull request |
 | 5 | Measure the whole request; evaluate one alternative backend only if needed | Measured and optimized | every result's `timing` (bind, search, witness, result) and `benchmarks/bench.py` (build, serialization, reading back, verifying, workload identity, versions, raw results, parity); the hot spots found are fixed (see Measurements); no alternative backend is needed at the sizes measured |
@@ -42,6 +42,22 @@ into GRAPH in generic form, and each move is checked against SCALE's engine on S
 | What rests on a retraction, all or in part (`lifecycle`) | Dependency impact, and the `support` operation: what loses all or some of its support when nodes fail, under AND/OR rules, as a least fixpoint, with causes | 8 conformance cases; an independent oracle on 700 random graphs; 18,951 SCALE records on injected retractions, each with SCALE's `all` or `some` and the same sources and datasets |
 | The tool surface (`api`, `mcp_server`, `cli`) | `graph_runtime.tools`: eight JSON tools (status, describe, projection, execute, verify, revalidate, search, conformance), errors as data, nothing written, a session that keeps projections and indexes by identity; reachable from Python, the `graph-runtime` command line and a dependency-free MCP server over stdio | 11 tests: every tool, JSON-RPC handling (initialize, list, call, notifications, batches, parse errors), the command line's exit codes |
 
+## Beyond the note: bottleneck paths
+
+`bottleneck_path` finds the path whose weakest edge is strongest (`max_min`) or whose highest edge is lowest
+(`min_max`), with the fewest hops among those. In a reaction network weighted by rates, it gives the pathway whose
+rate-limiting step is fastest; weighted by barriers, the pathway whose highest barrier is lowest. That is the
+question RATES's mechanisms raise. Weights are compared, never added, so any finite number is exact. A threshold
+certificate proves the optimum (or an interrupted search's bound): what the sources reach by hops strictly better
+than it holds no target. Evidence:
+
+- 800 random graphs match a threshold-sweep oracle, on value and fewest hops.
+- 500 interrupted searches: the bound is never beaten, and a tentative value is a real path's.
+- Soundness: in every case where removing an edge changed the answer, the answer made without it was refused, both
+  by the check and by revalidation.
+- 400 random edits: revalidation agrees with fresh runs.
+- Four hand-written conformance cases (78 in all).
+
 ## Beyond the note: answers that prove themselves, and survive edits
 
 Two additions turn GRAPH's guarantees into things a consumer can check and reuse:
@@ -62,13 +78,13 @@ Two additions turn GRAPH's guarantees into things a consumer can check and reuse
 | `holds` means a new search would agree | 700 random edits (edges added, removed and moved, nodes removed and retyped) on four kinds of request: every `holds` matches a fresh run and checks out against the new records, every `fails` is refuted, and the diff-based and full checks give the same record |
 | Real records | SCALE's competency chains (345 cached typed-path answers with certificates, 31 curation edits): 312 hold, 23 fail and 10 are unknown, each as a fresh run confirms |
 | Cost | 100,000 nodes, 500,000 edges, 40 cached results, an edit of 20 edges added and 20 removed (`benchmarks/revalidation.py`): the diff takes 0.32 s once; then each result takes 0.1 ms, against 98 ms to run it again (3.9 s for all 40). Without the diff, each check takes 74 ms |
-| Conformance | four hand-written cases: a typed negative's closed states, a shortest path's potentials and closure, and an interrupted search's certified lower bound (74 cases in all) |
+| Conformance | four hand-written cases: a typed negative's closed states, a shortest path's potentials and closure, and an interrupted search's certified lower bound |
 
 ## Acceptance evidence
 
 | Requirement (note, section 6) | Evidence | Where |
 | --- | --- | --- |
-| Exact results agree with independent small-graph checks and the consumer's reference behaviour | Every operation is checked on random graphs against an independent oracle (about 4,700 executions, with and without random limits, and 400 random patterns against a brute-force enumerator), against NetworkX (reachability and integer-cost shortest paths), and against 74 hand-written conformance cases. SCALE parity covers 14 competency questions, 1,654 generated chains on 31 documents, 39 plans of any shape row for row, 18,951 records resting on injected retractions in 134 documents (all or in part), and 1,980 evidence searches hit for hit. STATES parity covers 760 contexts (38,033 atom images, 243,869 relations and ports, 679 limit checks) on 70 records | `tests/test_oracle.py`, `tests/test_conformance.py`, `integrations/scale/`, `integrations/states/` |
+| Exact results agree with independent small-graph checks and the consumer's reference behaviour | Every operation is checked on random graphs against an independent oracle (about 4,700 executions, with and without random limits, and 400 random patterns against a brute-force enumerator), against NetworkX (reachability and integer-cost shortest paths), and against 78 hand-written conformance cases. SCALE parity covers 14 competency questions, 1,654 generated chains on 31 documents, 39 plans of any shape row for row, 18,951 records resting on injected retractions in 134 documents (all or in part), and 1,980 evidence searches hit for hit. STATES parity covers 760 contexts (38,033 atom images, 243,869 relations and ports, 679 limit checks) on 70 records | `tests/test_oracle.py`, `tests/test_conformance.py`, `integrations/scale/`, `integrations/states/` |
 | Witnesses survive parallel edges, cycles, reverse traversal and repeated nodes in typed patterns | Named scenarios for each (`e4`/`e5` twins, the `a-b-c-d-a` cycle, reverse hops, a witness `e1, e1, e1` that revisits nodes). Random graphs include parallel edges and self-loops, and `verify_result` re-checks every witness against the records | `tests/test_operations.py`, `tests/test_oracle.py` |
 | Large integer costs keep their order; missing, negative and non-finite costs are refused | Costs of `2**64 + 1` versus `2**64 + 2`, which a float sum cannot tell apart; floats added as exact rationals; each refusal code tested (`missing_cost`, `negative_cost` as unsupported, `non_finite_cost`, `invalid_cost`) | `tests/test_operations.py`, `tests/test_requests.py` |
 | Output limits, cancellation, deadlines and exhausted budgets cannot certify a negative | Each limit, with exact-fit and one-short cases. Random limits on every operation: an interrupted answer only lists what the full answer holds, and never says `found: false`. The JSON Schema and the conformance suite refuse a result that claims otherwise | `tests/test_limits.py`, `tests/test_oracle.py`, `tests/test_schemas.py`, `tests/test_conformance.py` |

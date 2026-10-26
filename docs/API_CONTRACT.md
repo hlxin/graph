@@ -18,6 +18,8 @@ states consistently, and required costs only for edges actually in scope. Revisi
   second search, and closure checks of complete reachability and impact answers (sections 4 and 6)
 - revalidation: whether a cached result still holds on an edited projection, decided from its answer and
   certificate (section 7)
+- the `bottleneck_path` operation: the path whose weakest edge is strongest, or whose highest edge is lowest, with
+  the fewest hops among those, certified by a threshold closure (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -96,6 +98,7 @@ no wildcard: a scope lists what it follows.
 | `dependency_impact` | `changed` (node IDs), `scope` (the direction in which a change propagates), `max_depth` | `max_expansions`, `max_results` |
 | `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
+| `bottleneck_path` | `sources`, `targets`, `scope`, `weights` (as costs, but any finite number), `objective` (`max_min`, the default, or `min_max`), `certificate` (default false) | `max_expansions` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
 normalized request always states it.
@@ -227,6 +230,27 @@ along the kept hops, without listing them.
   never false.
 
 Answer: `{"exists", "total", "rows": [{"nodes", "edges", "links"}], "count", "coverage"}`.
+
+**Bottleneck path.** Finds the path from any source to any target whose bottleneck is best. Under `max_min`, a
+path's value is its weakest edge's weight and higher is better: in a reaction network weighted by rates, this is
+the pathway whose rate-limiting step is fastest. Under `min_max`, a path's value is its highest edge's weight and
+lower is better: weighted by barriers, this is the pathway whose highest barrier is lowest. Weights are compared and
+never added, so any finite numbers are exact, negative ones included.
+
+1. Nodes are settled best value first, ties by node ID, as Dijkstra's algorithm settles costs. The first target
+   settled has the best value.
+2. A breadth-first search over the hops at least as good as that value then finds, among the paths that reach it,
+   one with the fewest hops, in canonical order.
+
+A source that is also a target is the answer, a path with no hop and no value. Each hop carries its weight. Answer:
+`{"found", "optimal", "value", "witness", "certificate"}`, and `bound` when interrupted: no path to a target is
+strictly better than the bound. An interruption while the second step chooses among the best paths gives the first
+step's path, with its value as the bound.
+
+With `certificate: true`, the answer carries its proof. A **threshold** (`{"kind": "threshold", "threshold",
+"reached"}`) lists what the sources reach by hops strictly better than the threshold, closed under those hops, with
+no target. It proves that no path is strictly better than the threshold: the value, or the bound. A **closure**
+proves a complete negative, as for shortest paths.
 
 **Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
 SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for

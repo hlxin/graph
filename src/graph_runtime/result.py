@@ -37,7 +37,7 @@ STATUSES = (COMPLETED, INTERRUPTED, UNSUPPORTED, FAILED, STALE)
 INTERRUPTIONS = ("expansion_budget", "output_limit", "deadline", "cancelled")
 RESULT_KIND = "graph_runtime.result"
 _SET_OPERATIONS = {"reachability": "reached", "dependency_impact": "affected"}
-_WITNESS_OPERATIONS = ("typed_path", "shortest_path")
+_WITNESS_OPERATIONS = ("typed_path", "shortest_path", "bottleneck_path")
 
 
 class Result:
@@ -319,7 +319,7 @@ def _contract_problems(data: dict) -> list[str]:
             out.append("found is false only in a complete answer")
         if found is None and status != INTERRUPTED:
             out.append("found is unknown (null) only in an interrupted answer")
-        if data.get("operation") == "shortest_path" and found is True \
+        if data.get("operation") in ("shortest_path", "bottleneck_path") and found is True \
                 and answer.get("optimal") is not (status == COMPLETED):
             out.append("a witness is proven optimal exactly when the search completed")
     if out:
@@ -431,8 +431,41 @@ def _contract_problems(data: dict) -> list[str]:
                     out.append("a typed hop goes in a direction its pattern position does not follow")
     if op == "shortest_path":
         out.extend(_cost_problems(request, answer, status))
+    if op == "bottleneck_path":
+        out.extend(_bottleneck_problems(request, answer, status))
     if op in _WITNESS_OPERATIONS:
         out.extend(_certificate_problems(op, request, answer, status))
+    return out
+
+
+def _better(objective: str, a: Any, b: Any) -> bool:
+    return a > b if objective == "max_min" else a < b
+
+
+def _bottleneck_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A bottleneck answer's value is its witness's weakest (or highest) hop weight, each hop weighing what the
+    request gives its edge; a bound appears exactly when the search was interrupted, and a value is never better
+    than it."""
+    out = []
+    (kind, table), = request["weights"].items()
+    if ("bound" in answer) != (status == INTERRUPTED):
+        out.append("a bound appears exactly in an interrupted bottleneck answer")
+    if answer["found"] is not True:
+        if answer["value"] is not None:
+            out.append("only a found witness has a value")
+        return out
+    weights = []
+    for hop in answer["witness"]["hops"]:
+        want = table.get(hop["relation"] if kind == "by_relation" else hop["edge"])
+        if want is None or hop["weight"] != want or type(hop["weight"]) is not type(want):
+            out.append("a hop weight must match the request")
+        weights.append(hop["weight"])
+    value = (min if request["objective"] == "max_min" else max)(weights) if weights else None
+    if answer["value"] != value or type(answer["value"]) is not type(value):
+        out.append("the value is the witness's bottleneck: its weakest hop weight (max_min) or its highest (min_max)")
+    bound = answer.get("bound")
+    if status == INTERRUPTED and bound is not None and value is not None and _better(request["objective"], value, bound):
+        out.append("an interrupted answer's value is never better than its bound")
     return out
 
 
@@ -556,6 +589,11 @@ def _certificate_problems(op: str, request: dict, answer: dict, status: str) -> 
         kind = "closed_states" if request["certificate"] and status == COMPLETED and found is False else None
     elif not request["certificate"]:
         kind = None
+    elif op == "bottleneck_path":
+        if status == COMPLETED:
+            kind = "closure" if not found else ("threshold" if answer["value"] is not None else None)
+        else:
+            kind = "threshold" if answer.get("bound") is not None else None
     elif status == COMPLETED:
         kind = "potentials" if found else "closure"
     else:
@@ -578,11 +616,13 @@ def _certificate_problems(op: str, request: dict, answer: dict, status: str) -> 
         if not {(0, s) for s in sources} <= set(states):
             out.append("certificate states start with every source at position 0")
         return out
-    if kind == "closure":
+    if kind in ("closure", "threshold"):
         reached = cert["reached"]
         if reached != sorted(set(reached)) or not sources <= set(reached) or targets & set(reached):
-            out.append("a closure certificate lists, in ascending ID, what the sources reach: every source and no "
+            out.append(f"a {kind} certificate lists, in ascending ID, what the sources reach: every source and no "
                        "target")
+        if kind == "threshold" and cert["threshold"] != (answer["value"] if status == COMPLETED else answer["bound"]):
+            out.append("a threshold certificate's threshold is the answer's value (or, interrupted, its bound)")
         return out
     (_, table), = request["costs"].items()
     rational = any(isinstance(v, float) for v in table.values())

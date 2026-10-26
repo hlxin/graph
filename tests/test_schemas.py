@@ -45,6 +45,9 @@ def test_every_result_and_request_validates():
              "pattern": [{"scope": random_scope(rng), "node_types": rng.choice([None, ["A"]])}] * rng.randint(1, 3)},
             {"operation": "shortest_path", "sources": ids[:1], "targets": ids[-2:], "scope": scope, "costs": costs},
             {"operation": "support", "failed": ids[:2], "scope": scope, "all_of": rng.choice([None, ["A"]])},
+            {"operation": "bottleneck_path", "sources": ids[:1], "targets": ids[-2:], "scope": scope,
+             "weights": {"by_relation": {r: rng.choice([-1, 0, 2, 2.5]) for r in RELATIONS}},
+             "objective": rng.choice(["max_min", "min_max"]), "certificate": rng.random() < 0.5},
         ]
         for raw in requests:
             limits = {"max_expansions": rng.randint(0, 4)}

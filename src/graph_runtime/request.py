@@ -20,6 +20,9 @@ Operations (docs/API_CONTRACT.md):
   ``exists``); limits ``max_expansions``, ``max_results``.
 * ``support``: ``failed``, ``scope`` (from a node to what supports it), ``all_of`` (node types that need every
   support; null: every node needs one); limits ``max_expansions``, ``max_results``.
+* ``bottleneck_path``: ``sources``, ``targets``, ``scope``, ``weights`` (as costs, any finite number),
+  ``objective`` (``max_min``: the path whose weakest edge is strongest; ``min_max``: the path whose highest edge is
+  lowest), ``certificate``; limit ``max_expansions``.
 
 A scope is a list of ``{relation, direction}`` (``forward``: from an edge's source to its target; ``reverse``: from
 its target to its source); there is no wildcard.
@@ -38,7 +41,9 @@ from ._canonical import canonical_json, canonical_object, freeze, is_digest, sha
 from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
-OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support")
+OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
+              "bottleneck_path")
+OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 MODES = ("exact",)
 FAILED, UNSUPPORTED = "failed", "unsupported"
@@ -50,13 +55,15 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "typed_path": ("max_expansions",),
            "shortest_path": ("max_expansions",),
            "pattern": ("max_expansions", "max_results"),
-           "support": ("max_expansions", "max_results")}
+           "support": ("max_expansions", "max_results"),
+           "bottleneck_path": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
            "shortest_path": (("sources", "targets", "scope", "costs"), ("certificate",)),
            "pattern": (("match",), ("steps", "answer")),
-           "support": (("failed", "scope"), ("all_of",))}
+           "support": (("failed", "scope"), ("all_of",)),
+           "bottleneck_path": (("sources", "targets", "scope", "weights"), ("objective", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -181,6 +188,15 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["answer"] = raw.get("answer", "rows")
         if data["answer"] not in PATTERN_ANSWERS:
             raise _fail("invalid_request", f"answer is one of {list(PATTERN_ANSWERS)}, not {data['answer']!r}")
+    elif op == "bottleneck_path":
+        data["sources"] = _ids(raw["sources"], "sources")
+        data["targets"] = _ids(raw["targets"], "targets")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["weights"] = _weights(raw["weights"])
+        data["objective"] = raw.get("objective", "max_min")
+        if data["objective"] not in OBJECTIVES:
+            raise _fail("invalid_request", f"objective is one of {list(OBJECTIVES)}, not {data['objective']!r}")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "support":
         data["failed"] = _ids(raw["failed"], "failed")
         data["scope"] = _scope(raw["scope"], "scope")
@@ -311,6 +327,28 @@ def _costs(value: Any) -> dict[str, dict[str, int | float]]:
 
 
 _FLOAT_MAX = sys.float_info.max
+
+
+def _weights(value: Any) -> dict[str, dict[str, int | float]]:
+    """``{"by_relation": {...}}`` or ``{"by_edge": {...}}`` of finite numbers of any sign: a bottleneck compares
+    weights and never adds them, so any finite number is exact."""
+    if not isinstance(value, Mapping) or len(value) != 1 or next(iter(value)) not in ("by_relation", "by_edge"):
+        raise _fail("invalid_request", 'weights is {"by_relation": {relation: weight}} or {"by_edge": {edge: '
+                    'weight}}')
+    kind, table = next(iter(value.items()))
+    if not isinstance(table, Mapping):
+        raise _fail("invalid_request", f"weights.{kind} is a mapping of IDs to weights")
+    out = {}
+    for key, x in table.items():
+        if type(key) is not str or not key:
+            raise _fail("invalid_request", f"weights.{kind} holds the key {key!r}; a key is a non-empty string")
+        if isinstance(x, bool) or not isinstance(x, (numbers.Integral, float)):
+            raise _fail("invalid_cost", f"weights.{kind}[{key!r}] is {x!r}; a weight is an integer or a finite float")
+        x = int(x) if isinstance(x, numbers.Integral) else float(x)
+        if isinstance(x, float) and not math.isfinite(x):
+            raise _fail("non_finite_cost", f"weights.{kind}[{key!r}] is {x!r}; weights are finite")
+        out[key] = x
+    return {kind: out}
 
 
 def _cost(x: Any, kind: str, key: str) -> int | float:

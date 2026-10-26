@@ -184,11 +184,12 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
     if data.get("projection") == p.identity:
         return [], checked
     op = data["operation"]
-    if op not in ("reachability", "dependency_impact", "typed_path", "shortest_path"):
+    if op not in ("reachability", "dependency_impact", "typed_path", "shortest_path", "bottleneck_path"):
         return [{"code": "not_certified", "operation": op}], checked
     try:
         req = normalize_request({**data["request"], "projection": p.identity})
-        plan = _bind_costs_of_edit(p, req, d) if use and op == "shortest_path" else _bind(p, req)
+        plan = (_bind_costs_of_edit(p, req, d) if use and op in ("shortest_path", "bottleneck_path")
+                else _bind(p, req))
     except RequestError as e:
         return [{"code": "unanswerable", "error": e.code}], checked
     ctx = SimpleNamespace(p=p, plan=plan, request=data["request"], answer=data["answer"], diff=d if use else None,
@@ -197,22 +198,27 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
         _sets(ctx, strict=op == "dependency_impact")
     elif op == "typed_path":
         _typed(ctx)
-    else:
+    elif op == "shortest_path":
         _shortest(ctx)
+    else:
+        _bottleneck(ctx)
     return ctx.out, checked
 
 
 def _bind_costs_of_edit(p: Projection, req: Any, d: ProjectionDiff) -> SimpleNamespace:
-    """A shortest-path request bound to the new projection for a diff: what binding checks and needs, read from the
-    edit alone. The request's nodes must still exist, an edge its by_edge table names must not be gone, and every
-    added edge in scope needs a cost; only the added edges' costs are computed (binding the whole table reads every
-    edge in scope)."""
+    """A shortest or bottleneck path request bound to the new projection for a diff: what binding checks and needs,
+    read from the edit alone. The request's nodes must still exist, an edge its by_edge table names must not be gone,
+    and every added edge in scope needs a cost (or weight); only the added edges' are computed (binding the whole
+    table reads every edge in scope)."""
     from .engine import _nodes, _scope
     plan = SimpleNamespace(sources=_nodes(p, req["sources"], "sources"),
                            targets=set(_nodes(p, req["targets"], "targets")))
     plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
-    (kind, table), = req["costs"].items()
-    plan.rational = any(isinstance(x, float) for x in table.values())
+    weights = req.operation == "bottleneck_path"
+    (kind, table), = req["weights" if weights else "costs"].items()
+    plan.rational = not weights and any(isinstance(x, float) for x in table.values())
+    if weights:
+        plan.objective = req["objective"]
     if kind == "by_edge":
         gone = sorted(e for e in table if e in d.removed_edges and e not in d.added_edges)
         if gone:
@@ -226,6 +232,7 @@ def _bind_costs_of_edit(p: Projection, req: Any, d: ProjectionDiff) -> SimpleNam
             if c is None:
                 raise RequestError("failed", "missing_cost", f"the added edge {eid} in scope has no cost")
             plan.cost[ei] = Fraction(c) if plan.rational else c
+    plan.weight = plan.cost
     return plan
 
 
@@ -418,6 +425,42 @@ def _shortest(ctx: SimpleNamespace) -> None:
             check(eid, p._edge_index[eid], a, b)
         return
     for node in listed if listed is not None else (e["node"] for e in cert["potentials"]):
+        u = p._node_index.get(node)
+        if u is not None:
+            for ei, v, _ in _hops(p, u, plan.fwd, plan.rev):
+                check(p._edge_ids[ei], ei, u, v)
+
+
+# ---------------------------------------------------------------------------------------------- bottleneck path
+def _bottleneck(ctx: SimpleNamespace) -> None:
+    p, plan, answer, out, d = ctx.p, ctx.plan, ctx.answer, ctx.out, ctx.diff
+    if answer["found"]:
+        for hop in answer["witness"]["hops"]:
+            if _gone(ctx, hop["to"]):
+                out.append({"code": "node_gone", "node": hop["to"]})
+            elif not _hop_ok(ctx, hop, plan.fwd, plan.rev):
+                out.append({"code": "witness_gone", "edge": hop["edge"]})
+        if not answer["witness"]["hops"]:
+            return                                       # a path with no edge: nothing can beat it
+    cert = answer["certificate"]
+    if cert is None:
+        out.append({"code": "no_certificate"})
+        return
+    ids, threshold = p._node_ids, cert.get("threshold")
+    reached = _lookup(cert["reached"], lambda x: x, d is not None)
+    max_min = plan.objective == "max_min"
+
+    def check(eid: str, ei: int, a: int, b: int) -> None:
+        w = plan.weight[ei]
+        if (threshold is None or (w > threshold if max_min else w < threshold)) \
+                and reached(ids[a]) is not None and reached(ids[b]) is None:
+            out.append({"code": "certificate_broken", "edge": eid, "from": ids[a], "to": ids[b]})
+
+    if d is not None:
+        for eid, a, b in _added_hops(ctx, plan.fwd, plan.rev):
+            check(eid, p._edge_index[eid], a, b)
+        return
+    for node in cert["reached"]:
         u = p._node_index.get(node)
         if u is not None:
             for ei, v, _ in _hops(p, u, plan.fwd, plan.rev):

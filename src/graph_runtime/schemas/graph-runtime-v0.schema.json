@@ -423,6 +423,78 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "sources",
+            "targets",
+            "scope",
+            "weights",
+            "objective",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "bottleneck_path"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "sources": {
+              "$ref": "#/$defs/ids"
+            },
+            "targets": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "weights": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 1,
+              "properties": {
+                "by_relation": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/weight"
+                  }
+                },
+                "by_edge": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/weight"
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "objective": {
+              "enum": [
+                "max_min",
+                "min_max"
+              ]
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          }
         }
       ]
     },
@@ -1275,7 +1347,8 @@
               "operation": {
                 "enum": [
                   "typed_path",
-                  "shortest_path"
+                  "shortest_path",
+                  "bottleneck_path"
                 ]
               }
             }
@@ -1301,7 +1374,8 @@
               "operation": {
                 "enum": [
                   "typed_path",
-                  "shortest_path"
+                  "shortest_path",
+                  "bottleneck_path"
                 ]
               }
             }
@@ -1402,7 +1476,8 @@
                   "typed_path",
                   "shortest_path",
                   "pattern",
-                  "support"
+                  "support",
+                  "bottleneck_path"
                 ]
               }
             }
@@ -1853,6 +1928,49 @@
             "properties": {
               "operation": {
                 "const": "support"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "bottleneck_path"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/bottleneck_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "bottleneck_path"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "bottleneck_path"
               }
             }
           }
@@ -3018,6 +3136,199 @@
         }
       ],
       "description": "potentials: a value per node (the bound when unlisted) that no hop in scope lowers by more than its cost, 0 at every source and at least the bound at every target, so no path costs less than the bound. closure: everything the sources reach, with no target among it."
+    },
+    "weight": {
+      "type": "number",
+      "description": "A finite weight, of any sign."
+    },
+    "weighted_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "relation",
+        "direction",
+        "from",
+        "to",
+        "weight"
+      ],
+      "properties": {
+        "edge": {
+          "$ref": "#/$defs/id"
+        },
+        "relation": {
+          "$ref": "#/$defs/id"
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "weight": {
+          "$ref": "#/$defs/weight"
+        }
+      }
+    },
+    "bottleneck_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "found",
+        "optimal",
+        "value",
+        "witness",
+        "certificate"
+      ],
+      "properties": {
+        "found": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "optimal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/weight"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bound": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/weight"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "witness": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "target",
+                "length",
+                "hops"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/id"
+                },
+                "target": {
+                  "$ref": "#/$defs/id"
+                },
+                "length": {
+                  "$ref": "#/$defs/count"
+                },
+                "hops": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/weighted_hop"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "threshold",
+                "reached"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "threshold"
+                },
+                "threshold": {
+                  "$ref": "#/$defs/weight"
+                },
+                "reached": {
+                  "$ref": "#/$defs/ids"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "reached"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "closure"
+                },
+                "reached": {
+                  "$ref": "#/$defs/ids"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "found": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "witness": {
+                "type": "object"
+              },
+              "optimal": {
+                "type": "boolean"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "witness": {
+                "type": "null"
+              },
+              "value": {
+                "type": "null"
+              },
+              "optimal": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "description": "value: the witness's weakest hop weight (max_min) or its highest (min_max), null for a path with no hop. bound (interrupted only): no path to a target is strictly better. threshold: what the sources reach by hops strictly better than it holds no target."
     }
   }
 }

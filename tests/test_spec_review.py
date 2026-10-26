@@ -12,8 +12,8 @@ from graph_runtime import (CONTRACT, CandidateError, HypothesisCandidate, Projec
 from graph_runtime._canonical import digest
 from graph_runtime._validation import shape_problems
 from graph_runtime.conformance import check_case, load_cases, run_conformance
-from oracle import (closed_nodes, expand_scope, least_cost, least_depths, pattern_rows, support_answer,
-                    typed_ends)
+from oracle import (bottleneck, closed_nodes, expand_scope, least_cost, least_depths, pattern_rows,
+                    support_answer, typed_ends)
 from test_hypotheses import TESTS
 
 
@@ -271,6 +271,13 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             for key in ('lost', 'weakened'):
                 if key in exp:
                     assert exp[key] == want[key], case['name']
+        elif op == 'bottleneck_path':
+            want = bottleneck(g['nodes'], g['edges'], r['sources'], r['targets'], r['scope'], r['weights'],
+                              r.get('objective', 'max_min'))
+            if 'found' in exp:
+                assert exp['found'] is (want is not None), case['name']
+            if 'value' in exp:
+                assert want[0] == exp['value'] and len(exp['witness_edges']) == want[1], case['name']
         elif op == 'pattern':
             raw = case['request']             # the brute force expands the hierarchies itself
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],
