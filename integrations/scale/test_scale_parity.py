@@ -293,3 +293,35 @@ def test_retractions_injected_into_every_document_match_scale(scale_env):
         tally["documents"] += 1
     print(dict(tally))
     assert tally["documents"] >= 50 and tally["resting_records"] >= 500 and tally["datasets_named"] >= 50
+
+
+# ---------------------------------------------------------------------------------------------- tree patterns
+def test_every_edge_step_plan_matches_scale_row_for_row(scale_env):
+    """Chains, trees and optional steps: GRAPH's pattern gives SCALE's structural rows, in SCALE's order."""
+    tally: Counter = Counter()
+    for path in sorted((scale_env["repo"] / "domain" / "competency").glob("*.yaml")):
+        q = scale_env["load_yaml"](path) or {}
+        steps = (q.get("plan") or {}).get("steps") or []
+        if not steps or any("edge" not in st for st in steps):
+            continue
+        root = (q["plan"].get("match") or {}).get("as", "self")
+        for rel in q.get("documents") or []:
+            doc, spec = scale_env["document"](rel)
+            answer = scale_env["run"](doc, spec, adapter.structural(q["plan"]))
+            if answer["status"] == "schema_gap":
+                continue
+            want = [(dict(row["bound"]), list(row["links"])) for row in answer["rows"]]
+            p = adapter.projection_from_document(doc, spec)
+            res = execute(p, {**adapter.pattern_request(q["plan"], spec), "projection": p.identity,
+                              "limits": {"max_results": 10**6}})
+            assert res.status == COMPLETED, (path.name, res.error)
+            got = [(dict(row["nodes"]), [x for x in row["links"] if x is not None]) for row in res.answer["rows"]]
+            assert got == want, path.name
+            assert res.answer["total"] == len(want)
+            tally["rows"] += len(want)
+            tally["plans"] += 1
+            tally["trees"] += any(st.get("from", root) != (steps[i - 1]["as"] if i else root)
+                                  for i, st in enumerate(steps))
+            tally["optional"] += any(st.get("optional") for st in steps)
+    print(dict(tally))
+    assert tally["plans"] >= 35 and tally["trees"] >= 8 and tally["optional"] >= 2 and tally["rows"] >= 150

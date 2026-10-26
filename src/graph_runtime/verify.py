@@ -47,6 +47,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.typed(request, answer)
         elif op == "shortest_path":
             check.shortest(request, answer, status)
+        elif op == "pattern":
+            check.pattern(request, answer)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -226,6 +228,45 @@ class _Checker:
         for i, h in enumerate(hops):
             if isinstance(h, Mapping) and (h.get("position") != i or not _is_int(h.get("position"))):
                 self.bad(f"hop {i} says position {h.get('position')!r}")
+
+    def admits(self, spec: Mapping, node: Any) -> bool:
+        """Whether a node satisfies a pattern variable's constraints (types through the hierarchy, explicit IDs)."""
+        if node not in self.types_of:
+            return False
+        if spec.get("node_types") is not None and not self.types_of[node] & set(spec["node_types"]):
+            return False
+        return spec.get("nodes") is None or node in set(spec["nodes"])
+
+    def pattern(self, request: Mapping, answer: Mapping) -> None:
+        """Every row: the matched variable admitted by match, and every link an input edge in its step's scope,
+        joining the step's two bound variables in a scope direction, its child admitted by the step."""
+        match, steps = request["match"], request["steps"]
+        for n, row in enumerate(answer.get("rows") or []):
+            nodes, links = row["nodes"], row["links"]
+            if not self.admits(match, nodes.get(match["var"])):
+                self.bad(f"row {n}: {match['var']} = {nodes.get(match['var'])!r} is not a node the match admits")
+            for j, s in enumerate(steps):
+                link = links[j] if j < len(links) else None
+                if link is None:
+                    if not s.get("optional"):
+                        self.bad(f"row {n}: required step {j} has no link")
+                    continue
+                parent, child = nodes.get(s["from"]), nodes.get(s["var"])
+                rec = self.edge_of.get(link)
+                if rec is None:
+                    self.bad(f"row {n}: step {j}'s link {link!r} is not an input edge")
+                    continue
+                src, dst, rel = rec
+                directions = [d for d, ends in (("forward", (src, dst)), ("reverse", (dst, src))) if ends == (parent, child)]
+                allowed = {(e["relation"], e["direction"]) for e in s["scope"]}
+                if not any((rel, d) in allowed or any((up, d) in allowed for up in self.relation_up.get(rel, ()))
+                           for d in directions):
+                    self.bad(f"row {n}: step {j}'s link {link} ({src} -{rel}-> {dst}) does not join {parent!r} to "
+                             f"{child!r} in its scope")
+                if not self.admits(s, child):
+                    self.bad(f"row {n}: {s['var']} = {child!r} is not a node step {j} admits")
+                if s.get("edges") is not None and link not in set(s["edges"]):
+                    self.bad(f"row {n}: step {j}'s link {link} is not one of its edges")
 
     def shortest(self, request: Mapping, answer: Mapping, status: str) -> None:
         if answer.get("found") is not True:

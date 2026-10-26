@@ -21,7 +21,7 @@ from typing import Any
 from graph_runtime import Projection, Result, execute
 
 DIRECTION = {"out": "forward", "in": "reverse"}
-STEP_KEYS = ("from", "edge", "direction", "to", "as")          # what a structural step keeps
+STEP_KEYS = ("from", "edge", "direction", "to", "as", "optional", "edge_as")   # what a structural step keeps
 
 
 class Unsupported(ValueError):
@@ -101,6 +101,26 @@ def chain(plan: Mapping, spec: Mapping) -> list[dict]:
     if not pattern:
         raise Unsupported("the plan has no steps")
     return pattern
+
+
+def pattern_request(plan: Mapping, spec: Mapping) -> dict:
+    """A plan whose steps are all edge steps, of any tree shape and with optional steps, as a GRAPH pattern request:
+    the match's label (or id), each step's edge type and its specializations in its direction, its ``to`` label, its
+    ``edge_as`` and ``optional``. Filters are SCALE's to apply (as node or edge sets, or on the rows)."""
+    m = plan.get("match") or {}
+    root = m.get("as", "self")
+    steps = []
+    for i, st in enumerate(plan.get("steps") or []):
+        if "edge" not in st:
+            raise Unsupported(f"step {i} binds value entries or follows a field")
+        steps.append({"from": st.get("from", root), "var": st["as"],
+                      "scope": [{"relation": t, "direction": DIRECTION[st.get("direction", "out")]}
+                                for t in edge_closure(spec, st["edge"])],
+                      "node_types": [st["to"]] if st.get("to") else None, "edge_var": st.get("edge_as"),
+                      "optional": bool(st.get("optional"))})
+    return {"operation": "pattern", "steps": steps,
+            "match": {"var": root, "node_types": [m["label"]] if m.get("label") else None,
+                      "nodes": [m["id"]] if m.get("id") else None}}
 
 
 def matched(doc: Mapping, spec: Mapping, plan: Mapping) -> list[str]:
