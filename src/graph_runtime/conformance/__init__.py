@@ -195,6 +195,13 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     for key, field in (("matching_size", "size"), ("left_count", "left_count"), ("deficiency", "deficiency")):
         if key in exp and done and answer.get(field) != exp[key]:
             problems.append(f"{field} {answer.get(field)!r}, expected {exp[key]}")
+    if "rank" in exp and answer.get("rank") != exp["rank"]:  # incidence: exact, null when interrupted
+        problems.append(f"rank {answer.get('rank')!r}, expected {exp['rank']!r}")
+    for key in ("left_kernel", "right_kernel"):
+        if key in exp and done:
+            got = [[[e["node"], e["value"]] for e in vec] for vec in answer.get(key) or []]
+            if got != exp[key]:
+                problems.append(f"{key} {got}, expected the canonical basis {exp[key]}")
     if "idoms" in exp and done:                             # dominators: each reached node's immediate dominator
         got = {e["node"]: e["idom"] for e in answer.get("tree") or []}
         if got != exp["idoms"]:

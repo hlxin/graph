@@ -24,6 +24,11 @@ def request(rng, op, ids):
                     capacities=rng.choice([None, {"by_relation": {r: rng.randint(1, 3) for r in RELATIONS}}]))
     if op == "matching":
         return dict(left={"node_types": rng.sample(TYPES, 1)}, scope=scope)
+    if op == "incidence":
+        rows = rng.sample(ids, rng.randint(1, len(ids) - 1))
+        return dict(rows={"nodes": rows}, columns={"nodes": [n for n in ids if n not in rows]}, scope=scope,
+                    coefficients={"by_relation": {r: rng.choice([-2, -1, 1, 3]) for r in RELATIONS}},
+                    kernels=rng.choice([[], ["left"], ["right"], ["left", "right"]]))
     return dict(sources=rng.sample(ids, 1), scope=scope, targets=rng.choice([None, rng.sample(ids, 1)]))
 
 
@@ -36,19 +41,21 @@ def canonical(op, answer):
         return answer["value"], answer["cut"], answer["cut_nodes"]
     if op == "matching":
         return answer["size"], answer["left_count"], answer["deficiency"]
+    if op == "incidence":
+        return answer["rank"], answer["left_kernel"], answer["right_kernel"]
     return answer["reached"], answer["tree"], answer["chains"]
 
 
 def test_a_result_holds_exactly_when_its_certificate_still_checks():
     rng = random.Random("revalidate-checked")
     tally: dict = {}
-    for _ in range(600):
+    for _ in range(720):
         nodes, edges = random_graph(rng, max_nodes=9, max_edges=18)
         ids = [node_id(n) for n in nodes]
         if len(ids) < 2:
             continue
         p = Projection.build(nodes=nodes, edges=edges, relations=RELATIONS, node_types=TYPES)
-        op = rng.choice(["components", "biconnectivity", "max_flow", "matching", "dominators"])
+        op = rng.choice(["components", "biconnectivity", "max_flow", "matching", "dominators", "incidence"])
         raw = request(rng, op, ids)
         old = execute(p, p.request(op, certificate=rng.random() < 0.85, **raw))
         nodes2, edges2 = edited(rng, nodes, edges)
@@ -63,6 +70,36 @@ def test_a_result_holds_exactly_when_its_certificate_still_checks():
         if old.answer.get("certificate") is None and old.complete and verdict.verdict != "fails":
             assert codes <= {"no_certificate"}
         tally[(op, verdict.verdict)] = tally.get((op, verdict.verdict), 0) + 1
-    for op in ("components", "biconnectivity", "max_flow", "matching", "dominators"):
+    for op in ("components", "biconnectivity", "max_flow", "matching", "dominators", "incidence"):
         assert tally.get((op, "holds"), 0) >= 10, tally
         assert tally.get((op, "unknown"), 0) + tally.get((op, "fails"), 0) >= 10, tally
+
+
+def test_a_stale_nearest_cut_and_a_broken_kernel_are_refuted():
+    """Removing an unused parallel edge leaves the cached flow a maximum flow and its cut a minimum cut, but no longer
+    the cut nearest the sources: the answer fails. A requested kernel vector that no longer multiplies to zero
+    fails too, rather than leaving the answer unknown."""
+    nodes = ["s", "a", "t"]
+    edges = [{"id": "e1", "source": "s", "target": "a", "relation": "R"},
+             {"id": "e2", "source": "s", "target": "a", "relation": "R"},
+             {"id": "e3", "source": "a", "target": "t", "relation": "R"}]
+    p = Projection.build(nodes=nodes, edges=edges)
+    old = execute(p, p.request("max_flow", sources=["s"], targets=["t"], scope=[("R", "forward")], certificate=True))
+    assert [h["edge"] for h in old.answer["cut"]] == ["e3"]
+    q = Projection.build(nodes=nodes, edges=edges[:1] + edges[2:])
+    assert [h["edge"] for h in execute(q, q.request("max_flow", sources=["s"], targets=["t"],
+                                                    scope=[("R", "forward")])).answer["cut"]] == ["e1"]
+    verdict = revalidate(old, q)
+    assert verdict.verdict == "fails" and {r["code"] for r in verdict.reasons} == {"answer_refuted"}
+
+    nodes = [{"id": "x", "types": ["Row"]}, {"id": "y", "types": ["Row"]}, {"id": "c1", "types": ["Column"]},
+             {"id": "c2", "types": ["Column"]}]
+    before = [{"id": "m1", "source": "x", "target": "c1", "relation": "R"},
+              {"id": "m2", "source": "x", "target": "c2", "relation": "R"}]
+    p = Projection.build(nodes=nodes, edges=before)
+    old = execute(p, p.request("incidence", rows={"node_types": ["Row"]}, columns={"node_types": ["Column"]},
+                               scope=[("R", "forward")], coefficients={"by_relation": {"R": 1}}, kernels=["right"]))
+    assert [[(e["node"], e["value"]) for e in v] for v in old.answer["right_kernel"]] == [[("c1", -1), ("c2", 1)]]
+    q = Projection.build(nodes=nodes, edges=before + [{"id": "m3", "source": "y", "target": "c1", "relation": "R"}])
+    verdict = revalidate(old, q)
+    assert verdict.verdict == "fails" and {r["code"] for r in verdict.reasons} == {"answer_refuted"}

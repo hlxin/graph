@@ -400,6 +400,15 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                         b.add_edge(('L', u), ('R', v))
             size = len(nx.bipartite.maximum_matching(b, top_nodes=[('L', u) for u in left])) // 2
             assert (exp['matching_size'], exp['left_count'], exp['deficiency']) == (size, len(left), len(left) - size)
+        elif op == 'incidence':
+            from test_incidence import sympy_answer
+            raw = case['request']
+            rank, left, right = sympy_answer(g['nodes'], g['edges'], raw)
+            assert exp['rank'] in (rank, None), case['name']
+            if 'left_kernel' in exp:
+                assert exp['left_kernel'] == left, case['name']
+            if 'right_kernel' in exp:
+                assert exp['right_kernel'] == right, case['name']
         elif op == 'dominators':
             from test_dominators import oracle as dominator_oracle
             want = dominator_oracle(g['nodes'], g['edges'], case['request']['scope'], r['sources'])

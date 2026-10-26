@@ -26,7 +26,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import dominators, flows, paths, ranking, structure
+from . import algebra, dominators, flows, paths, ranking, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -306,6 +306,22 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = None if req["targets"] is None else _nodes(p, req["targets"], "targets")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "incidence":
+        plan.certificate, plan.left, plan.right = req["certificate"], "left" in req["kernels"], "right" in req["kernels"]
+        masks = p._node_mask
+        chosen = []
+        for field in ("rows", "columns"):
+            tmask, nodes = _node_filter(p, req[field], field)
+            chosen.append(sorted(u for u in (nodes if nodes is not None else range(len(p._node_ids)))
+                                 if tmask is None or masks[u] & tmask))
+        plan.rows, plan.columns = chosen
+        both = sorted(set(plan.rows) & set(plan.columns))
+        if both:
+            raise RequestError(FAILED, "invalid_request", f"rows and columns are disjoint; both hold "
+                               f"{[p._node_ids[u] for u in both[:10]]}", {"nodes": [p._node_ids[u] for u in both[:100]]})
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        table = _costs(p, req["coefficients"], plan.fwd, plan.rev, "coefficients", scaled=False)
+        plan.coefficient = lambda ei: Fraction(table.given(ei))
     elif op == "periodicity":
         raise RequestError("unsupported", "unsupported_operation", "periodicity runs on a periodic projection: the "
                            "translation lattice of a component of an infinite periodic graph",
@@ -1836,4 +1852,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "matching": (lambda p, plan, ctl: flows.search_matching(p, plan, ctl),
                             lambda p, plan, st: flows.answer_matching(p, plan, st)),
                "dominators": (lambda p, plan, ctl: dominators.search(p, plan, ctl),
-                              lambda p, plan, st: dominators.answer(p, plan, st))}
+                              lambda p, plan, st: dominators.answer(p, plan, st)),
+               "incidence": (lambda p, plan, ctl: algebra.search(p, plan, ctl),
+                             lambda p, plan, st: algebra.answer(p, plan, st))}

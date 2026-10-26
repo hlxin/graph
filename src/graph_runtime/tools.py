@@ -95,7 +95,7 @@ TOOLS: list[dict] = [
         "name": "graph_execute",
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
-                       "biconnectivity, max_flow, matching, dominators, or on a periodic "
+                       "biconnectivity, max_flow, matching, dominators, incidence, or on a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
                        "regular_path takes a path expression "
@@ -487,6 +487,12 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
             summary.update(head([e for e in a["tree"] if e["idom"] is not None], ("node", "idom")))
         if a["chains"] is not None:
             summary["chains"] = a["chains"][:limit]
+    elif op == "incidence":
+        summary = {k: a[k] for k in ("rows", "columns", "rank")}
+        for key in ("left_kernel", "right_kernel"):
+            if a[key] is not None:
+                summary[key] = {"vectors": len(a[key]), "items": a[key][:limit], "more": len(a[key]) > limit}
+        summary["certificate"] = kind(a["certificate"])
     elif op == "periodicity":
         summary = {"count": a["count"], "components": [
             {"seeds": c["seeds"][:limit], "rank": c["rank"], "basis": c["basis"], "copies": c["copies"],

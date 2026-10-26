@@ -48,6 +48,9 @@ Operations (docs/API_CONTRACT.md):
   partners), ``certificate``; limit ``max_expansions``.
 * ``dominators``: ``sources``, ``scope``, ``targets`` (null: every node reached, with its immediate dominator; else
   each target's dominators), ``certificate``; limit ``max_expansions``.
+* ``incidence``: ``rows``, ``columns`` (``{node_types, nodes}`` each, disjoint), ``scope``, ``coefficients`` (as
+  weights: any finite numbers, by relation or by edge), ``kernels`` (a subset of ``left`` and ``right``; default
+  none), ``certificate``; limit ``max_expansions``.
 
 No operation takes a field named ``kind``: a request's identity digests its fields with ``kind`` naming the record
 kind (``graph_runtime.request``).
@@ -72,7 +75,7 @@ from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
-              "biconnectivity", "max_flow", "matching", "dominators")
+              "biconnectivity", "max_flow", "matching", "dominators", "incidence")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
@@ -98,7 +101,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "biconnectivity": ("max_expansions",),
            "max_flow": ("max_expansions",),
            "matching": ("max_expansions",),
-           "dominators": ("max_expansions",)}
+           "dominators": ("max_expansions",),
+           "incidence": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -114,7 +118,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "biconnectivity": (("scope",), ("nodes", "blocks", "certificate")),
            "max_flow": (("sources", "targets", "scope"), ("capacities", "node_capacity", "certificate")),
            "matching": (("left", "scope"), ("certificate",)),
-           "dominators": (("sources", "scope"), ("targets", "certificate"))}
+           "dominators": (("sources", "scope"), ("targets", "certificate")),
+           "incidence": (("rows", "columns", "scope", "coefficients"), ("kernels", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -325,6 +330,22 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["sources"] = _ids(raw["sources"], "sources")
         data["scope"] = _scope(raw["scope"], "scope")
         data["targets"] = None if raw.get("targets") is None else _ids(raw["targets"], "targets")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "incidence":
+        for field in ("rows", "columns"):
+            spec = raw[field]
+            if not isinstance(spec, Mapping) or any(k not in ("node_types", "nodes") for k in spec):
+                raise _fail("invalid_request", f"{field} is {{node_types, nodes}}")
+            data[field] = _node_constraint(spec, field)
+            if data[field]["node_types"] is None and data[field]["nodes"] is None:
+                raise _fail("invalid_request", f"{field} names node_types or nodes")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["coefficients"] = _weights(raw["coefficients"], "coefficients")
+        kernels = raw.get("kernels", [])
+        if isinstance(kernels, (str, bytes)) or not isinstance(kernels, (list, tuple)) or any(
+                k not in ("left", "right") for k in kernels):
+            raise _fail("invalid_request", f"kernels is a list of left and right, not {kernels!r}")
+        data["kernels"] = sorted(set(kernels))
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "periodicity":
         data["nodes"] = _ids(raw["nodes"], "nodes")
