@@ -79,6 +79,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.derivation(request, answer)
         elif op == "periodicity":
             check.periodicity(request, answer)
+        elif op == "personalized_pagerank":
+            check.pagerank(request, answer)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -826,6 +828,56 @@ class _Checker:
                     self.bad(f"certificate: a rule gives {u!r} a value better than the "
                              f"{'listed' if u in value else 'bound'} {claim if claim is not never else 'none'}")
                     break
+
+    def pagerank(self, request: Mapping, answer: Mapping) -> None:
+        """A ranking against the records, from its certificate (the estimates p): every residual is recomputed
+        exactly from the PageRank equation, r = s - p (I - (1 - alpha) P) / alpha, and must not be negative; then
+        pi = p + sum_u r(u) pi_u bounds every node's PageRank, p(v) <= pi(v) <= p(v) + r(v) + (1 - alpha) (R - r(v)),
+        and the listed intervals, the residual and the certified prefix must be exactly those. Without a
+        certificate only the records' nodes are checked."""
+        for e in answer.get("ranked") or []:
+            if e.get("node") not in self.types_of:
+                self.bad(f"ranked {e.get('node')!r} is not an input node")
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+        alpha = Fraction(request["alpha"])
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        estimate = {e["node"]: Fraction(e["value_exact"]) for e in cert["values"]}
+        sources = request["sources"]
+        residual: dict[Any, Fraction] = {s: Fraction(1, len(sources)) for s in sources}
+        for u, x in estimate.items():
+            if u not in self.types_of:
+                self.bad(f"certificate: {u!r} is not an input node")
+                continue
+            residual[u] = residual.get(u, Fraction(0)) - x / alpha
+            hops = self.hops_from(u, allowed)
+            for _, v, _ in hops:
+                residual[v] = residual.get(v, Fraction(0)) + (1 - alpha) * x / (alpha * len(hops))
+        negative = sorted((u for u, r in residual.items() if r < 0), key=str)
+        if negative:
+            self.bad(f"certificate: the estimates leave a negative residual at {negative[:5]}: they overstate the "
+                     "PageRank")
+            return
+        total = sum(residual.values(), Fraction(0))
+        if Fraction(answer["residual_exact"]) != total:
+            self.bad(f"the residual is {total}, not {answer['residual_exact']}")
+
+        def upper(u: Any) -> Fraction:
+            r = residual.get(u, Fraction(0))
+            return estimate.get(u, Fraction(0)) + r + (1 - alpha) * (total - r)
+        listed = []
+        for e in answer.get("ranked") or []:
+            u = e["node"]
+            lo, hi = Fraction(e["lower_exact"]), Fraction(e["upper_exact"])
+            if lo != estimate.get(u, Fraction(0)) or hi != upper(u):
+                self.bad(f"ranked {u!r}: the records prove [{estimate.get(u, 0)}, {upper(u)}], not [{lo}, {hi}]")
+            listed.append(u)
+        rest = [upper(u) for u in set(estimate) | set(residual) if u not in listed] + [(1 - alpha) * total]
+        m = answer.get("certified_top", 0)
+        if m and min(estimate.get(u, Fraction(0)) for u in listed[:m]) <= max(
+                rest + [upper(u) for u in listed[m:]]):
+            self.bad(f"the first {m} ranked nodes are not proven the top ones")
 
     def shortest(self, request: Mapping, answer: Mapping, status: str) -> None:
         if answer.get("certificate") is not None:

@@ -26,7 +26,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import paths
+from . import paths, ranking
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -271,6 +271,11 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.cost = (None if req["costs"] is None
                      else _costs(p, req["costs"], plan.fwd, plan.rev, scaled=req["objective"] == "min_sum"))
         plan.rational = plan.cost is not None and plan.cost.rational
+    elif op == "personalized_pagerank":
+        plan.certificate, plan.top = req["certificate"], req["top"]
+        plan.sources = _nodes(p, req["sources"], "sources")
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        plan.alpha, plan.tolerance = Fraction(req["alpha"]), Fraction(req["tolerance"])
     elif op == "periodicity":
         raise RequestError("unsupported", "unsupported_operation", "periodicity runs on a periodic projection: the "
                            "translation lattice of a component of an infinite periodic graph",
@@ -1606,4 +1611,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "support": (_search_support, _answer_support),
                "bottleneck_path": (_search_bottleneck, _answer_bottleneck),
                "regular_path": (_search_regular, _answer_regular),
-               "derivation": (_search_derivation, _answer_derivation)}
+               "derivation": (_search_derivation, _answer_derivation),
+               "personalized_pagerank": (lambda p, plan, ctl: ranking.search(p, plan, ctl),
+                                         lambda p, plan, st: ranking.answer(p, plan, st))}

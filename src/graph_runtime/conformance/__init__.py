@@ -87,8 +87,8 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     if status not in statuses:
         return [f"status {status!r} ({(data.get('error') or {}).get('code')}), expected {statuses}"]
     problems = list(verify_result(data, nodes=graph["nodes"], edges=graph["edges"],
-                                  type_parents=graph.get("type_parents"), relation_parents=graph.get("relation_parents"),
-                                  dimensions=graph.get("dimensions")))
+                                  type_parents=graph.get("type_parents"),
+                                  relation_parents=graph.get("relation_parents"), dimensions=graph.get("dimensions")))
     p = _projection(graph)
     ctx = case.get("context") or {}
     raw = {**case["request"], "projection": ctx.get("request_projection", p.identity)}
@@ -152,6 +152,13 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
         got = [{n["node"]: list(n["image"]) for n in x["nodes"]} for x in answer.get("components") or []]
         if got != exp["component_nodes"]:
             problems.append(f"component nodes {got}, expected {exp['component_nodes']}")
+    if "pagerank" in exp:                                   # each listed interval holds the exact PageRank
+        got = {e["node"]: (Fraction(e["lower_exact"]), Fraction(e["upper_exact"])) for e in answer.get("ranked") or []}
+        if set(got) != set(exp["pagerank"]) or any(not got[n][0] <= Fraction(v) <= got[n][1]
+                                                   for n, v in exp["pagerank"].items()):
+            problems.append(f"ranked intervals {got} do not hold the PageRanks {exp['pagerank']}")
+    if "certified_top" in exp and answer.get("certified_top") != exp["certified_top"]:
+        problems.append(f"certified_top {answer.get('certified_top')}, expected {exp['certified_top']}")
     if "count" in exp and answer.get("count") != exp["count"]:
         problems.append(f"count {answer.get('count')}, expected {exp['count']}")
     if "discovered" in exp and data["stats"]["discovered"] != exp["discovered"]:

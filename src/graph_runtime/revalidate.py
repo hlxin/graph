@@ -179,7 +179,7 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
     """The reasons against the result, and how they were found: ``diff`` when a diff from the result's projection
     to this one, over the same vocabulary, was given and trusted; ``answer`` otherwise."""
     use = d is not None and d.old == data.get("projection") and d.new == p.identity and not d.vocabulary_changed \
-        and data.get("operation") != "derivation"          # a derivation is always checked in full
+        and data.get("operation") not in ("derivation", "personalized_pagerank")   # always checked in full
     checked = "diff" if use else "answer"
     if data.get("status") != COMPLETED:
         return [{"code": "not_complete", "status": data.get("status")}], checked
@@ -187,7 +187,7 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
         return [], checked
     op = data["operation"]
     if op not in ("reachability", "dependency_impact", "typed_path", "shortest_path", "bottleneck_path",
-                  "regular_path", "derivation"):
+                  "regular_path", "derivation", "personalized_pagerank"):
         return [{"code": "not_certified", "operation": op}], checked
     try:
         req = normalize_request({**data["request"], "projection": p.identity})
@@ -207,6 +207,8 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
         _regular(ctx)
     elif op == "derivation":
         _derivation(ctx)
+    elif op == "personalized_pagerank":
+        _pagerank(ctx)
     else:
         _bottleneck(ctx)
     return ctx.out, checked
@@ -569,6 +571,55 @@ def _derivation(ctx: SimpleNamespace) -> None:
             offers = [hop(ei, v) for ei, v, _ in hops(u)]
         if any(better(x, claim) for x in offers):
             out.append({"code": "certificate_broken", "node": p._node_ids[u]})
+
+
+# ---------------------------------------------------------------------------------------------- pagerank
+def _pagerank(ctx: SimpleNamespace) -> None:
+    """A ranking holds while its proof does on the new projection: its estimates, put into the PageRank equation of
+    the new walk, leave no negative residual, and the intervals and certified prefix that residual proves are within
+    the ones the answer gives. Every residual depends on the walk's hops everywhere the estimates reach, so a ranking
+    is always checked in full."""
+    p, plan, answer, out = ctx.p, ctx.plan, ctx.answer, ctx.out
+    for e in answer["ranked"]:
+        if e["node"] not in p._node_index:
+            out.append({"code": "node_gone", "node": e["node"]})
+    cert = answer["certificate"]
+    if cert is None:
+        out.append({"code": "no_certificate"})
+        return
+    if out:
+        return
+    alpha = plan.alpha
+    estimate = {p._node_index[e["node"]]: Fraction(e["value_exact"]) for e in cert["values"]
+                if e["node"] in p._node_index}
+    if len(estimate) != len(cert["values"]):
+        out.append({"code": "certificate_broken", "node": next(e["node"] for e in cert["values"]
+                                                                if e["node"] not in p._node_index)})
+        return
+    residual: dict[int, Fraction] = {s: Fraction(1, len(plan.sources)) for s in plan.sources}
+    for u, x in estimate.items():
+        residual[u] = residual.get(u, Fraction(0)) - x / alpha
+        hops = list(_hops(p, u, plan.fwd, plan.rev))
+        for _, v, _ in hops:
+            residual[v] = residual.get(v, Fraction(0)) + (1 - alpha) * x / (alpha * len(hops))
+    negative = [u for u, r in residual.items() if r < 0]
+    if negative:
+        out.append({"code": "certificate_broken", "node": p._node_ids[min(negative)]})
+        return
+    total = sum(residual.values(), Fraction(0))
+
+    def upper(u: int) -> Fraction:
+        r = residual.get(u, Fraction(0))
+        return estimate.get(u, Fraction(0)) + r + (1 - alpha) * (total - r)
+    listed = [p._node_index[e["node"]] for e in answer["ranked"]]
+    for e, u in zip(answer["ranked"], listed):
+        if upper(u) > Fraction(e["upper_exact"]):
+            out.append({"code": "certificate_broken", "node": e["node"]})
+    m = answer["certified_top"]
+    rest = [upper(u) for u in set(estimate) | set(residual) if u not in listed] + [(1 - alpha) * total]
+    if m and min(estimate.get(u, Fraction(0)) for u in listed[:m]) <= max(rest + [
+            Fraction(e["upper_exact"]) for e in answer["ranked"][m:]]):
+        out.append({"code": "certificate_broken", "node": answer["ranked"][m - 1]["node"]})
 
 
 # ---------------------------------------------------------------------------------------------- shortest path

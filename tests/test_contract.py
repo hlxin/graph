@@ -305,6 +305,14 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 assert exp['underived'] == [t for t in sorted(raw['targets']) if t not in values], case['name']
             else:
                 assert all(values[t] == v for t, v in exp['derived'].items()), case['name']
+        elif op == 'personalized_pagerank':
+            from test_ranking import exact_pagerank
+            raw, graph = case['request'], suite['graphs'][case['graph']]
+            pi = exact_pagerank(graph['nodes'], graph['edges'], raw['sources'], raw['scope'],
+                                Fraction(raw.get('alpha', '3/20')))
+            assert all(pi[n] == Fraction(v) for n, v in exp['pagerank'].items()), case['name']
+            ranked = sorted((n for n in pi if pi[n]), key=lambda n: (-pi[n], n))
+            assert set(exp['pagerank']) == set(ranked[:raw.get('top', 20)]), case['name']
         elif op == 'periodicity':
             from test_periodicity import oracle as lattice_oracle
             graph = suite['graphs'][case['graph']]

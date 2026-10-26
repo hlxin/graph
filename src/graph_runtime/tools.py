@@ -94,7 +94,8 @@ TOOLS: list[dict] = [
     {
         "name": "graph_execute",
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
-                       "derivation, dependency_impact, pattern, support, or on a periodic cell periodicity) on a "
+                       "derivation, personalized_pagerank, dependency_impact, pattern, support, or on a periodic "
+                       "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
                        "regular_path takes a path expression "
                        "such as 'CITES+/^SUPPORTS[Claim]' (/ then, | or, * + ? {m,n} repeats, ^ reverse, [types] "
@@ -458,6 +459,9 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
                    "more": len(a["derived"]) > limit or len(a["underived"]) > limit,
                    "derivation_nodes": len(a["derivation"]), "certificate": kind(a["certificate"]),
                    **({"bound": a["bound"]} if "bound" in a else {})}
+    elif op == "personalized_pagerank":
+        summary = {"count": a["count"], "certified_top": a["certified_top"], "residual": a["residual"],
+                   **head(a["ranked"], ("node", "lower", "upper"))}
     elif op == "periodicity":
         summary = {"count": a["count"], "components": [
             {"seeds": c["seeds"][:limit], "rank": c["rank"], "basis": c["basis"], "copies": c["copies"],

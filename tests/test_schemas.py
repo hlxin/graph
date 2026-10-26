@@ -52,6 +52,8 @@ def test_every_result_and_request_validates():
              "grounds": rng.choice([None, ids[:2]]), "objective": rng.choice(["min_sum", "min_max", "max_min"]),
              "costs": rng.choice([None, {"by_relation": {r: rng.choice([1, 2, 0.5]) for r in RELATIONS}}]),
              "certificate": rng.random() < 0.5},
+            {"operation": "personalized_pagerank", "sources": ids[:2], "scope": scope,
+             "alpha": rng.choice(["3/20", 0.5]), "top": rng.randint(1, 4), "certificate": rng.random() < 0.5},
             {"operation": "regular_path", "sources": ids[:1], "targets": rng.choice([None, ids[-2:]]),
              "path": rng.choice(["R*/S[A]", "(R|^T)+", "S{0,2}/^R", ["R", "T?"]]),
              "answer": rng.choice(["witness", "reached"]), "certificate": rng.random() < 0.5},
