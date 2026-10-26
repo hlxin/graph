@@ -13,7 +13,8 @@ states consistently, and required costs only for edges actually in scope. Revisi
 
 - type and relation hierarchies (section 1)
 - the `pattern` operation: tree patterns, enumerated without dead ends and counted without listing (section 4)
-- the `support` operation: what loses all or some of its support when nodes fail, under AND/OR rules (section 4)
+- the `support` operation: what loses all or some of its support when nodes fail, under AND/OR rules, certified on
+  request by both least fixpoints' ranks (section 4)
 - certificates: complete answers that prove their negatives, optima and lower bounds against the records without a
   second search, and closure checks of complete reachability and impact answers (sections 4 and 6)
 - revalidation: whether a cached result still holds on an edited projection, decided from its answer and
@@ -154,7 +155,7 @@ no wildcard: a scope lists what it follows.
 | `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}`, `certificate` (default false) | `max_expansions` |
 | `dependency_impact` | `changed` (node IDs), `scope` (the direction in which a change propagates), `max_depth` | `max_expansions`, `max_results` |
 | `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`, or, to close a cycle, `{"from", "to", "scope", "edges", "edge_var"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
-| `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
+| `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one), `certificate` (default false) | `max_expansions`, `max_results` |
 | `bottleneck_path` | `sources`, `targets`, `scope`, `weights` (as costs, but any finite number), `objective` (`max_min`, the default, or `min_max`), `certificate` (default false) | `max_expansions` |
 | `regular_path` | `sources`, `path` (a path expression: text, a list or a tree, normalized to the tree), `targets` (null: any node), `answer` (`witness`, the default, or `reached`), `certificate` (default false) | `max_expansions`, `max_results` |
 | `personalized_pagerank` | `sources`, `scope` (the hops a walk follows), `alpha` (the probability of stopping at each step, strictly between 0 and 1; a number or `p/q`, normalized to `p/q`; default `3/20`), `tolerance` (the residual to reach, the same way; default `1/10000`), `top` (nodes listed; default 20), `certificate` (default false) | `max_expansions` |
@@ -700,9 +701,19 @@ example from a claim to its evidence items, or from an item to the source it cit
 - **Limits.** An expansion budget, a deadline or a cancellation that stops the analysis leaves `lost`, `weakened`
   and `counts` null: unknown, never empty. `max_results` bounds the nodes listed, lost ones first. More than that is
   an `output_limit` interruption, and the counts stay exact.
+- **Certificate.** With `certificate: true`, a complete answer carries `{"kind": "fixpoints", "nodes": [{"node",
+  "before", "after"}]}`: every node the analysis read (the region and everything it rests on), by node ID, with its
+  rank in each least fixpoint, or null where it does not stand. A ground ranks 0; any other standing node ranks one
+  more than its lowest standing support, an `all_of` node one more than its highest, so the ranks depend on the
+  fixpoint alone. A checker confirms each fixpoint rule by rule. A ranked node is a ground or meets its rule on
+  supports of lower rank, so by induction on rank it stands. An unranked node is failed (after the failure), or has
+  supports and fails its rule on unranked ones (all of them, or one for an `all_of` node); such a set is unfounded,
+  so none of it stands. The certificate must classify the region and every support of it; nothing outside the
+  region changes. Both fixpoints, and from them every listed node, count, standing support and cause, are then
+  proven without recomputing either one.
 
 Answer: `{"failed", "lost": [{"node", "supports", "standing", "failing": [hop], "causes"}], "weakened": [...],
-"counts": {"lost", "weakened", "ungrounded"}}`.
+"counts": {"lost", "weakened", "ungrounded"}, "certificate"}`.
 
 ## 5. Results
 
@@ -767,9 +778,10 @@ The result contract reports how an execution ended. It carries no scientific ans
     node at depth 0) leads to a listed node at most one hop deeper. With the witnesses, this proves the answer
     complete and its depths least
   - that every certificate proves its answer, as section 4 describes
-  - for support, everything: it recomputes what stands before and after from the records, by re-evaluating each
-    node's rule until nothing changes rather than by the engine's counting, and compares every listed node, count,
-    failing hop and cause
+  - for support, everything: what stands before and after, from its certificate when it has one (each rank and
+    each unranked node against its rule, and the region's classification), otherwise recomputed from the records
+    by re-evaluating each node's rule until nothing changes rather than by the engine's counting; then every listed
+    node, count, failing hop and cause
   - for a derivation, every listed node's rule against the records (given: a ground; all: a node of an `all_of`
     type using one hop to each distinct input; one: any other node) and every use as a hop in scope; and the
     certificate's conditions at every node of the targets' region, which it finds from the records
@@ -806,7 +818,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 165 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 168 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -835,12 +847,12 @@ A ranking holds while its estimates still prove it on the new projection, as `ve
 new walk's equation they leave no negative residual, and the residual, intervals and certified prefix they prove are
 exactly the ones the answer gives (tighter ones would leave its exact numbers false). It is always checked in full.
 
-Components, biconnectivity, a maximum flow, a matching, dominators, incidence, critical paths and d-separation are
-revalidated by their certificates, which
+Components, biconnectivity, a maximum flow, a matching, dominators, incidence, critical paths, d-separation and
+support are revalidated by their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
 kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest
-the sources); otherwise it holds exactly when its certificate still checks against the new projection's records (as
+the sources, a support count that an added or removed support changed); otherwise it holds exactly when its certificate still checks against the new projection's records (as
 `verify_result` checks it), and is unknown (`certificate_broken`, with the first problem found) when it does not, or
 (`no_certificate`) when it has none, unless its witness alone proves it (a cycle, an active trail). These are always checked in full.
 
@@ -854,7 +866,7 @@ The verdict is one of three:
 | --- | --- | --- |
 | `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
 | `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `rule_changed` (a derivation's ground is no longer one, or an `all_of` node's inputs changed), `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost), `answer_refuted` (a claim of a certificate-checked answer the new records contradict) |
-| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
+| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
 
 Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",
 "operation", "result_id", "request_id", "from_projection", "to_projection", "verdict", "reasons", "reason_count",

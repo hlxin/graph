@@ -578,9 +578,12 @@ class _Checker:
             self.bad(f"certificate: the source {src!r} is not listed")
 
     def support(self, request: Mapping, answer: Mapping, status: str, edges: list[Mapping]) -> None:
-        """Recompute, from the records alone, what stands before and after the failure, and compare the answer with
-        it: the lost and weakened nodes (a prefix of each when an output limit cut the lists), each node's supports,
-        the supports that still stand, the hops to those that fell, and the failed nodes it rests on."""
+        """A support answer against the records: what stands before and after the failure, from the certificate
+        when there is one (its ranks and unfounded nodes checked rule by rule, nothing recomputed), else recomputed
+        from the records alone (by re-evaluating each node's rule until nothing changes, not by the engine's
+        counting); then the lost and weakened nodes (a prefix of each when an output limit cut the lists), each
+        node's supports, the supports that still stand, the hops to those that fell, and the failed nodes it rests
+        on. Without proofs, only what an entry says of the records themselves: its supports and failing hops."""
         if answer.get("lost") is None:
             return
         allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
@@ -599,35 +602,61 @@ class _Checker:
         for u, sup in supports.items():
             for v in sup:
                 dependents[v].add(u)
-
-        def holds(u: Any, stands: set) -> bool:
-            sup = supports[u]
-            if every and self.types_of[u] & every:
-                return all(v in stands for v in sup)
-            return not sup or any(v in stands for v in sup)
-
-        def fixpoint(down: set) -> set:
-            stands: set = set()
-            todo = deque(n for n in self.types_of if not supports[n])
-            while todo:
-                u = todo.popleft()
-                if u in stands or u in down or not holds(u, stands):
-                    continue
-                stands.add(u)
-                todo.extend(dependents[u])
-            return stands
-
         failed = set(request["failed"])
-        before, after = fixpoint(set()), fixpoint(failed)
-        fallen = before - after
         region, todo = set(failed), deque(failed)
         while todo:
             for u in dependents[todo.popleft()]:
                 if u not in region:
                     region.add(u)
                     todo.append(u)
+        allowed_dirs = {"forward", "reverse"}
+        entries = [("lost", e) for e in answer["lost"]] + [("weakened", e) for e in answer["weakened"]]
+        for kind, e in entries:                               # what an entry says of the records themselves
+            u, where = e.get("node"), f"{kind} {e.get('node')!r}"
+            if u not in supports:
+                continue
+            if e.get("supports") != len(supports[u]):
+                self.bad(f"{where}: {e.get('supports')!r} supports, but the records give {len(supports[u])}")
+            for i, h in enumerate(e.get("failing") or []):
+                if h.get("from") != u or h.get("direction") not in allowed_dirs:
+                    self.bad(f"{where}: failing hop {i} does not start at it")
+                    continue
+                self.hop(f"{where}: failing hop {i}", u, h.get("to"), h.get("edge"), h.get("relation"),
+                         h.get("direction"), allowed)
+        if not self.proofs:
+            return
+
+        def all_of(u: Any) -> bool:
+            return bool(every and self.types_of[u] & every)
+
+        cert = answer.get("certificate")
+        if cert is not None:
+            stood = self.support_certificate(cert, supports, failed, region, all_of)
+            if stood is None:
+                return
+            before, after = stood
+        else:
+            def holds(u: Any, stands: set) -> bool:
+                sup = supports[u]
+                if all_of(u):
+                    return all(v in stands for v in sup)
+                return not sup or any(v in stands for v in sup)
+
+            def fixpoint(down: set) -> set:
+                stands: set = set()
+                todo = deque(n for n in self.types_of if not supports[n])
+                while todo:
+                    u = todo.popleft()
+                    if u in stands or u in down or not holds(u, stands):
+                        continue
+                    stands.add(u)
+                    todo.extend(dependents[u])
+                return stands
+
+            before, after = fixpoint(set()), fixpoint(failed)
+        fallen = {u for u in region if u in before and u not in after}   # nothing outside the region changes
         want_lost = sorted(u for u in fallen if u not in failed)
-        want_weak = sorted(u for u in after if supports[u] & fallen)
+        want_weak = sorted(u for u in region if u in after and supports[u] & fallen)
 
         def causes(u: Any) -> list:
             found, seen, todo = set(), {u}, [u]
@@ -644,7 +673,6 @@ class _Checker:
                   "ungrounded": sum(1 for u in region if u not in before and u not in failed)}
         if answer.get("counts") != counts:
             self.bad(f"counts {answer.get('counts')!r}, but the records give {counts}")
-        allowed_dirs = {"forward", "reverse"}
         for kind, want, got in (("lost", want_lost, answer["lost"]), ("weakened", want_weak, answer["weakened"])):
             names = [e.get("node") for e in got]
             if names != want[:len(names)] or (status == COMPLETED and len(names) != len(want)):
@@ -653,22 +681,69 @@ class _Checker:
                 u, where = e.get("node"), f"{kind} {e.get('node')!r}"
                 if u not in supports:
                     continue
-                if e.get("supports") != len(supports[u]):
-                    self.bad(f"{where}: {e.get('supports')!r} supports, but the records give {len(supports[u])}")
                 standing = len(supports[u] & after)
                 if e.get("standing") != standing:
                     self.bad(f"{where}: {e.get('standing')!r} standing supports, but the records give {standing}")
                 hops = e.get("failing") or []
                 if {h.get("to") for h in hops} != supports[u] & fallen or len(hops) != len(supports[u] & fallen):
                     self.bad(f"{where}: its failing supports are not the ones that fell")
-                for i, h in enumerate(hops):
-                    if h.get("from") != u or h.get("direction") not in allowed_dirs:
-                        self.bad(f"{where}: failing hop {i} does not start at it")
-                        continue
-                    self.hop(f"{where}: failing hop {i}", u, h.get("to"), h.get("edge"), h.get("relation"),
-                             h.get("direction"), allowed)
                 if e.get("causes") != causes(u):
                     self.bad(f"{where}: causes {e.get('causes')!r}, but the records give {causes(u)}")
+
+    def support_certificate(self, cert: Mapping, supports: Mapping, failed: set, region: set,
+                            all_of: Any) -> tuple[set, set] | None:
+        """What stands before and after, as a support certificate proves it, or None when it does not.
+
+        For each fixpoint, a node with a rank stands: a ground, or a node whose rule its supports of lower rank meet
+        (one of them, or all for an ``all_of`` node); by induction on rank, it is in the least fixpoint. A node
+        without one does not: it is failed (after the failure), or it has supports and its rule fails on those
+        without a rank (all of them, or one for an ``all_of`` node); such nodes are unfounded, so none is in the
+        least fixpoint. The certificate must classify the region (the failed nodes and everything that depends on
+        them) and every support of the region; nothing else can change."""
+        if not isinstance(cert, Mapping) or cert.get("kind") != "fixpoints" or not isinstance(cert.get("nodes"), list):
+            self.bad("certificate: a support answer's certificate is the two fixpoints' ranks (kind fixpoints)")
+            return None
+        ranks: list[dict] = [{}, {}]                          # before, after: node -> rank or None
+        for e in cert["nodes"]:
+            u = e.get("node") if isinstance(e, Mapping) else None
+            if u not in supports:
+                self.bad(f"certificate: {u!r} is not an input node")
+                return None
+            if u in ranks[0]:
+                self.bad(f"certificate: {u!r} is listed twice")
+                return None
+            for phase, field in enumerate(("before", "after")):
+                r = e.get(field)
+                if r is not None and (type(r) is not int or r < 0):
+                    self.bad(f"certificate: {u!r} has the rank {r!r} {field}: ranks are non-negative integers")
+                    return None
+                ranks[phase][u] = r
+        for u in sorted(region | {v for w in region for v in supports[w]}, key=str):
+            if u not in ranks[0]:
+                self.bad(f"certificate: it leaves {u!r}, in the failure's region or a support of it, unclassified")
+                return None
+        for phase, field in enumerate(("before", "after")):
+            rank = ranks[phase]
+            for u, r in rank.items():
+                sup, every = supports[u], all_of(u)
+                if phase == 1 and u in failed:
+                    if r is not None:
+                        self.bad(f"certificate: the failed node {u!r} is ranked as standing after the failure")
+                        return None
+                    continue
+                if r is not None:
+                    below = [v in rank and rank[v] is not None and rank[v] < r for v in sup]
+                    if sup and not (all(below) if every else any(below)):
+                        self.bad(f"certificate: {u!r} has rank {r} {field}, but its supports of lower rank do not "
+                                 f"meet its rule")
+                        return None
+                else:
+                    down = [v in rank and rank[v] is None for v in sup]
+                    if not sup or not (any(down) if every else all(down)):
+                        self.bad(f"certificate: {u!r} has no rank {field}, but its rule can still hold: "
+                                 f"{'a ground stands' if not sup else 'a support is ranked or unclassified'}")
+                        return None
+        return ({u for u, r in ranks[0].items() if r is not None}, {u for u, r in ranks[1].items() if r is not None})
 
     def regular(self, request: Mapping, answer: Mapping, status: str) -> None:
         """A regular path answer against the records and the path's automaton (computed here, independently of the

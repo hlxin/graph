@@ -1345,7 +1345,20 @@ def _support_problems(request: dict, answer: dict, status: str, interruption: di
     out = []
     if answer["failed"] != request["failed"]:
         out.append("failed must match the request")
-    lost, weakened, counts = answer["lost"], answer["weakened"], answer["counts"]
+    lost, weakened, counts, cert = answer["lost"], answer["weakened"], answer["counts"], answer["certificate"]
+    failed = set(request["failed"])
+    if cert is not None:
+        if status != COMPLETED:
+            out.append("only a complete support answer carries a certificate")
+        if not request["certificate"]:
+            out.append("a support answer carries a certificate only when the request asks for one")
+        names = [e["node"] for e in cert["nodes"]]
+        if names != sorted(set(names)):
+            out.append("a support certificate lists each node once, in ascending ID order")
+        if any(e["after"] is not None for e in cert["nodes"] if e["node"] in failed):
+            out.append("a support certificate ranks no failed node as standing after the failure")
+    elif request["certificate"] and status == COMPLETED:
+        out.append("a complete support answer carries the certificate its request asks for")
     if lost is None or weakened is None or counts is None:
         if lost is not None or weakened is not None or counts is not None or status != INTERRUPTED \
                 or (interruption or {}).get("reason") == "output_limit":
@@ -1365,7 +1378,6 @@ def _support_problems(request: dict, answer: dict, status: str, interruption: di
     if [e["node"] for e in lost] != sorted({e["node"] for e in lost}) \
             or [e["node"] for e in weakened] != sorted({e["node"] for e in weakened}) or len(set(names)) != len(names):
         out.append("lost and weakened nodes are unique, in ascending ID order, and never both")
-    failed = set(request["failed"])
     directions = {e["direction"] for e in request["scope"]}
     for kind, entries in (("lost", lost), ("weakened", weakened)):
         for e in entries:

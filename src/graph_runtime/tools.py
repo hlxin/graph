@@ -134,7 +134,8 @@ TOOLS: list[dict] = [
     {
         "name": "graph_verify",
         "description": "Check a result against a projection's records, independently of the engine: witnesses, the "
-                       "closure of complete reachability and impact answers, certificates, support recomputed. "
+                       "closure of complete reachability and impact answers, certificates, support recomputed or "
+                       "checked by its certificate. "
                        "Returns the problems (none when it checks out).",
         "input_schema": {"type": "object", "required": ["result"], "properties": {
             "result": {"type": "object"}, "projection": _PROJECTION}},
@@ -452,7 +453,7 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
         summary = {"exists": a["exists"], "total": a["total"], "count": a["count"],
                    **head(a["rows"], ("nodes", "edges"))}
     elif op == "support":
-        summary = {"counts": a["counts"]}
+        summary = {"counts": a["counts"], "certificate": kind(a["certificate"])}
         for key in ("lost", "weakened"):
             if a[key] is not None:
                 summary[key] = {"nodes": [e["node"] for e in a[key][:limit]], "more": len(a[key]) > limit}

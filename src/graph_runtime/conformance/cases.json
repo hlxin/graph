@@ -4780,6 +4780,408 @@
    }
   },
   {
+   "name": "support-certificate-ranks",
+   "covers": [
+    "support",
+    "certificate",
+    "ranks",
+    "unfounded circle"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Derivation"
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "lost": {
+     "c2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e1": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e3": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "m1": {
+      "supports": 2,
+      "standing": 1,
+      "failing": [
+       "h6"
+      ],
+      "causes": [
+       "s1"
+      ]
+     }
+    },
+    "weakened": {
+     "c1": {
+      "supports": 2,
+      "standing": 1,
+      "failing": [
+       "h1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     }
+    },
+    "counts": {
+     "lost": 4,
+     "weakened": 1,
+     "ungrounded": 1
+    },
+    "certificate": {
+     "kind": "fixpoints",
+     "nodes": [
+      {
+       "node": "c1",
+       "before": 2,
+       "after": 2
+      },
+      {
+       "node": "c2",
+       "before": 2,
+       "after": null
+      },
+      {
+       "node": "e1",
+       "before": 1,
+       "after": null
+      },
+      {
+       "node": "e2",
+       "before": 1,
+       "after": 1
+      },
+      {
+       "node": "e3",
+       "before": 1,
+       "after": null
+      },
+      {
+       "node": "m1",
+       "before": 3,
+       "after": null
+      },
+      {
+       "node": "s1",
+       "before": 0,
+       "after": null
+      },
+      {
+       "node": "s2",
+       "before": 0,
+       "after": 0
+      },
+      {
+       "node": "z3",
+       "before": null,
+       "after": null
+      },
+      {
+       "node": "z4",
+       "before": null,
+       "after": null
+      },
+      {
+       "node": "z5",
+       "before": null,
+       "after": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "support-certificate-a-circle-falls-with-its-ground",
+   "covers": [
+    "support",
+    "certificate",
+    "several failures",
+    "circle ranked before"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s2",
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Derivation"
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "lost": {
+     "c1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h1",
+       "h2"
+      ],
+      "causes": [
+       "s1",
+       "s2"
+      ]
+     },
+     "c2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e1": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x2"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "e3": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e5": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x5"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "k1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h7",
+       "h9"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "k2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h8"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "m1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h5",
+       "h6"
+      ],
+      "causes": [
+       "s1",
+       "s2"
+      ]
+     }
+    },
+    "weakened": {},
+    "counts": {
+     "lost": 9,
+     "weakened": 0,
+     "ungrounded": 1
+    },
+    "certificate": {
+     "kind": "fixpoints",
+     "nodes": [
+      {
+       "node": "c1",
+       "before": 2,
+       "after": null
+      },
+      {
+       "node": "c2",
+       "before": 2,
+       "after": null
+      },
+      {
+       "node": "e1",
+       "before": 1,
+       "after": null
+      },
+      {
+       "node": "e2",
+       "before": 1,
+       "after": null
+      },
+      {
+       "node": "e3",
+       "before": 1,
+       "after": null
+      },
+      {
+       "node": "e5",
+       "before": 1,
+       "after": null
+      },
+      {
+       "node": "k1",
+       "before": 2,
+       "after": null
+      },
+      {
+       "node": "k2",
+       "before": 3,
+       "after": null
+      },
+      {
+       "node": "m1",
+       "before": 3,
+       "after": null
+      },
+      {
+       "node": "s1",
+       "before": 0,
+       "after": null
+      },
+      {
+       "node": "s2",
+       "before": 0,
+       "after": null
+      },
+      {
+       "node": "z3",
+       "before": null,
+       "after": null
+      },
+      {
+       "node": "z4",
+       "before": null,
+       "after": null
+      },
+      {
+       "node": "z5",
+       "before": null,
+       "after": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "support-certificate-not-when-interrupted",
+   "covers": [
+    "support",
+    "certificate",
+    "expansion budget"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Derivation"
+    ],
+    "certificate": true,
+    "limits": {
+     "max_expansions": 5
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "unknown": true,
+    "certificate": null
+   }
+  },
+  {
    "name": "typed-negative-with-its-certificate",
    "covers": [
     "typed_path",
