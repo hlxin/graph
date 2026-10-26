@@ -21,6 +21,12 @@ The verdict has three values:
   certificates (pattern, support), a negative or an optimum without its certificate, and a certificate an edit
   broke without refuting the answer.
 
+Components, biconnectivity, maximum flows, matchings and dominators are revalidated by their certificates: those
+prove the whole answer from the records alone (trees and an ordered closed partition, a depth-first forest, a cut, a
+vertex cover, a low-high order), so the answer holds on the new projection exactly when its certificate still checks
+against the new projection's records (:func:`graph_runtime.verify_result`), and a listed node or edge that is gone
+refutes it. These are always checked in full.
+
 Diff-based revalidation trusts that the result was correct on its own projection (as made by :func:`execute`, or
 checked by :func:`verify_result`); revalidation without a diff checks everything against the new projection.
 """
@@ -39,11 +45,15 @@ from .errors import RequestError
 from .projection import CONTRACT, Projection
 from .request import normalize_request
 from .result import COMPLETED, Result
+from .verify import verify_result
 
 HOLDS, FAILS, UNKNOWN = "holds", "fails", "unknown"
 VERDICTS = (HOLDS, FAILS, UNKNOWN)
 REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
+_RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators")   # by verifying the certificate
+_NODE_FIELDS = frozenset({"node", "nodes", "left", "right", "idom", "source", "target", "from", "to", "dominators"})
+_EDGE_FIELDS = frozenset({"edge", "edges"})
 _REFUTING = {"node_gone", "witness_gone", "type_changed", "rule_changed", "reaches_unlisted", "reaches_shallower",
              "unanswerable"}
 
@@ -179,7 +189,7 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
     """The reasons against the result, and how they were found: ``diff`` when a diff from the result's projection
     to this one, over the same vocabulary, was given and trusted; ``answer`` otherwise."""
     use = d is not None and d.old == data.get("projection") and d.new == p.identity and not d.vocabulary_changed \
-        and data.get("operation") not in ("derivation", "personalized_pagerank")   # always checked in full
+        and data.get("operation") not in ("derivation", "personalized_pagerank") + _RECHECKED  # in full
     checked = "diff" if use else "answer"
     if data.get("status") != COMPLETED:
         return [{"code": "not_complete", "status": data.get("status")}], checked
@@ -187,7 +197,7 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
         return [], checked
     op = data["operation"]
     if op not in ("reachability", "dependency_impact", "typed_path", "shortest_path", "bottleneck_path",
-                  "regular_path", "derivation", "personalized_pagerank"):
+                  "regular_path", "derivation", "personalized_pagerank") + _RECHECKED:
         return [{"code": "not_certified", "operation": op}], checked
     try:
         req = normalize_request({**data["request"], "projection": p.identity})
@@ -196,7 +206,7 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
     except RequestError as e:
         return [{"code": "unanswerable", "error": e.code}], checked
     ctx = SimpleNamespace(p=p, plan=plan, request=data["request"], answer=data["answer"], diff=d if use else None,
-                          out=[])
+                          out=[], data=data)
     if op in ("reachability", "dependency_impact"):
         _sets(ctx, strict=op == "dependency_impact")
     elif op == "typed_path":
@@ -209,6 +219,8 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
         _derivation(ctx)
     elif op == "personalized_pagerank":
         _pagerank(ctx)
+    elif op in _RECHECKED:
+        _recheck(ctx)
     else:
         _bottleneck(ctx)
     return ctx.out, checked
@@ -571,6 +583,46 @@ def _derivation(ctx: SimpleNamespace) -> None:
             offers = [hop(ei, v) for ei, v, _ in hops(u)]
         if any(better(x, claim) for x in offers):
             out.append({"code": "certificate_broken", "node": p._node_ids[u]})
+
+
+# ---------------------------------------------------------------------------------------------- by certificate
+def _recheck(ctx: SimpleNamespace) -> None:
+    """An answer its certificate proves from the records alone: every node and edge it names must still exist (one
+    that is gone refutes it), and the certificate must check against the new projection's records, which then proves
+    the answer correct there; one that no longer checks leaves it unknown."""
+    p, answer, out = ctx.p, ctx.answer, ctx.out
+    nodes: set = set()
+    edges: set = set()
+    _names({k: v for k, v in answer.items() if k != "certificate"}, None, nodes, edges)
+    out.extend({"code": "node_gone", "node": n} for n in sorted(n for n in nodes if n not in p._node_index))
+    out.extend({"code": "witness_gone", "edge": e} for e in sorted(e for e in edges if e not in p._edge_index))
+    if out:
+        return
+    if answer.get("certificate") is None:
+        out.append({"code": "no_certificate"})
+        return
+    records = p._memo.get("records")
+    if records is None:
+        records = p._memo["records"] = p.to_dict()
+    problems = verify_result(ctx.data, nodes=records["nodes"], edges=records["edges"],
+                             type_parents=records["type_parents"], relation_parents=records["relation_parents"])
+    if problems:
+        out.append({"code": "certificate_broken", "problem": problems[0][:300]})
+
+
+def _names(value: Any, field: Any, nodes: set, edges: set) -> None:
+    """The node and edge IDs an answer names, by the fields that hold them."""
+    if isinstance(value, Mapping):
+        for k, v in value.items():
+            _names(v, k, nodes, edges)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _names(v, field, nodes, edges)
+    elif isinstance(value, str):
+        if field in _NODE_FIELDS:
+            nodes.add(value)
+        elif field in _EDGE_FIELDS:
+            edges.add(value)
 
 
 # ---------------------------------------------------------------------------------------------- pagerank
