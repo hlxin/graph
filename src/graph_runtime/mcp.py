@@ -18,8 +18,9 @@ INSTRUCTIONS = (
     "GRAPH (Graph Runtime for Analysis, Provenance, Hypotheses) runs exact graph operations on immutable projections "
     "of a consumer's records, with witnesses, bounded work and reproducible result_ids. Call graph_status first. Build "
     "a projection from nodes and edges with graph_projection; run requests on it with graph_execute (reachability, "
-    "typed_path, shortest_path, bottleneck_path, dependency_impact, pattern, support); check a result against the "
-    "records with graph_verify; after the records change, ask graph_revalidate which cached results still hold. An "
+    "typed_path, shortest_path, bottleneck_path, regular_path, dependency_impact, pattern, support); check a result "
+    "against the records with graph_verify; after the records change, ask graph_revalidate which cached results still "
+    "hold. An "
     "interrupted answer never certifies a negative, and a complete negative is scoped to the projection, not to the "
     "literature or the world. Scientific meaning stays with the application that owns the records."
 )

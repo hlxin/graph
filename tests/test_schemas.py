@@ -48,10 +48,13 @@ def test_every_result_and_request_validates():
             {"operation": "bottleneck_path", "sources": ids[:1], "targets": ids[-2:], "scope": scope,
              "weights": {"by_relation": {r: rng.choice([-1, 0, 2, 2.5]) for r in RELATIONS}},
              "objective": rng.choice(["max_min", "min_max"]), "certificate": rng.random() < 0.5},
+            {"operation": "regular_path", "sources": ids[:1], "targets": rng.choice([None, ids[-2:]]),
+             "path": rng.choice(["R*/S[A]", "(R|^T)+", "S{0,2}/^R", ["R", "T?"]]),
+             "answer": rng.choice(["witness", "reached"]), "certificate": rng.random() < 0.5},
         ]
         for raw in requests:
             limits = {"max_expansions": rng.randint(0, 4)}
-            if raw["operation"] in ("reachability", "dependency_impact", "support"):
+            if raw["operation"] in ("reachability", "dependency_impact", "support", "regular_path"):
                 limits["max_results"] = rng.randint(0, 4)
             cancel = [CancelToken(), lambda: True][i % 2]
             for extra, ctx in (({}, {}), ({"limits": limits}, {}), ({}, {"cancel": cancel})):
@@ -70,6 +73,8 @@ def test_every_result_and_request_validates():
     statuses = {s for _, s, _ in seen}
     assert statuses == {"completed", "interrupted", "unsupported", "failed", "stale_snapshot"}
     assert ("shortest_path", "interrupted", "True") in seen and ("typed_path", "completed", "False") in seen
+    assert {("regular_path", "completed", "True"), ("regular_path", "completed", "False"),
+            ("regular_path", "interrupted", "None")} <= seen
 
 
 def candidate():

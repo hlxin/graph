@@ -184,7 +184,8 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
     if data.get("projection") == p.identity:
         return [], checked
     op = data["operation"]
-    if op not in ("reachability", "dependency_impact", "typed_path", "shortest_path", "bottleneck_path"):
+    if op not in ("reachability", "dependency_impact", "typed_path", "shortest_path", "bottleneck_path",
+                  "regular_path"):
         return [{"code": "not_certified", "operation": op}], checked
     try:
         req = normalize_request({**data["request"], "projection": p.identity})
@@ -200,6 +201,8 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
         _typed(ctx)
     elif op == "shortest_path":
         _shortest(ctx)
+    elif op == "regular_path":
+        _regular(ctx)
     else:
         _bottleneck(ctx)
     return ctx.out, checked
@@ -381,6 +384,88 @@ def _typed(ctx: SimpleNamespace) -> None:
         for eid, a, b in _added_hops(ctx, fwd, rev):
             check(eid, a, b, i)
         for node in sorted(d.retyped_nodes):                 # a node newly admitted at a position
+            b = p._node_index[node]
+            for ei, a, _ in _back_hops(p, b, fwd, rev):
+                check(p._edge_ids[ei], a, b, i)
+
+
+# ---------------------------------------------------------------------------------------------- regular path
+def _regular(ctx: SimpleNamespace) -> None:
+    """A regular path answer: its witness (or its tree's hops) must still be hops of the new projection, each in its
+    step's scope and landing on its step's types. What it claims beyond them, the fewest hops, a negative or a
+    complete reached set, rests on its certificate: every move the edit adds from a state the certificate lists
+    (below its bound) must lead to a listed state no further, and must not end a match the answer does not give.
+    An edit that breaks the certificate leaves the answer unknown: a listed state carries no witness of its own."""
+    p, plan, answer, out, d = ctx.p, ctx.plan, ctx.answer, ctx.out, ctx.diff
+    auto, step_of, ids = plan.auto, plan.step_of, p._node_ids
+    witness = plan.answer == "witness"
+
+    def check_hop(hop: Mapping, state: int, to: str) -> None:
+        fwd, rev, mask = step_of[state]
+        if _gone(ctx, to):
+            out.append({"code": "node_gone", "node": to})
+        elif not _hop_ok(ctx, {**hop, "to": to}, fwd, rev):
+            out.append({"code": "witness_gone", "edge": hop["edge"]})
+        elif mask is not None and (d is None or to in d.retyped_nodes) \
+                and not p._node_mask[p._node_index[to]] & mask:
+            out.append({"code": "type_changed", "node": to, "state": state})
+
+    if witness:
+        hops = answer["witness"]["hops"] if answer["found"] else []
+        for hop in hops:
+            check_hop(hop, hop["state"], hop["to"])
+        if answer["found"] and not hops:
+            return                                        # a walk with no hop: nothing is shorter
+    else:
+        for t in answer["tree"]:
+            if t["via"] is not None:
+                check_hop(t["via"], t["state"], t["node"])
+            elif _gone(ctx, t["node"]):
+                out.append({"code": "node_gone", "node": t["node"]})
+    cert = answer["certificate"]
+    if cert is None:
+        out.append({"code": "no_certificate"})
+        return
+    bound, targets = cert["bound"], plan.targets
+    state = _lookup(cert["states"], lambda st: (st["state"], st["node"]), d is not None)
+    reached = {} if witness else {e["node"]: e["length"] for e in answer["reached"]}
+    before = [[] for _ in auto.steps]                     # the states each state follows
+    for q, moves in enumerate(auto.follow):
+        for i in moves:
+            before[i].append(q)
+
+    def check(eid: str, a: int, b: int, i: int) -> None:
+        """A move into state i by the hop from a to b (in step i's scope): from every listed state (a, q) below the
+        bound that state i follows, it must reach a listed state no further, and not end a match the answer lacks."""
+        mask = step_of[i][2]
+        if mask is not None and not p._node_mask[b] & mask:
+            return
+        for q in before[i]:
+            st = state((q, ids[a]))
+            if st is None or (bound is not None and st["length"] + 1 >= bound):
+                continue
+            n = st["length"] + 1
+            nxt = state((i, ids[b]))
+            ends = i in auto.accepting and (targets is None or b in targets)
+            if nxt is None or nxt["length"] > n or (ends and (witness or reached.get(ids[b], n + 1) > n)):
+                out.append({"code": "certificate_broken", "edge": eid, "from": ids[a], "to": ids[b], "state": i})
+                return
+
+    if d is None:
+        for st in cert["states"]:
+            u = p._node_index.get(st["node"])
+            if u is None or (bound is not None and st["length"] + 1 >= bound):
+                continue
+            for i in auto.follow[st["state"]]:
+                fwd, rev, _ = step_of[i]
+                for ei, v, _ in _hops(p, u, fwd, rev):
+                    check(p._edge_ids[ei], u, v, i)
+        return
+    for i in range(1, len(auto.steps)):
+        fwd, rev, _ = step_of[i]
+        for eid, a, b in _added_hops(ctx, fwd, rev):
+            check(eid, a, b, i)
+        for node in sorted(d.retyped_nodes):                 # a node newly admitted by step i
             b = p._node_index[node]
             for ei, a, _ in _back_hops(p, b, fwd, rev):
                 check(p._edge_ids[ei], a, b, i)

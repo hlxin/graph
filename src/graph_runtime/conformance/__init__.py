@@ -110,6 +110,12 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
                 problems.append(f"{key} {got}, expected {exp[key]}")
             if not done and any(exp[key].get(n) != d for n, d in got.items()):
                 problems.append(f"{key} {got} lists what the full answer {exp[key]} does not hold")
+    if "path_reached" in exp:                               # a regular path's reached nodes and fewest hops
+        got = {e["node"]: e["length"] for e in answer.get("reached") or []}
+        if done and got != exp["path_reached"]:
+            problems.append(f"reached {got}, expected {exp['path_reached']}")
+        if not done and any(exp["path_reached"].get(n) != d for n, d in got.items()):
+            problems.append(f"reached {got} lists what the full answer {exp['path_reached']} does not hold")
     if "count" in exp and answer.get("count") != exp["count"]:
         problems.append(f"count {answer.get('count')}, expected {exp['count']}")
     if "discovered" in exp and data["stats"]["discovered"] != exp["discovered"]:

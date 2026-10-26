@@ -8,7 +8,9 @@ what every answer names. Parallel edges (two records with the same ends and rela
 
 A projection never changes once built. Its identity is a sha256 digest of its canonical content and bindings
 (:func:`_identity`), so two projections of the same records, in any order, share one identity, and a request names
-the identity of the projection it was made for.
+the identity of the projection it was made for. The engine keeps indexes it derives from that content (each scope's
+hop lists, say) in ``_memo``: they are computed on demand, never change once made, and are neither part of the
+identity nor visible in any answer.
 
 Candidate records (``kind: hypothesis_candidate``, or ``epistemic_status: unverified``) are refused: the v0
 projection holds source records only, so a proposed relationship can never become a traversable edge
@@ -145,7 +147,7 @@ class Projection:
     __slots__ = ("_identity", "_bindings", "_relations", "_rel_index", "_node_types", "_type_index", "_node_ids",
                  "_node_index", "_node_mask", "_edge_ids", "_edge_index", "_edge_src", "_edge_dst", "_edge_rel",
                  "_type_parents", "_relation_parents", "_rel_cover", "_declared_mask",
-                 "_out", "_in", "_sealed")
+                 "_out", "_in", "_memo", "_sealed")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         raise TypeError("build a Projection with Projection.build(...) or Projection.from_dict(...)")
@@ -321,6 +323,7 @@ class Projection:
         put(p, "_relation_parents", MappingProxyType(rparents))
         put(p, "_rel_cover", cover)
         put(p, "_identity", _identity(p, node_types_of))
+        put(p, "_memo", {})
         put(p, "_sealed", True)
         return p
 
