@@ -52,7 +52,8 @@ VERDICTS = (HOLDS, FAILS, UNKNOWN)
 REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
 _RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators",   # by verifying the certificate
-              "incidence", "critical_path")
+              "incidence", "critical_path", "d_separation")
+_SELF_PROVEN = {"critical_path": ("acyclic", False), "d_separation": ("separated", False)}   # a witness is the proof
 _NODE_FIELDS = frozenset({"node", "nodes", "left", "right", "idom", "source", "target", "from", "to", "dominators"})
 _EDGE_FIELDS = frozenset({"edge", "edges"})
 _REFUTING = {"node_gone", "witness_gone", "type_changed", "rule_changed", "reaches_unlisted", "reaches_shallower",
@@ -609,6 +610,9 @@ def _recheck(ctx: SimpleNamespace) -> None:
     if claims:
         out.append({"code": "answer_refuted", "problem": claims[0][:300]})
         return
+    field_value = _SELF_PROVEN.get(ctx.data["operation"])
+    if field_value is not None and answer.get(field_value[0]) is field_value[1]:
+        return                                    # a cycle or an active trail: its hops, checked above, prove it
     if answer.get("certificate") is None:
         out.append({"code": "no_certificate"})
         return

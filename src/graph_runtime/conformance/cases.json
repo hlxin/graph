@@ -1766,6 +1766,70 @@
    "bindings": {
     "source": "conformance-g19@1"
    }
+  },
+  "G20": {
+   "nodes": [
+    "k",
+    "kd",
+    "m",
+    "x1",
+    "x2",
+    "x3",
+    "y1",
+    "y2",
+    "y3",
+    "z"
+   ],
+   "edges": [
+    {
+     "id": "h1",
+     "source": "x1",
+     "target": "m",
+     "relation": "CAUSES"
+    },
+    {
+     "id": "h2",
+     "source": "m",
+     "target": "y1",
+     "relation": "CAUSES"
+    },
+    {
+     "id": "h3",
+     "source": "z",
+     "target": "x2",
+     "relation": "CAUSES"
+    },
+    {
+     "id": "h4",
+     "source": "z",
+     "target": "y2",
+     "relation": "CAUSES"
+    },
+    {
+     "id": "h5",
+     "source": "x3",
+     "target": "k",
+     "relation": "CAUSES"
+    },
+    {
+     "id": "h6",
+     "source": "y3",
+     "target": "k",
+     "relation": "CAUSES"
+    },
+    {
+     "id": "h7",
+     "source": "k",
+     "target": "kd",
+     "relation": "CAUSES"
+    }
+   ],
+   "relations": [
+    "CAUSES"
+   ],
+   "bindings": {
+    "source": "conformance-g20@1"
+   }
   }
  },
  "cases": [
@@ -8685,6 +8749,246 @@
     "status": "interrupted",
     "interruption": "expansion_budget",
     "claims_nothing": true
+   }
+  },
+  {
+   "name": "d-separation-chain-blocked",
+   "covers": [
+    "a chain blocked by its middle"
+   ],
+   "graph": "G20",
+   "request": {
+    "operation": "d_separation",
+    "x": [
+     "x1"
+    ],
+    "y": [
+     "y1"
+    ],
+    "given": [
+     "m"
+    ],
+    "scope": [
+     {
+      "relation": "CAUSES",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "separated": true
+   }
+  },
+  {
+   "name": "d-separation-chain-open",
+   "covers": [
+    "an open chain"
+   ],
+   "graph": "G20",
+   "request": {
+    "operation": "d_separation",
+    "x": [
+     "x1"
+    ],
+    "y": [
+     "y1"
+    ],
+    "given": [],
+    "scope": [
+     {
+      "relation": "CAUSES",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "separated": false,
+    "trail_steps": [
+     [
+      "h1",
+      "down"
+     ],
+     [
+      "h2",
+      "down"
+     ]
+    ],
+    "collider_nodes": {}
+   }
+  },
+  {
+   "name": "d-separation-fork-blocked",
+   "covers": [
+    "a fork blocked by its common cause"
+   ],
+   "graph": "G20",
+   "request": {
+    "operation": "d_separation",
+    "x": [
+     "x2"
+    ],
+    "y": [
+     "y2"
+    ],
+    "given": [
+     "z"
+    ],
+    "scope": [
+     {
+      "relation": "CAUSES",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "separated": true
+   }
+  },
+  {
+   "name": "d-separation-fork-open",
+   "covers": [
+    "a common cause"
+   ],
+   "graph": "G20",
+   "request": {
+    "operation": "d_separation",
+    "x": [
+     "x2"
+    ],
+    "y": [
+     "y2"
+    ],
+    "given": [],
+    "scope": [
+     {
+      "relation": "CAUSES",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "separated": false,
+    "trail_steps": [
+     [
+      "h3",
+      "up"
+     ],
+     [
+      "h4",
+      "down"
+     ]
+    ],
+    "collider_nodes": {}
+   }
+  },
+  {
+   "name": "d-separation-collider-closed",
+   "covers": [
+    "a collider blocks"
+   ],
+   "graph": "G20",
+   "request": {
+    "operation": "d_separation",
+    "x": [
+     "x3"
+    ],
+    "y": [
+     "y3"
+    ],
+    "given": [],
+    "scope": [
+     {
+      "relation": "CAUSES",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "separated": true
+   }
+  },
+  {
+   "name": "d-separation-collider-descendant",
+   "covers": [
+    "a collider opened by a given descendant"
+   ],
+   "graph": "G20",
+   "request": {
+    "operation": "d_separation",
+    "x": [
+     "x3"
+    ],
+    "y": [
+     "y3"
+    ],
+    "given": [
+     "kd"
+    ],
+    "scope": [
+     {
+      "relation": "CAUSES",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "separated": false,
+    "trail_steps": [
+     [
+      "h5",
+      "down"
+     ],
+     [
+      "h6",
+      "up"
+     ]
+    ],
+    "collider_nodes": {
+     "k": [
+      "h7"
+     ]
+    }
+   }
+  },
+  {
+   "name": "d-separation-overlap",
+   "covers": [
+    "x, y and given are disjoint"
+   ],
+   "graph": "G20",
+   "request": {
+    "operation": "d_separation",
+    "x": [
+     "x1"
+    ],
+    "y": [
+     "y1"
+    ],
+    "given": [
+     "x1"
+    ],
+    "scope": [
+     {
+      "relation": "CAUSES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "invalid_request"
    }
   }
  ]

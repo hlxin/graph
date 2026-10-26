@@ -105,6 +105,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.incidence(request, answer, status)
         elif op == "critical_path":
             check.critical_path(request, answer, status)
+        elif op == "d_separation":
+            check.d_separation(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -1530,6 +1532,57 @@ class _Checker:
                 if n not in early or read(e, "earliest") != early[n] or read(e, "latest") != late[n]:
                     self.bad(f"schedule: {n!r} has earliest {early.get(n)} and latest {late.get(n)}")
                     return
+
+    def d_separation(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """A d-separation answer against the records. Connected: every step of the trail and of each collider's path
+        is a hop in scope (parent to child); the result's own check has the trail's shape. Separated, from the
+        certificate: the ancestors hold every given node and every parent of each of theirs; the states hold every
+        node of x arrived at going up, and every state a move reaches (from a node not given: down to its children,
+        and when it arrived going up, up to its parents; from a node among the ancestors that it arrived at going
+        down, up to its parents); no node of y is among them, so no active trail reaches y."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        if status != COMPLETED:
+            return
+        if answer["separated"] is False:
+            for s in answer["trail"]:
+                self.hop("trail", s["from"], s["to"], s["edge"], s["relation"], s["direction"], allowed)
+            for c in answer["colliders"]:
+                for h in c["to_given"]:
+                    self.hop(f"collider {c['node']!r}", h["from"], h["to"], h["edge"], h["relation"], h["direction"],
+                             allowed)
+            return
+        cert = self.proof(answer)
+        if cert is None:
+            return
+        given, ancestors = set(request["given"]), set(cert["ancestors"])
+        if not given <= ancestors or any(u not in self.types_of for u in ancestors):
+            self.bad("certificate: the ancestors hold every given node, and only input nodes")
+            return
+        for v in ancestors:
+            for _, u, _ in self.hops_into(v, allowed):
+                if u not in ancestors:
+                    self.bad(f"certificate: {u!r}, a parent of {v!r}, is missing from the ancestors")
+                    return
+        ways = {e["node"]: (e["up"], e["down"]) for e in cert["states"]}
+        visited = {(n, w) for n, (up, down) in ways.items() for w, on in ((0, up), (1, down)) if on}
+        if any((x, 0) not in visited for x in request["x"]):
+            self.bad("certificate: every node of x is a visited state, arrived at going up")
+            return
+        for v, way in visited:
+            moves = []
+            if v not in given:
+                moves += [(w, 1) for _, w, _ in self.hops_from(v, allowed)]
+                if way == 0:
+                    moves += [(u, 0) for _, u, _ in self.hops_into(v, allowed)]
+            if way == 1 and v in ancestors:
+                moves += [(u, 0) for _, u, _ in self.hops_into(v, allowed)]
+            for m in moves:
+                if m not in visited:
+                    self.bad(f"certificate: a move from {v!r} reaches {m[0]!r}, which the states do not hold")
+                    return
+        reached = sorted(set(request["y"]) & set(ways))
+        if reached:
+            self.bad(f"certificate: the states reach {reached[:5]} of y: the trail is active")
 
     def chosen(self, spec: Mapping) -> set:
         """The input nodes a ``{node_types, nodes}`` constraint admits (a type through the hierarchy)."""

@@ -26,7 +26,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import algebra, dominators, flows, paths, ranking, schedule, structure
+from . import algebra, causal, dominators, flows, paths, ranking, schedule, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -305,6 +305,10 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.certificate = req["certificate"]
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = None if req["targets"] is None else _nodes(p, req["targets"], "targets")
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "d_separation":
+        plan.certificate = req["certificate"]
+        plan.x, plan.y, plan.given = _nodes(p, req["x"], "x"), _nodes(p, req["y"], "y"), _nodes(p, req["given"], "given")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
     elif op == "critical_path":
         plan.certificate, plan.schedule, plan.costs = req["certificate"], req["answer"] == "schedule", req["costs"]
@@ -1867,4 +1871,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "incidence": (lambda p, plan, ctl: algebra.search(p, plan, ctl),
                              lambda p, plan, st: algebra.answer(p, plan, st)),
                "critical_path": (lambda p, plan, ctl: schedule.search(p, plan, ctl),
-                                 lambda p, plan, st: schedule.answer(p, plan, st))}
+                                 lambda p, plan, st: schedule.answer(p, plan, st)),
+               "d_separation": (lambda p, plan, ctl: causal.search(p, plan, ctl),
+                                lambda p, plan, st: causal.answer(p, plan, st))}

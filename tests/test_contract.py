@@ -400,6 +400,14 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                         b.add_edge(('L', u), ('R', v))
             size = len(nx.bipartite.maximum_matching(b, top_nodes=[('L', u) for u in left])) // 2
             assert (exp['matching_size'], exp['left_count'], exp['deficiency']) == (size, len(left), len(left) - size)
+        elif op == 'd_separation':
+            import networkx as nx
+            dag = nx.DiGraph()
+            dag.add_nodes_from(node_id(n) for n in g['nodes'])
+            dag.add_edges_from((e['source'], e['target']) for e in g['edges'])
+            raw = case['request']
+            assert exp['separated'] is nx.is_d_separator(dag, set(raw['x']), set(raw['y']), set(raw['given'])), \
+                case['name']
         elif op == 'critical_path':
             import networkx as nx
             raw = case['request']
