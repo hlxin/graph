@@ -95,10 +95,36 @@ Every result id, identity and digest is unchanged: the example's committed outpu
 The search now dominates making an answer. Reading an answer back is what costs most, because it checks every
 field, and it is still under a second at 100,000 nodes. No alternative backend is needed for these sizes.
 
+### Real consumer requests
+
+`benchmarks/consumers.py` measures real requests with both engines: the application's own code and GRAPH through
+the staged adapter, on the application's own records. It takes the best of three runs, and checks that both give the
+same answer: all 73 requests agreed. Mean times per request:
+
+| Workflow | Application's own code | GRAPH: building the projection | GRAPH: the query |
+| --- | --- | --- | --- |
+| SCALE competency-question chains (29, on 25 documents) | 0.51 ms | 0.41 ms | 0.48 ms |
+| SCALE records resting on retractions (2) | 0.04 ms | 0.34 ms (both together) | |
+| STATES contexts, 1 to 3 shells (42, on 14 records) | 15.3 ms | 52 ms (lifting the periodic substrate) | 0.12 ms |
+
+For SCALE, GRAPH is on par once the adapter computes SCALE's schema digest once per schema object. Before that,
+every call recomputed it, about 7 ms on average and up to 21 ms. For STATES, the query is fast and the lift is the cost.
+GRAPH needs an explicit, finite projection, so the adapter lifts a whole box of periodic images: (2·shells + 1)
+images along every periodic axis. STATES's own search walks only the images it reaches. The lift ranges from 2 ms
+(450 nodes, against 2.6 ms natively) to 724 ms (58,320 nodes and 300,617 edges for a context of 140 images, against
+26.5 ms). A lift reused for many contexts, such as every shell count, every root set, or other operations on the same
+record, answers each in about 0.12 ms.
+
+**A proposed extension for review, not made.** A *periodic projection* would hold the finite records of one cell
+plus each edge's image shift, and expand images only as a traversal reaches them. This is the generic shape of any
+periodic or unrolled graph, not a STATES vocabulary. It would keep the inputs explicit and finite, make a one-off
+context cost what STATES's own search costs, and keep GRAPH's witnesses, limits and identity. It changes the
+contract, so it waits for a decision.
+
 ## Next
 
 1. Review the contract (work item 1) and settle anything it should change before a consumer depends on it.
 2. Propose the SCALE adapter to SCALE as a pull request, under SCALE's process.
 3. Propose the STATES adapter to STATES, under its own process.
-4. Measure a whole SCALE or STATES request with both engines, on a real workload (work item 5).
+4. Decide on the periodic projection proposed under Real consumer requests.
 5. A third workflow, RATES (its site graphs), when one needs an operation GRAPH has.

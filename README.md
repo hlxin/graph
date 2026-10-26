@@ -74,6 +74,9 @@ The STATES integration tests run in STATES's environment in the same way, and on
 PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python -m pytest integrations/states -p no:cacheprovider
 ```
 
+`benchmarks/bench.py` measures every phase of a request on synthetic graphs. `benchmarks/consumers.py` measures real
+SCALE and STATES requests with both engines, in each application's environment.
+
 ## Layout
 
 | Path | What it holds |

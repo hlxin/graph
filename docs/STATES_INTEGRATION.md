@@ -78,6 +78,21 @@ The two corpora vary the structures in several ways:
 
 All compared contexts agreed.
 
+## Cost
+
+GRAPH answers each context in about 0.12 ms, but the adapter first lifts a whole box of periodic images. That box is
+(2·shells + 1) images along every periodic axis, and for large three-dimensional cells it far exceeds the context it
+serves (`benchmarks/consumers.py`):
+
+| Contexts | STATES's `extract_context` | GRAPH: lift | GRAPH: query |
+| --- | --- | --- | --- |
+| Mean of 42 contexts | 15.3 ms | 52 ms | 0.12 ms |
+| Smallest lift (450 nodes) | 2.6 ms | 2.1 ms | 0.05 ms |
+| Largest lift (58,320 nodes for a 140-image context) | 26.5 ms | 724 ms | 0.24 ms |
+
+A lift pays off when it is reused, for every shell count or root set of a record. For one-off contexts, the
+implementation plan proposes a periodic projection that expands images only as a traversal reaches them.
+
 ## What stays with STATES
 
 GRAPH reproduces none of STATES's definitions:

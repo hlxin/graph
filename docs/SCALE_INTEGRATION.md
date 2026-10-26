@@ -93,6 +93,13 @@ retracted to what depends on it, with a witness for each record.
 | The source-lifecycle example | `source-lifecycle/retracted-source.json` (CQ-05's document) | the same 4 records as `lifecycle.resting`, with the same retracted source |
 | Injected retractions | the 134 documents SCALE reads that cite sources, each copied in memory twice: with notices retracting or withdrawing a third of the sources it cites, and with a partial retraction recorded as a dataset (`REPORTED_IN` a cited source, `INCLUDES` records that cite it and records that do not) | the same 18,951 records as `lifecycle.resting`, each with the same retracted sources and datasets (2,548 dataset attributions) |
 
+## Cost
+
+On the 29 competency-question requests, GRAPH takes 0.41 ms per document to build the projection and 0.48 ms per
+query, against 0.51 ms for SCALE's own engine (`benchmarks/consumers.py`). The adapter computes SCALE's spec digest
+once per schema object. SCALE's loaders hand out one object per version and treat it as unchanging, as its query
+engine does when it reuses a `Graph`. Computing the digest on every call cost about 7 ms on average, up to 21 ms.
+
 ## What stays with SCALE
 
 These are SCALE's scientific definitions and answer semantics, and GRAPH reproduces none of them:
