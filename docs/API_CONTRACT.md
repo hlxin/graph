@@ -14,6 +14,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - type and relation hierarchies (section 1)
 - the `pattern` operation: tree patterns, enumerated without dead ends and counted without listing (section 4)
 - the `support` operation: what loses all or some of its support when nodes fail, under AND/OR rules (section 4)
+- certificates: complete answers that prove their negatives, optima and lower bounds against the records without a
+  second search, and closure checks of complete reachability and impact answers (sections 4 and 6)
+- revalidation: whether a cached result still holds on an edited projection, decided from its answer and
+  certificate (section 7)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -87,8 +91,8 @@ no wildcard: a scope lists what it follows.
 | Operation | Parameters | Limits |
 | --- | --- | --- |
 | `reachability` | `sources` (node IDs), `scope`, `max_depth` (null: unbounded) | `max_expansions`, `max_results` |
-| `typed_path` | `sources`, `pattern` (positions `{"scope", "node_types"}`; `node_types` null: any), `targets` (null: any node) | `max_expansions` |
-| `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}` | `max_expansions` |
+| `typed_path` | `sources`, `pattern` (positions `{"scope", "node_types"}`; `node_types` null: any), `targets` (null: any node), `certificate` (default false) | `max_expansions` |
+| `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}`, `certificate` (default false) | `max_expansions` |
 | `dependency_impact` | `changed` (node IDs), `scope` (the direction in which a change propagates), `max_depth` | `max_expansions`, `max_results` |
 | `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
@@ -168,11 +172,27 @@ consumer's to decide.
 search state is a node plus its position in the sequence. Hop `i` follows `pattern[i].scope` and lands on a node of
 `pattern[i].node_types`. A witness may visit a node, or use an edge, more than once. Answer:
 `{"found", "witness": {"source", "target", "length", "hops": [{"position", "edge", "relation", "direction", "from",
-"to"}]}}`.
+"to"}]}, "certificate"}`.
+
+With `certificate: true`, a complete negative carries its proof: `{"kind": "closed_states", "states": [{"node",
+"position"}]}`, every state (node, position before the last) the sources reach, by position then node ID. Every
+source is a state at position 0. Every hop the pattern allows from a state leads to a listed state at the next
+position, or, from the last position, to a node that is not a target. So no walk matching the pattern reaches a
+target. A found answer needs no certificate (its witness proves it), and an interrupted one has none.
 
 **Shortest path.** Finds one minimum-cost witness from any source to any target, using Dijkstra's algorithm with
 exact arithmetic. A source that is also a target is the answer at cost 0. Each hop carries the cost the request
-gave its edge. Answer: `{"found", "optimal", "cost", ["cost_exact"], "witness"}`.
+gave its edge. Answer: `{"found", "optimal", "cost", ["cost_exact"], "witness", "certificate"}`.
+
+With `certificate: true`, the answer carries its proof:
+
+- **Potentials** prove an optimum, and an interrupted search's lower bound: `{"kind": "potentials", "bound",
+  "potentials": [{"node", "value"}]}`. The values are the settled costs below the bound, by node ID; every other
+  node has the bound. Every source has 0, every target at least the bound, and no hop in scope from a listed node
+  leads to a value more than its cost above. So no path from a source to a target costs less than the bound. The
+  bound is the witness's cost, or the lower bound. Numbers are integers, or `p/q` strings in rational mode.
+- **A closure** proves a complete negative: `{"kind": "closure", "reached": [...]}`, everything the sources reach,
+  closed under the scope's hops, with no target among it.
 
 **Pattern.** Matches a tree pattern, SCALE's query plans in generic form:
 
@@ -293,18 +313,54 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that every witness hop names an input edge with that relation, in the requested scope and direction
   - that hops chain from a requested source to what they witness, and match typed-path positions and node types
   - that shortest-path costs are the exact sum of the hop costs
+  - that a complete reachability or impact answer is closed: every hop in scope from a node it expanded (a changed
+    node at depth 0) leads to a listed node at most one hop deeper. With the witnesses, this proves the answer
+    complete and its depths least
+  - that every certificate proves its answer, as section 4 describes
   - for support, everything: it recomputes what stands before and after from the records, by re-evaluating each
     node's rule until nothing changes rather than by the engine's counting, and compares every listed node, count,
     failing hop and cause
 
-  For the path operations it does not check completeness or minimality; the oracle tests do.
+  A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
+  tests.
 - `graph_runtime.conformance.run_conformance(execute)` runs 70 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
   Cases without deadline or cancellation controls are repeated to check `result_id` reproducibility.
 
-## 7. Not in v0
+## 7. Revalidation
+
+`graph_runtime.revalidate` decides whether a cached result still holds on another projection, such as one built
+after the records were edited, without searching again.
+
+- `revalidate(result, projection)` checks the result's answer and certificate against the new projection, in time
+  proportional to the answer and the hops from what it lists.
+- `diff(old, new)` lists what changed, by original IDs: nodes added, removed and retyped, and edges added and removed
+  (an edge whose ends or relation changed counts as both). It reads each projection once.
+- `revalidate(result, projection, diff=d)` checks only what the edit touches, in time proportional to the edit. It
+  looks up the answer's canonically ordered lists by binary search. It trusts that the result was correct on its own
+  projection. When the vocabulary (relations, node types, hierarchies) changed, the full check runs instead.
+- `revalidate_all(results, old, new)` revalidates every result with one diff.
+
+The verdict is one of three:
+
+| Verdict | Meaning | Reasons |
+| --- | --- | --- |
+| `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
+| `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
+| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support), `no_certificate` (a negative or optimum without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
+
+Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",
+"operation", "result_id", "request_id", "from_projection", "to_projection", "verdict", "reasons", "reason_count",
+"revalidation_id"}`. `reasons` holds at most 100 entries, in canonical order. `revalidation_id` digests the rest.
+The full and diff checks give the same record. `checked` (`answer` or `diff`) says how the verdict was reached and is
+not part of the record.
+
+A revalidated result keeps its own `result_id`: the record, not a new result, says that it holds on the new
+projection. A new search could reach the same answer with other witnesses and statistics.
+
+## 8. Not in v0
 
 These are later extensions:
 

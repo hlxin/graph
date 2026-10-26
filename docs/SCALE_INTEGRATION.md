@@ -1,7 +1,8 @@
 # SCALE integration
 
 SCALE is GRAPH's first consumer. This document records the baseline the integration was built against, the adapter,
-the four read-only workflows it runs, and their parity with SCALE's own behaviour. Nothing in SCALE was changed. The
+the four read-only workflows it runs, their parity with SCALE's own behaviour, and cached answers across
+curation edits. Nothing in SCALE was changed. The
 adapter only reads SCALE documents and schemas, and the SCALE checkout's working tree was clean before and after
 every run.
 
@@ -149,6 +150,21 @@ quotes):
 
 GRAPH builds the index in 0.38 s against SCALE's 0.93 s, because it encodes each distinct quote once. Searches take
 the same time.
+
+## Cached answers across curation edits
+
+`integrations/scale/test_scale_revalidation.py` caches every competency chain's typed paths (one per matched
+record, each with its certificate). It then edits each document in memory the way curation does:
+
+- a link of a type the chain follows removed
+- such a link added, to another record of the same label
+- a record given another label
+
+Each cached answer is revalidated against the edited document's projection with one diff. Of 345 answers across 31
+edits, 312 hold, 23 fail (a witness link removed) and 10 are unknown (a new link breaks a negative's certificate).
+A fresh run confirms every verdict. At these sizes, revalidating costs about what running the requests again does
+(18 ms in all, each way). What it adds is the reason: which link refutes which cached answer. On large graphs it is
+also the faster route ([API_CONTRACT.md](API_CONTRACT.md), section 7).
 
 ## Cost
 

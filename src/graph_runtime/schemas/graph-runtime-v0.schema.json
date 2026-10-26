@@ -195,7 +195,8 @@
             "limits",
             "sources",
             "targets",
-            "pattern"
+            "pattern",
+            "certificate"
           ],
           "properties": {
             "contract": {
@@ -252,6 +253,9 @@
                   }
                 }
               }
+            },
+            "certificate": {
+              "type": "boolean"
             }
           }
         },
@@ -267,7 +271,8 @@
             "sources",
             "targets",
             "scope",
-            "costs"
+            "costs",
+            "certificate"
           ],
           "properties": {
             "contract": {
@@ -319,6 +324,9 @@
                   }
                 }
               }
+            },
+            "certificate": {
+              "type": "boolean"
             }
           }
         },
@@ -641,7 +649,8 @@
       "additionalProperties": false,
       "required": [
         "found",
-        "witness"
+        "witness",
+        "certificate"
       ],
       "properties": {
         "found": {
@@ -685,6 +694,9 @@
               "type": "null"
             }
           ]
+        },
+        "certificate": {
+          "$ref": "#/$defs/typed_certificate"
         }
       },
       "allOf": [
@@ -720,7 +732,8 @@
         "found",
         "optimal",
         "cost",
-        "witness"
+        "witness",
+        "certificate"
       ],
       "properties": {
         "found": {
@@ -794,6 +807,9 @@
               "type": "null"
             }
           ]
+        },
+        "certificate": {
+          "$ref": "#/$defs/shortest_certificate"
         }
       },
       "allOf": [
@@ -2890,6 +2906,118 @@
         }
       },
       "description": "lost: nodes that stood before the failure and do not now; weakened: nodes that still stand but lost a support. lost, weakened and counts are null only when the analysis was interrupted before its end; counts are exact even when an output limit lists fewer nodes."
+    },
+    "certificate_number": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/count"
+        },
+        {
+          "$ref": "#/$defs/exact"
+        }
+      ],
+      "description": "An integer in integer-cost mode; p or p/q in lowest terms in rational mode."
+    },
+    "typed_certificate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "states"
+          ],
+          "properties": {
+            "kind": {
+              "const": "closed_states"
+            },
+            "states": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "position"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "position": {
+                    "$ref": "#/$defs/count"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The states (node, position) the sources reach before the pattern's last hop: closed under the pattern's hops, with no last hop to a target, so no witness exists."
+    },
+    "shortest_certificate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "bound",
+            "potentials"
+          ],
+          "properties": {
+            "kind": {
+              "const": "potentials"
+            },
+            "bound": {
+              "$ref": "#/$defs/certificate_number"
+            },
+            "potentials": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "value"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/certificate_number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reached"
+          ],
+          "properties": {
+            "kind": {
+              "const": "closure"
+            },
+            "reached": {
+              "$ref": "#/$defs/ids"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "potentials: a value per node (the bound when unlisted) that no hop in scope lowers by more than its cost, 0 at every source and at least the bound at every target, so no path costs less than the bound. closure: everything the sources reach, with no target among it."
     }
   }
 }

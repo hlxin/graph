@@ -148,6 +148,8 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             want = exp[key] if done else {n: exp[key][n] for n in sorted(exp[key])[:len(got)]}
             if got != want:
                 problems.append(f"{key} {got}, expected {want}")
+    if "certificate" in exp and answer.get("certificate") != exp["certificate"]:
+        problems.append(f"certificate {answer.get('certificate')!r}, expected {exp['certificate']!r}")
     if "witness_edges" in exp and done:
         got_edges = [h["edge"] for h in (answer.get("witness") or {}).get("hops") or []]
         if got_edges != exp["witness_edges"]:

@@ -19,8 +19,9 @@ PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python benchmarks/consumers.py sta
 
 - `src/graph_runtime/`: the runtime. `projection` (immutable views, hierarchies, identity), `request`
   (normalization), `engine` (the six operations, limits), `result` (the result contract), `verify` (independent
-  witness checks), `hypotheses` (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend
-  cases), `retrieval` (optional text search, needs numpy).
+  witness, closure and certificate checks), `revalidate` (cached results on edited projections), `hypotheses`
+  (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend cases), `retrieval` (optional
+  text search, needs numpy).
 - `tests/`: `oracle.py` holds the independent oracles and the random graph generator.
 - `integrations/scale/`, `integrations/states/`: the SCALE and STATES adapters (application-owned, staged here) and
   their parity tests.

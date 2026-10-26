@@ -4,11 +4,16 @@
 from the engine). It checks the result's contract invariants (:func:`graph_runtime.result.contract_problems`) and
 every witness in its answer: each hop names an input edge, with that edge's relation, in the requested scope and
 direction, and the hops chain from a requested source to the node (or target) they witness; a shortest path's cost
-is the exact sum of its hops' costs. It does not check that a path answer is complete or minimal, which takes a
-second search: the tests and the conformance suite do that against independent oracles. A support answer is the
-exception: what stands before and after the failure is recomputed from the records (by re-evaluating each node's
-rule until nothing changes, not by the engine's counting), and every listed node, count and cause is compared with
-it. A malformed result is reported as a problem, never raised.
+is the exact sum of its hops' costs.
+
+It also checks what makes an answer complete, without a second search. A complete reachability or impact answer
+must be closed: every hop in scope from a node it expanded leads to a node it lists, no deeper than one more hop. A
+certificate (requested with ``certificate: true``) must prove its typed or shortest path answer: closed states with
+no last hop to a target, a closure with no target, or potentials that no hop in scope lowers by more than its cost,
+0 at every source and at least the bound at every target. A support answer is recomputed from the records (by
+re-evaluating each node's rule until nothing changes, not by the engine's counting), and every listed node, count
+and cause is compared with it. Patterns and uncertified negatives are left to the tests' independent oracles. A
+malformed result is reported as a problem, never raised.
 """
 
 from __future__ import annotations
@@ -91,9 +96,34 @@ def _nearest(x: Fraction) -> float | None:
 class _Checker:
     def __init__(self, problems: list[str], edge_of: dict, types_of: dict, relation_up: dict):
         self.problems, self.edge_of, self.types_of, self.relation_up = problems, edge_of, types_of, relation_up
+        self._ends: tuple[dict, dict] | None = None
 
     def bad(self, message: str) -> None:
         self.problems.append(message)
+
+    def in_scope(self, rel: str, direction: str, allowed: set) -> bool:
+        return (rel, direction) in allowed or any((up, direction) in allowed for up in self.relation_up.get(rel, ()))
+
+    def hops_from(self, u: Any, allowed: set) -> list[tuple[str, Any, str]]:
+        """(edge, the node it leads to, its relation) for every hop in scope from ``u``, read from the records."""
+        if self._ends is None:
+            out: dict = {}
+            into: dict = {}
+            for eid, (src, dst, _) in self.edge_of.items():
+                out.setdefault(src, []).append(eid)
+                into.setdefault(dst, []).append(eid)
+            self._ends = (out, into)
+        out, into = self._ends
+        hops = []
+        for eid in out.get(u, ()):
+            src, dst, rel = self.edge_of[eid]
+            if self.in_scope(rel, "forward", allowed):
+                hops.append((eid, dst, rel))
+        for eid in into.get(u, ()):
+            src, dst, rel = self.edge_of[eid]
+            if self.in_scope(rel, "reverse", allowed):
+                hops.append((eid, src, rel))
+        return hops
 
     def hop(self, where: str, frm: Any, to: Any, edge: Any, relation: Any, direction: Any, allowed: set) -> None:
         """One hop: an input edge with this relation, in scope, followed in its direction from ``frm`` to ``to``."""
@@ -218,11 +248,28 @@ class _Checker:
             for s in sorted(seeds):
                 if by_node.get(s, {}).get("depth") != 0:
                     self.bad(f"a complete reachability answer lists the source {s!r} at depth 0")
+        if status != COMPLETED:
+            return
+        # closure: from every node it expanded (a changed node at depth 0, even when a cycle lists it deeper), every
+        # hop in scope leads to a listed node at most one hop deeper; with the witnesses, the depths are then exact
+        expanded = {s: 0 for s in seeds}
+        for e in entries:
+            expanded.setdefault(e["node"], e["depth"])
+        for u, d in sorted(expanded.items(), key=lambda x: str(x[0])):
+            if max_depth is not None and d >= max_depth:
+                continue
+            for eid, v, _ in self.hops_from(u, allowed):
+                dv = by_node.get(v, {}).get("depth")
+                if dv is None or dv > d + 1:
+                    self.bad(f"incomplete: {v!r} is one hop ({eid}) from {u!r} at depth {d}, but "
+                             + ("is not listed" if dv is None else f"is listed at depth {dv}"))
 
     def typed(self, request: Mapping, answer: Mapping) -> None:
         if answer.get("found") is not True:
             if answer.get("witness") is not None:
                 self.bad("only a found witness is given")
+            if answer.get("certificate") is not None:
+                self.closed_states(request, answer["certificate"])
             return
         pattern = request["pattern"]
         scopes = [{(e["relation"], e["direction"]) for e in pos["scope"]} for pos in pattern]
@@ -234,6 +281,30 @@ class _Checker:
         for i, h in enumerate(hops):
             if isinstance(h, Mapping) and (h.get("position") != i or not _is_int(h.get("position"))):
                 self.bad(f"hop {i} says position {h.get('position')!r}")
+
+    def closed_states(self, request: Mapping, cert: Mapping) -> None:
+        """The states prove there is no witness: every source is a state at position 0, and every hop the pattern
+        allows from a state leads to a state at the next position, or, from the last position, to a node that is not
+        a target."""
+        pattern, last = request["pattern"], len(request["pattern"])
+        targets = None if request.get("targets") is None else set(request["targets"])
+        states = {(st["node"], st["position"]) for st in cert["states"]}
+        for s in request["sources"]:
+            if (s, 0) not in states:
+                self.bad(f"certificate: the source {s!r} is not a state at position 0")
+        # a state whose node the records do not hold has no hop to follow: it neither helps nor harms the proof (an
+        # answer kept across an edit that removed the node still proves its negative)
+        for u, i in sorted(states, key=lambda x: (x[1], str(x[0]))):
+            allowed = {(e["relation"], e["direction"]) for e in pattern[i]["scope"]}
+            wanted = pattern[i].get("node_types")
+            for eid, v, _ in self.hops_from(u, allowed):
+                if wanted is not None and not self.types_of.get(v, set()) & set(wanted):
+                    continue
+                if i + 1 < last and (v, i + 1) not in states:
+                    self.bad(f"certificate: the hop {eid} leads from state ({u!r}, {i}) to ({v!r}, {i + 1}), which "
+                             "it does not list")
+                elif i + 1 == last and (targets is None or v in targets):
+                    self.bad(f"certificate: the hop {eid} from state ({u!r}, {i}) completes a witness at {v!r}")
 
     def admits(self, spec: Mapping, node: Any) -> bool:
         """Whether a node satisfies a pattern variable's constraints (types through the hierarchy, explicit IDs)."""
@@ -273,6 +344,44 @@ class _Checker:
                     self.bad(f"row {n}: {s['var']} = {child!r} is not a node step {j} admits")
                 if s.get("edges") is not None and link not in set(s["edges"]):
                     self.bad(f"row {n}: step {j}'s link {link} is not one of its edges")
+
+    def shortest_certificate(self, request: Mapping, cert: Mapping) -> None:
+        """A closure: every source, every hop from what it lists leads to what it lists, and no target is listed.
+        Potentials: no hop in scope from a listed node lowers the value it leads to by more than its cost (an unlisted
+        node has the bound), every source has 0 and every target at least the bound."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        sources, targets = set(request["sources"]), set(request["targets"])
+        if cert["kind"] == "closure":
+            reached = set(cert["reached"])
+            for u in sorted(reached, key=str):
+                for eid, v, _ in self.hops_from(u, allowed):
+                    if v not in reached:
+                        self.bad(f"certificate: the hop {eid} leads from {u!r} to {v!r}, which it does not list")
+            for t in sorted(targets & reached, key=str):
+                self.bad(f"certificate: the target {t!r} is reached")
+            for s in sorted(sources - reached, key=str):
+                self.bad(f"certificate: the source {s!r} is not listed")
+            return
+        (kind, table), = request["costs"].items()
+        rational = any(isinstance(x, float) for x in table.values())
+        number = (lambda x: Fraction(x)) if rational else (lambda x: x)
+        bound = number(cert["bound"])
+        value = {e["node"]: number(e["value"]) for e in cert["potentials"]}
+        for s in sorted(sources, key=str):
+            if value.get(s, bound) != 0:
+                self.bad(f"certificate: the source {s!r} has {value.get(s, bound)}, not 0")
+        for t in sorted(targets, key=str):
+            if value.get(t, bound) < bound:
+                self.bad(f"certificate: the target {t!r} has {value[t]}, below the bound {bound}")
+        for u in sorted(value, key=str):
+            for eid, v, rel in self.hops_from(u, allowed):
+                c = table.get(rel if kind == "by_relation" else eid)
+                if c is None:
+                    self.bad(f"certificate: the hop {eid} in scope has no cost in the request")
+                    continue
+                if value.get(v, bound) > value[u] + (Fraction(c) if rational else c):
+                    self.bad(f"certificate: the hop {eid} from {u!r} ({value[u]}) costs {c} but leads to {v!r} at "
+                             f"{value.get(v, bound)}")
 
     def support(self, request: Mapping, answer: Mapping, status: str, edges: list[Mapping]) -> None:
         """Recompute, from the records alone, what stands before and after the failure, and compare the answer with
@@ -368,6 +477,8 @@ class _Checker:
                     self.bad(f"{where}: causes {e.get('causes')!r}, but the records give {causes(u)}")
 
     def shortest(self, request: Mapping, answer: Mapping, status: str) -> None:
+        if answer.get("certificate") is not None:
+            self.shortest_certificate(request, answer["certificate"])
         if answer.get("found") is not True:
             if answer.get("witness") is not None:
                 self.bad("only a found witness is given")
