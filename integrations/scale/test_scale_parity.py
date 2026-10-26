@@ -196,6 +196,15 @@ def compare_resting(doc, spec, tally):
         assert g["depth"] in (2, adapter.RESTING_DEPTH) and g["witness"]
     if want:
         assert got["complete"] is True
+    # support analysis: whether each record rests on retractions entirely or in part, in one request
+    support = adapter.resting_support(doc, spec)
+    assert support["complete"] is True
+    assert set(support["records"]) == set(want), sorted(set(support["records"]) ^ set(want))
+    for rid, w in want.items():
+        g = support["records"][rid]
+        assert (g["rests"], sorted(g["sources"]), sorted(g["datasets"])) == \
+            (w["rests"], sorted(w["sources"]), sorted(w["datasets"])), rid
+        tally[f"rests_{w['rests']}"] += 1
     tally["resting_records"] += len(want)
     tally["datasets_named"] += sum(len(w["datasets"]) for w in want.values())
 
@@ -293,6 +302,7 @@ def test_retractions_injected_into_every_document_match_scale(scale_env):
         tally["documents"] += 1
     print(dict(tally))
     assert tally["documents"] >= 50 and tally["resting_records"] >= 500 and tally["datasets_named"] >= 50
+    assert tally["rests_all"] >= 100 and tally["rests_some"] >= 100
 
 
 # ---------------------------------------------------------------------------------------------- tree patterns

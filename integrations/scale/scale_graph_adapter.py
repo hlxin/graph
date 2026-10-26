@@ -183,6 +183,8 @@ def trace(doc: Mapping, spec: Mapping, plan: Mapping, projection: Projection | N
 HAS_EVIDENCE, CITES, RETRACTED_WITH, INCLUDED, USES = ("HAS_EVIDENCE", "CITES_SOURCE", "WITHDRAWN_WITH",
                                                        "RESTS_ON_INCLUSION", "USES_RECORD")
 DEPENDENCIES = (HAS_EVIDENCE, CITES, RETRACTED_WITH, INCLUDED, USES)
+BORROWS = "RESTS_ON_INPUT_EVIDENCE"     # a record's support includes the items of the records it uses, one hop only
+SUPPORTS = (HAS_EVIDENCE, CITES, RETRACTED_WITH, INCLUDED, BORROWS)
 RESTING_DEPTH = 3     # retraction -> evidence item or inclusion -> the record -> a record that uses it: one hop further
 
 
@@ -206,10 +208,12 @@ def _named_producers(obj: Any) -> set[str]:
     return out
 
 
-def retraction_dependencies(doc: Mapping, spec: Mapping) -> dict:
-    """The dependency projection, what was retracted (``changed``), and the records SCALE flags when they rest on a
-    retraction (``flaggable``: not a species, person, source, dataset or other record that cites without resting on
-    a finding, and not a notice, byline or REPORTED_IN link)."""
+def _lifecycle_records(doc: Mapping, spec: Mapping) -> dict:
+    """What SCALE's source lifecycle reads, as nodes and edges: every record (node or link), its evidence items (each
+    citing its source, and withdrawn with any retracted dataset that takes that source's evidence of the record), its
+    inclusions in retracted datasets none of whose sources it cites, what was retracted (``changed``), which records
+    SCALE flags, each record's items and inclusions (``atoms``), and the records each one uses (``uses``: HAS_INPUT
+    and its specializations, and the experiments its values name)."""
     from scale import lifecycle
     st = lifecycle.statuses(doc, spec)
     incl = lifecycle.retracted_inclusions(doc, st, spec)
@@ -224,6 +228,7 @@ def retraction_dependencies(doc: Mapping, spec: Mapping) -> dict:
         raise Unsupported("a node and a link share an ID")
     nodes = {rid: {"id": rid, "types": ["Record"]} for rid in ids}
     edges: list[dict] = []
+    atoms: dict[str, list[str]] = {}
     changed = {s for s, r in st.items() if r["status"] in lifecycle.RETRACTED and s in kind}
 
     def retraction_of(d: str) -> str:
@@ -240,6 +245,7 @@ def retraction_dependencies(doc: Mapping, spec: Mapping) -> dict:
             item, src = f"evidence:{rid}#{i}", ev["source"]
             cited.add(src)
             nodes[item] = {"id": item, "types": ["EvidenceItem"]}
+            atoms.setdefault(rid, []).append(item)
             edges.append({"id": f"has:{rid}#{i}", "source": rid, "target": item, "relation": HAS_EVIDENCE})
             if src in kind:
                 edges.append({"id": f"cites:{rid}#{i}", "source": item, "target": src, "relation": CITES})
@@ -250,24 +256,37 @@ def retraction_dependencies(doc: Mapping, spec: Mapping) -> dict:
         for d in lifecycle.unsourced_inclusions(incl, rid, cited):
             atom = f"inclusion:{rid}@{d}"
             nodes[atom] = {"id": atom, "types": ["Inclusion"]}
+            atoms.setdefault(rid, []).append(atom)
             edges.append({"id": f"rests:{rid}@{d}", "source": rid, "target": atom, "relation": INCLUDED})
             edges.append({"id": f"included:{rid}@{d}", "source": atom, "target": retraction_of(d),
                           "relation": RETRACTED_WITH})
     inputs = lifecycle.input_edges(spec)
+    uses: dict[str, set[str]] = {}
     for e in doc["links"]:            # a link to a record of another part (graphs/ parts) is not followed, as SCALE
         if e["type"] in inputs and e["source"] in kind and e["target"] in kind and e["source"] != e["target"] \
                 and kind[e["target"]] not in lifecycle.UNFLAGGED:
-            edges.append({"id": f"uses:{e['id']}", "source": e["source"], "target": e["target"], "relation": USES})
+            uses.setdefault(e["source"], set()).add(e["target"])
     for rid, props, _ in records:
-        for other in sorted(_named_producers(props)):
+        for other in _named_producers(props):
             if other in kind and other != rid:
-                edges.append({"id": f"produced_by:{rid}->{other}", "source": rid, "target": other, "relation": USES})
-    unique = {e["id"]: e for e in edges}                    # one HAS_INPUT link and a produced_by may say the same
-    p = Projection.build(nodes=list(nodes.values()), edges=list(unique.values()), relations=DEPENDENCIES,
+                uses.setdefault(rid, set()).add(other)
+    return {"nodes": nodes, "edges": edges, "atoms": atoms, "uses": uses, "changed": sorted(changed),
+            "flaggable": sorted(rid for rid, _, skip in records if not skip)}
+
+
+def retraction_dependencies(doc: Mapping, spec: Mapping) -> dict:
+    """The dependency projection, what was retracted (``changed``), and the records SCALE flags when they rest on a
+    retraction (``flaggable``: not a species, person, source, dataset or other record that cites without resting on
+    a finding, and not a notice, byline or REPORTED_IN link)."""
+    life = _lifecycle_records(doc, spec)
+    edges = list(life["edges"])
+    for rid in sorted(life["uses"]):
+        for other in sorted(life["uses"][rid]):
+            edges.append({"id": f"uses:{rid}->{other}", "source": rid, "target": other, "relation": USES})
+    p = Projection.build(nodes=list(life["nodes"].values()), edges=edges, relations=DEPENDENCIES,
                          node_types=["Record", "EvidenceItem", "Inclusion", "Retraction"],
                          bindings={**bindings_of(doc, spec), "projection": "scale.lifecycle dependencies v1"})
-    return {"projection": p, "changed": sorted(changed),
-            "flaggable": sorted(rid for rid, _, skip in records if not skip)}
+    return {"projection": p, "changed": life["changed"], "flaggable": life["flaggable"]}
 
 
 def resting_records(doc: Mapping, spec: Mapping) -> dict:
@@ -336,3 +355,47 @@ def text_ranked(ix, roots: list[str], text: Mapping) -> list[tuple[str, float]]:
         if h["score"] >= text.get("min_score", 0.0):
             best[h["record"]] = max(best.get(h["record"], 0.0), h["score"])
     return sorted(((r, round(best[r], 4)) for r in set(roots) if best.get(r, 0.0) > 0), key=lambda x: (-x[1], x[0]))
+
+
+# ------------------------------------------------------------------------------------- resting all or in part
+# SCALE's "rests: all | some" as GRAPH's support analysis. A record stands on any one of its items of support: its
+# evidence items, its inclusions in retracted datasets, and, one hop further, those of the records it uses (each an
+# edge to the used record's items, never to the record itself, so that support goes no deeper than SCALE's). An
+# evidence item stands only on all of its supports: the source it cites, and any retracted dataset that takes that
+# source's evidence of its record. What was retracted fails; a record that loses every item rests on retractions
+# entirely ("all"), and one that keeps some rests on them in part ("some").
+def support_projection(doc: Mapping, spec: Mapping) -> dict:
+    """The support projection, what was retracted (``failed``) and the records SCALE flags (``flaggable``)."""
+    life = _lifecycle_records(doc, spec)
+    edges = list(life["edges"])
+    for rid in sorted(life["uses"]):
+        for other in sorted(life["uses"][rid]):
+            for atom in life["atoms"].get(other, ()):
+                edges.append({"id": f"borrows:{rid}->{atom}", "source": rid, "target": atom, "relation": BORROWS})
+    p = Projection.build(nodes=list(life["nodes"].values()), edges=edges, relations=SUPPORTS,
+                         node_types=["Record", "EvidenceItem", "Inclusion", "Retraction"],
+                         bindings={**bindings_of(doc, spec), "projection": "scale.lifecycle support v1"})
+    return {"projection": p, "failed": life["changed"], "flaggable": life["flaggable"]}
+
+
+def resting_support(doc: Mapping, spec: Mapping) -> dict:
+    """The records that rest on retractions, all or in part, as GRAPH's support analysis finds them: per record,
+    ``rests`` (``all`` or ``some``), the retracted sources and datasets it rests on, and the hops to its items of
+    support that fell. One request answers every record."""
+    sp = support_projection(doc, spec)
+    p, flaggable = sp["projection"], set(sp["flaggable"])
+    if not sp["failed"]:
+        return {"projection": p.identity, "complete": True, "records": {}, "result": None}
+    res = execute(p, p.request("support", failed=sp["failed"], scope=[(r, "forward") for r in SUPPORTS],
+                               all_of=["EvidenceItem", "Inclusion"]))
+    out: dict[str, dict] = {}
+    for rests, key in (("all", "lost"), ("some", "weakened")):
+        for e in (res.answer or {}).get(key) or ():
+            if e["node"] in flaggable:
+                causes = list(e["causes"])
+                out[e["node"]] = {"rests": rests,
+                                  "sources": [c for c in causes if not c.startswith("retraction:")],
+                                  "datasets": [c.removeprefix("retraction:") for c in causes
+                                               if c.startswith("retraction:")],
+                                  "failing": [h["to"] for h in e["failing"]]}
+    return {"projection": p.identity, "complete": res.complete, "records": out, "result": res.result_id}

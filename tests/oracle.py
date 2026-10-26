@@ -191,3 +191,72 @@ def pattern_rows(nodes, edges, match, steps, type_parents=None, relation_parents
         if admits(match, root):
             extend(0, {match["var"]: root}, [])
     return rows
+
+
+def support_answer(nodes, edges, failed, scope, all_of=None, type_parents=None, relation_parents=None,
+                   relations=RELATIONS):
+    """What stands before and after a failure, by repeated passes over every node until nothing changes (no
+    worklist, no counting, no region), and from it the lost and weakened nodes: their supports, the standing ones,
+    the first hop to each fallen support in canonical order (forward hops by edge ID, then reverse ones) and the failed
+    nodes they rest on through fallen supports; and the counts."""
+    types = {n["id"]: set(n["types"]) for n in closed_nodes(nodes, type_parents)}
+    edges = sorted(edges, key=lambda e: e["id"])
+    names = set(relations) | {e["relation"] for e in edges}
+    expanded = expand_scope(scope, relation_parents or {}, names)
+    fwd = {x["relation"] for x in expanded if x["direction"] == "forward"}
+    rev = {x["relation"] for x in expanded if x["direction"] == "reverse"}
+    first: dict = {}
+    for u in types:
+        hops = [(e["id"], e["target"]) for e in edges if e["source"] == u and e["relation"] in fwd]
+        hops += [(e["id"], e["source"]) for e in edges if e["target"] == u and e["relation"] in rev]
+        first[u] = {}
+        for eid, v in hops:
+            first[u].setdefault(v, eid)
+    every = set(all_of or ())
+    failed = set(failed)
+
+    def fixpoint(down):
+        stands, changed = set(), True
+        while changed:
+            changed = False
+            for u in sorted(types):
+                if u in stands or u in down:
+                    continue
+                sup = first[u]
+                ok = all(v in stands for v in sup) if every & types[u] else (not sup or any(v in stands for v in sup))
+                if ok:
+                    stands.add(u)
+                    changed = True
+        return stands
+
+    before, after = fixpoint(set()), fixpoint(failed)
+    fallen = before - after
+
+    def causes(u):
+        found, seen, todo = set(), {u}, [u]
+        while todo:
+            for v in first[todo.pop()]:
+                if v in fallen and v in failed:
+                    found.add(v)
+                elif v in fallen and v not in seen:
+                    seen.add(v)
+                    todo.append(v)
+        return sorted(found)
+
+    def entry(u):
+        sup = first[u]
+        return {"supports": len(sup), "standing": sum(1 for v in sup if v in after),
+                "failing": [eid for v, eid in sup.items() if v in fallen], "causes": causes(u)}
+
+    region, changed = set(failed), True
+    while changed:
+        changed = False
+        for u in types:
+            if u not in region and set(first[u]) & region:
+                region.add(u)
+                changed = True
+    lost = {u: entry(u) for u in sorted(fallen - failed)}
+    weakened = {u: entry(u) for u in sorted(after) if set(first[u]) & fallen}
+    return {"lost": lost, "weakened": weakened,
+            "counts": {"lost": len(lost), "weakened": len(weakened),
+                       "ungrounded": sum(1 for u in region if u not in before and u not in failed)}}

@@ -274,6 +274,288 @@
    "bindings": {
     "source": "conformance-g4@1"
    }
+  },
+  "G5": {
+   "nodes": [
+    {
+     "id": "c1",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "c2",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "c3",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "e1",
+     "types": [
+      "Item"
+     ]
+    },
+    {
+     "id": "e2",
+     "types": [
+      "Item"
+     ]
+    },
+    {
+     "id": "e3",
+     "types": [
+      "Item"
+     ]
+    },
+    {
+     "id": "e4",
+     "types": [
+      "Item"
+     ]
+    },
+    {
+     "id": "e5",
+     "types": [
+      "Item"
+     ]
+    },
+    {
+     "id": "k1",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "k2",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "m1",
+     "types": [
+      "Model"
+     ]
+    },
+    {
+     "id": "s1",
+     "types": [
+      "Source"
+     ]
+    },
+    {
+     "id": "s2",
+     "types": [
+      "Source"
+     ]
+    },
+    {
+     "id": "s3",
+     "types": [
+      "Source"
+     ]
+    },
+    {
+     "id": "z3",
+     "types": [
+      "Model"
+     ]
+    },
+    {
+     "id": "z4",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "z5",
+     "types": [
+      "Claim"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "h1",
+     "source": "c1",
+     "target": "e1",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "h2",
+     "source": "c1",
+     "target": "e2",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "h3",
+     "source": "c2",
+     "target": "e3",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "h4",
+     "source": "c3",
+     "target": "e4",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "h5",
+     "source": "m1",
+     "target": "c1",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "h6",
+     "source": "m1",
+     "target": "c2",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "h7",
+     "source": "k1",
+     "target": "k2",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "h8",
+     "source": "k2",
+     "target": "k1",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "h9",
+     "source": "k1",
+     "target": "e5",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "x1",
+     "source": "e1",
+     "target": "s1",
+     "relation": "CITES"
+    },
+    {
+     "id": "x2",
+     "source": "e2",
+     "target": "s2",
+     "relation": "CITES"
+    },
+    {
+     "id": "x3",
+     "source": "e3",
+     "target": "s1",
+     "relation": "CITES"
+    },
+    {
+     "id": "x4",
+     "source": "e4",
+     "target": "s3",
+     "relation": "CITES"
+    },
+    {
+     "id": "x5",
+     "source": "e5",
+     "target": "s2",
+     "relation": "CITES"
+    },
+    {
+     "id": "y1",
+     "source": "z3",
+     "target": "e3",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "y2",
+     "source": "z3",
+     "target": "z4",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "y3",
+     "source": "z4",
+     "target": "z5",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "y4",
+     "source": "z5",
+     "target": "z4",
+     "relation": "SUPPORTED_BY"
+    }
+   ],
+   "relations": [
+    "CITES",
+    "SUPPORTED_BY"
+   ],
+   "node_types": [
+    "Claim",
+    "Derivation",
+    "Item",
+    "Model",
+    "Source"
+   ],
+   "type_parents": {
+    "Model": [
+     "Derivation"
+    ]
+   },
+   "bindings": {
+    "source": "conformance-g5@1"
+   }
+  },
+  "G6": {
+   "nodes": [
+    {
+     "id": "paper",
+     "types": [
+      "Source"
+     ]
+    },
+    {
+     "id": "quote",
+     "types": [
+      "Item"
+     ]
+    },
+    {
+     "id": "claim",
+     "types": [
+      "Claim"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "f1",
+     "source": "paper",
+     "target": "quote",
+     "relation": "FEEDS"
+    },
+    {
+     "id": "f2",
+     "source": "quote",
+     "target": "claim",
+     "relation": "FEEDS"
+    }
+   ],
+   "relations": [
+    "FEEDS"
+   ],
+   "node_types": [
+    "Claim",
+    "Item",
+    "Source"
+   ],
+   "bindings": {
+    "source": "conformance-g6@1"
+   }
   }
  },
  "cases": [
@@ -2565,6 +2847,662 @@
    "expect": {
     "status": "failed",
     "error_code": "invalid_request"
+   }
+  },
+  {
+   "name": "support-and-or-and-ungrounded",
+   "covers": [
+    "support",
+    "all_of through the type hierarchy",
+    "ungrounded"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Derivation"
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "lost": {
+     "c2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e1": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e3": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "m1": {
+      "supports": 2,
+      "standing": 1,
+      "failing": [
+       "h6"
+      ],
+      "causes": [
+       "s1"
+      ]
+     }
+    },
+    "weakened": {
+     "c1": {
+      "supports": 2,
+      "standing": 1,
+      "failing": [
+       "h1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     }
+    },
+    "counts": {
+     "lost": 4,
+     "weakened": 1,
+     "ungrounded": 1
+    }
+   }
+  },
+  {
+   "name": "support-circle-grounds-nothing",
+   "covers": [
+    "support",
+    "least fixpoint",
+    "several failures"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s2",
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Derivation"
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "lost": {
+     "c1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h1",
+       "h2"
+      ],
+      "causes": [
+       "s1",
+       "s2"
+      ]
+     },
+     "c2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e1": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x2"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "e3": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e5": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x5"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "k1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h7",
+       "h9"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "k2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h8"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "m1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h5",
+       "h6"
+      ],
+      "causes": [
+       "s1",
+       "s2"
+      ]
+     }
+    },
+    "weakened": {},
+    "counts": {
+     "lost": 9,
+     "weakened": 0,
+     "ungrounded": 1
+    }
+   }
+  },
+  {
+   "name": "support-every-node-needs-one",
+   "covers": [
+    "support",
+    "all_of null"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "lost": {
+     "c2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e1": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e3": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "z3": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "y1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     }
+    },
+    "weakened": {
+     "c1": {
+      "supports": 2,
+      "standing": 1,
+      "failing": [
+       "h1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "m1": {
+      "supports": 2,
+      "standing": 1,
+      "failing": [
+       "h6"
+      ],
+      "causes": [
+       "s1"
+      ]
+     }
+    },
+    "counts": {
+     "lost": 4,
+     "weakened": 2,
+     "ungrounded": 0
+    }
+   }
+  },
+  {
+   "name": "support-a-failed-node-is-its-own-cause",
+   "covers": [
+    "support",
+    "causes"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "c2",
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Derivation"
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "lost": {
+     "e1": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e3": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "m1": {
+      "supports": 2,
+      "standing": 1,
+      "failing": [
+       "h6"
+      ],
+      "causes": [
+       "c2"
+      ]
+     }
+    },
+    "weakened": {
+     "c1": {
+      "supports": 2,
+      "standing": 1,
+      "failing": [
+       "h1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     }
+    },
+    "counts": {
+     "lost": 3,
+     "weakened": 1,
+     "ungrounded": 1
+    }
+   }
+  },
+  {
+   "name": "support-output-limit-lists-lost-first",
+   "covers": [
+    "support",
+    "output limit"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s1",
+     "s2"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Derivation"
+    ],
+    "limits": {
+     "max_results": 3
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "lost": {
+     "c1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h1",
+       "h2"
+      ],
+      "causes": [
+       "s1",
+       "s2"
+      ]
+     },
+     "c2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e1": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x1"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x2"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "e3": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x3"
+      ],
+      "causes": [
+       "s1"
+      ]
+     },
+     "e5": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "x5"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "k1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h7",
+       "h9"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "k2": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "h8"
+      ],
+      "causes": [
+       "s2"
+      ]
+     },
+     "m1": {
+      "supports": 2,
+      "standing": 0,
+      "failing": [
+       "h5",
+       "h6"
+      ],
+      "causes": [
+       "s1",
+       "s2"
+      ]
+     }
+    },
+    "weakened": {},
+    "counts": {
+     "lost": 9,
+     "weakened": 0,
+     "ungrounded": 1
+    }
+   }
+  },
+  {
+   "name": "support-budget-certifies-nothing",
+   "covers": [
+    "support",
+    "expansion budget"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Derivation"
+    ],
+    "limits": {
+     "max_expansions": 5
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "unknown": true
+   }
+  },
+  {
+   "name": "support-read-against-the-edges",
+   "covers": [
+    "support",
+    "reverse scope"
+   ],
+   "graph": "G6",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "paper"
+    ],
+    "scope": [
+     {
+      "relation": "FEEDS",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "lost": {
+     "claim": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "f2"
+      ],
+      "causes": [
+       "paper"
+      ]
+     },
+     "quote": {
+      "supports": 1,
+      "standing": 0,
+      "failing": [
+       "f1"
+      ],
+      "causes": [
+       "paper"
+      ]
+     }
+    },
+    "weakened": {},
+    "counts": {
+     "lost": 2,
+     "weakened": 0,
+     "ungrounded": 0
+    }
+   }
+  },
+  {
+   "name": "support-unknown-type",
+   "covers": [
+    "support",
+    "errors"
+   ],
+   "graph": "G5",
+   "request": {
+    "operation": "support",
+    "failed": [
+     "s1"
+    ],
+    "scope": [
+     {
+      "relation": "SUPPORTED_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Theory"
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "unknown_node_type"
    }
   }
  ]

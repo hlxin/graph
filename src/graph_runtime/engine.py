@@ -1,4 +1,4 @@
-"""The reference CPU engine: binds a request to a projection and runs the four exact operations under their limits.
+"""The reference CPU engine: binds a request to a projection and runs the exact operations under their limits.
 
 Order (what makes answers reproducible and decides among equally good witnesses): nodes and edges in ascending
 original ID; a node's hops are its forward-scope edges (it is their source) in ascending edge ID, then its
@@ -240,6 +240,10 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
             plan.steps.append(SimpleNamespace(parent=index[st["from"]], child=index[st["var"]], fwd=fwd, rev=rev,
                                               tmask=tmask, nodes=nodes, edges=edges, optional=st["optional"],
                                               edge_var=st["edge_var"]))
+    elif op == "support":
+        plan.failed = _nodes(p, req["failed"], "failed")
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        plan.all_of = None if req["all_of"] is None else _types(p, req["all_of"], "all_of")
     else:
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = set(_nodes(p, req["targets"], "targets"))
@@ -333,6 +337,18 @@ def _hops(p: Projection, u: int, fwd: list[bool], rev: list[bool]) -> Iterator[t
     for ei in p._in[u]:
         if rev[rel[ei]]:
             yield ei, src[ei], 1
+
+
+def _back_hops(p: Projection, v: int, fwd: list[bool], rev: list[bool]) -> Iterator[tuple[int, int, int]]:
+    """(edge, the node whose hop it is, 0 forward or 1 reverse) for every hop in scope that leads to ``v``, in
+    canonical order: the hops of :func:`_hops` read backwards."""
+    rel, src, dst = p._edge_rel, p._edge_src, p._edge_dst
+    for ei in p._in[v]:
+        if fwd[rel[ei]]:
+            yield ei, src[ei], 0
+    for ei in p._out[v]:
+        if rev[rel[ei]]:
+            yield ei, dst[ei], 1
 
 
 def _via(p: Projection, u: int, ei: int, flag: int) -> dict:
@@ -685,8 +701,143 @@ def _answer_pattern(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -
     return answer, ([WITNESS_NOTE] if rows else [])
 
 
+# ---------------------------------------------------------------------------------------------- support
+def _search_support(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
+    """What stops standing when the failed nodes fail, and what stands on less than before.
+
+    A hop in scope leads from a node to one of its supports. A node with no support stands (it is a ground: a source,
+    an axiom); a node of an ``all_of`` type stands when every support stands; any other node when one does. What
+    stands is the least fixpoint of these rules, so support in a circle grounds nothing. A failed node never stands.
+
+    1. The region: the failed nodes and everything that depends on them (their hops read backwards).
+    2. The closure: everything the region's standing depends on (its hops read forwards); the rest of the
+       projection cannot change the answer.
+    3. Two least fixpoints over the closure, by counting each node's standing supports: before (nothing failed) and
+       after (the failed nodes held down).
+    4. The causes: the failed nodes each fallen node, and each node that lost a support, rests on, carried as bits
+       along the fallen supports."""
+    st = SimpleNamespace(interruption=None, examined=0, discovered=0, done=False)
+    fwd, rev = plan.fwd, plan.rev
+    failed = set(plan.failed)
+    examined = 0
+
+    def stopped() -> bool:
+        why = ctl.stop()
+        if why:
+            st.interruption, st.examined = why, examined
+        return why is not None
+
+    region, queue = set(failed), deque(plan.failed)          # 1: the failed nodes and their dependents
+    while queue:
+        v = queue.popleft()
+        if stopped():
+            st.discovered = len(region)
+            return st
+        for _, u, _ in _back_hops(p, v, fwd, rev):
+            examined += 1
+            if u not in region:
+                region.add(u)
+                queue.append(u)
+    supports: dict[int, list[tuple[int, int, int]]] = {}     # 2: their support closure, each node's supports once
+    closure, queue = set(region), deque(sorted(region))
+    while queue:
+        u = queue.popleft()
+        if stopped():
+            st.discovered = len(closure)
+            return st
+        sup, seen = [], set()
+        for ei, v, flag in _hops(p, u, fwd, rev):
+            examined += 1
+            if v not in seen:                                 # parallel hops to one support: one support
+                seen.add(v)
+                sup.append((v, ei, flag))
+                if v not in closure:
+                    closure.add(v)
+                    queue.append(v)
+        supports[u] = sup
+    st.discovered = len(closure)
+    dependents: dict[int, list[int]] = {u: [] for u in closure}
+    for u in sorted(closure):
+        for v, _, _ in supports[u]:
+            dependents[v].append(u)
+    every, mask_of = plan.all_of, p._node_mask
+    need0 = {u: (len(supports[u]) if every is not None and mask_of[u] & every else min(1, len(supports[u])))
+             for u in closure}
+
+    def standing(down: set[int]) -> set[int] | None:          # 3: a least fixpoint, by counting standing supports
+        nonlocal examined
+        need, stands = dict(need0), set()
+        queue = deque(u for u in sorted(closure) if need[u] == 0 and u not in down)
+        stands.update(queue)
+        while queue:
+            v = queue.popleft()
+            if stopped():
+                return None
+            for u in dependents[v]:
+                examined += 1
+                if u in stands or u in down:
+                    continue
+                need[u] -= 1
+                if need[u] == 0:
+                    stands.add(u)
+                    queue.append(u)
+        return stands
+
+    before = standing(set())
+    after = standing(failed) if before is not None else None
+    if after is None:
+        return st
+    fallen = before - after                                  # stood before, not after (failed nodes included)
+    lost = sorted(u for u in region if u in fallen and u not in failed)
+    weakened = sorted(u for u in region if u in after and any(v in fallen for v, _, _ in supports[u]))
+    roots = [r for r in plan.failed if r in fallen]           # 4: the causes, as bits of the failed nodes that fell
+    cause = {r: 1 << k for k, r in enumerate(roots)}
+    lost_set, weak_set = set(lost), set(weakened)
+    queue = deque(roots)
+    while queue:
+        v = queue.popleft()
+        if stopped():
+            return st
+        bits = cause[v]
+        for u in dependents[v]:
+            examined += 1
+            if u in lost_set or u in weak_set:
+                old = cause.get(u, 0)
+                if old | bits != old:
+                    cause[u] = old | bits
+                    if u in lost_set:                         # a node that still stands passes nothing on
+                        queue.append(u)
+    st.examined, st.done = examined, True
+    st.supports, st.after, st.fallen, st.roots, st.cause = supports, after, fallen, roots, cause
+    st.lost, st.weakened = lost, weakened
+    st.ungrounded = sum(1 for u in region if u not in before and u not in failed)
+    return st
+
+
+def _answer_support(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
+    failed = [p._node_ids[r] for r in plan.failed]
+    if not st.done:                                          # stopped before both fixpoints: nothing is known
+        return {"failed": failed, "lost": None, "weakened": None, "counts": None}, []
+    ids = p._node_ids
+
+    def entry(u: int) -> dict:
+        sup, bits = st.supports[u], st.cause.get(u, 0)
+        return {"node": ids[u], "supports": len(sup), "standing": sum(1 for v, _, _ in sup if v in st.after),
+                "failing": [{**_via(p, u, ei, flag), "to": ids[v]} for v, ei, flag in sup if v in st.fallen],
+                "causes": [ids[r] for k, r in enumerate(st.roots) if bits >> k & 1]}
+
+    cap = plan.max_results
+    lost, weakened = st.lost[:cap], st.weakened[:max(0, cap - len(st.lost))]
+    if len(lost) + len(weakened) < len(st.lost) + len(st.weakened):
+        st.interruption = "output_limit"
+    answer = {"failed": failed, "lost": [entry(u) for u in lost], "weakened": [entry(u) for u in weakened],
+              "counts": {"lost": len(st.lost), "weakened": len(st.weakened), "ungrounded": st.ungrounded}}
+    return answer, ([WITNESS_NOTE] if lost or weakened else [])
+
+
 _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "dependency_impact": (_search_impact, _answer_impact),
                "typed_path": (_search_typed, _answer_typed),
                "shortest_path": (_search_shortest, _answer_shortest),
-               "pattern": (_search_pattern, _answer_pattern)}
+               "pattern": (_search_pattern, _answer_pattern),
+               "support": (_search_support, _answer_support)}

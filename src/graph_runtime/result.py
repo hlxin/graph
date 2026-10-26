@@ -403,6 +403,8 @@ def _contract_problems(data: dict) -> list[str]:
             out.append("a complete reachability answer includes every source at depth zero")
     elif op == "pattern":
         out.extend(_pattern_problems(request, answer, status, data.get("interruption")))
+    elif op == "support":
+        out.extend(_support_problems(request, answer, status, data.get("interruption")))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -476,6 +478,55 @@ def _pattern_problems(request: dict, answer: dict, status: str, interruption: di
         if key in seen:
             out.append(f"row {n} repeats an earlier row")
         seen.add(key)
+    return out
+
+
+def _support_problems(request: dict, answer: dict, status: str, interruption: dict | None) -> list[str]:
+    """A support answer's own consistency: lost and weakened nodes are listed exactly when both fixpoints were
+    reached, completely unless an output limit cut the list (lost nodes first), and each entry's counts, failing
+    supports and causes agree with each other and with the request."""
+    out = []
+    if answer["failed"] != request["failed"]:
+        out.append("failed must match the request")
+    lost, weakened, counts = answer["lost"], answer["weakened"], answer["counts"]
+    if lost is None or weakened is None or counts is None:
+        if lost is not None or weakened is not None or counts is not None or status != INTERRUPTED \
+                or (interruption or {}).get("reason") == "output_limit":
+            out.append("an unknown support answer (lost, weakened and counts null) is one interrupted before its end")
+        return out
+    listed, total = len(lost) + len(weakened), counts["lost"] + counts["weakened"]
+    cap = request["limits"]["max_results"]
+    if status == COMPLETED and (len(lost) != counts["lost"] or len(weakened) != counts["weakened"]):
+        out.append("a complete support answer lists every lost and weakened node")
+    if status == INTERRUPTED and not ((interruption or {}).get("reason") == "output_limit" and listed == cap < total
+                                      and len(lost) == min(cap, counts["lost"])):
+        out.append("an interrupted support answer that lists nodes was cut by its output limit: max_results nodes, "
+                   "lost ones first, of a larger total")
+    if len(lost) > counts["lost"] or len(weakened) > counts["weakened"]:
+        out.append("more nodes listed than counted")
+    names = [e["node"] for e in lost] + [e["node"] for e in weakened]
+    if [e["node"] for e in lost] != sorted({e["node"] for e in lost}) \
+            or [e["node"] for e in weakened] != sorted({e["node"] for e in weakened}) or len(set(names)) != len(names):
+        out.append("lost and weakened nodes are unique, in ascending ID order, and never both")
+    failed = set(request["failed"])
+    directions = {e["direction"] for e in request["scope"]}
+    for kind, entries in (("lost", lost), ("weakened", weakened)):
+        for e in entries:
+            where = f"{kind} {e['node']!r}"
+            if e["node"] in failed:
+                out.append(f"{where}: a failed node is neither lost nor weakened")
+            supports, standing, failing = e["supports"], e["standing"], e["failing"]
+            if not 0 <= standing <= supports - len(failing) or not failing:
+                out.append(f"{where}: it lost at least one support, and standing and failing supports are distinct")
+            if kind == "weakened" and standing < 1:
+                out.append(f"{where}: a weakened node still stands on a support")
+            if kind == "lost" and standing >= supports:
+                out.append(f"{where}: a lost node has a support that does not stand")
+            if any(h["from"] != e["node"] or h["direction"] not in directions for h in failing) \
+                    or len({h["to"] for h in failing}) != len(failing):
+                out.append(f"{where}: its failing supports are hops in scope from it, one per support")
+            if not e["causes"] or e["causes"] != sorted(set(e["causes"])) or not set(e["causes"]) <= failed:
+                out.append(f"{where}: its causes are failed nodes, at least one, in ascending ID order")
     return out
 
 

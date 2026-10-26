@@ -85,14 +85,32 @@ impact on a dependency projection of SCALE's source lifecycle (`retraction_depen
 Impact runs from everything retracted, to depth 3 (retraction, then item, then record, then a record that uses it):
 SCALE's "one hop further". One impact per retraction attributes each record's retracted sources and datasets.
 
-Which evidence a retracted dataset withdraws stays SCALE's rule, and so does what resting means for an answer
-(`rests: all | some`, rows left out by default, labels). GRAPH only follows the dependencies, from what was
-retracted to what depends on it, with a witness for each record.
+Which evidence a retracted dataset withdraws stays SCALE's rule, and so does what resting means for an answer (rows
+left out by default, labels). Impact only follows the dependencies, from what was retracted to what depends on it,
+with a witness for each record.
+
+**All or in part (support).** `resting_support(doc, spec)` also answers SCALE's `rests: all | some`, in one
+`support` request on a support projection of the same records (`support_projection`):
+
+- A record stands on any one of its items of support: its evidence items, its inclusions in retracted datasets,
+  and, one hop further, those of the records it uses. Each is an edge to the used record's items, never to the
+  record itself, so support goes no deeper than SCALE's.
+- An evidence item stands only on all of its supports (`all_of`): the source it cites, and any retracted dataset
+  that withdraws that source's evidence of its record.
+- What was retracted fails. A `lost` record rests on retractions entirely (`all`); a `weakened` one rests on them in
+  part (`some`). Each one's `causes` are its retracted sources and datasets.
 
 | Test | Scope | Result |
 | --- | --- | --- |
 | The source-lifecycle example | `source-lifecycle/retracted-source.json` (CQ-05's document) | the same 4 records as `lifecycle.resting`, with the same retracted source |
-| Injected retractions | the 134 documents SCALE reads that cite sources, each copied in memory twice: with notices retracting or withdrawing a third of the sources it cites, and with a partial retraction recorded as a dataset (`REPORTED_IN` a cited source, `INCLUDES` records that cite it and records that do not) | the same 18,951 records as `lifecycle.resting`, each with the same retracted sources and datasets (2,548 dataset attributions) |
+| Injected retractions | the 134 documents SCALE reads that cite sources, each copied in memory twice: with notices retracting or withdrawing a third of the sources it cites, and with a partial retraction recorded as a dataset (`REPORTED_IN` a cited source, `INCLUDES` records that cite it and records that do not) | the same 18,951 records as `lifecycle.resting`, each with the same retracted sources and datasets (2,548 dataset attributions); through support, the same verdict for each (18,501 `all`, 450 `some`) |
+
+Support is generic, and on SCALE's documents it costs more than SCALE's own one-level computation. On the 134
+documents with injected retractions, `lifecycle.resting` takes 57 ms in all. `resting_support` takes 1.65 s,
+mostly building the support projection and reading the answer. On the largest document (296 nodes, 1,355 links),
+SCALE takes 3.4 ms; GRAPH takes 33 ms, of which 11 ms is the request. What support adds is the general rule. Support
+propagates to any depth, through AND and OR nodes and through cycles, with witnesses and causes, and `verify_result`
+recomputes it from the records.
 
 ## Workflow 3: tree-shaped plans (pattern)
 

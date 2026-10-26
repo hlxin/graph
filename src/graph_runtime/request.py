@@ -15,6 +15,10 @@ Operations (docs/API_CONTRACT.md):
 * ``shortest_path``: ``sources``, ``targets``, ``scope``, ``costs`` (``{"by_relation": {...}}`` or
   ``{"by_edge": {...}}``); limit ``max_expansions``.
 * ``dependency_impact``: ``changed``, ``scope``, ``max_depth``; limits ``max_expansions``, ``max_results``.
+* ``pattern``: ``match`` (``{var, node_types, nodes}``), ``steps``, ``answer`` (``rows``, ``count`` or
+  ``exists``); limits ``max_expansions``, ``max_results``.
+* ``support``: ``failed``, ``scope`` (from a node to what supports it), ``all_of`` (node types that need every
+  support; null: every node needs one); limits ``max_expansions``, ``max_results``.
 
 A scope is a list of ``{relation, direction}`` (``forward``: from an edge's source to its target; ``reverse``: from
 its target to its source); there is no wildcard.
@@ -33,7 +37,7 @@ from ._canonical import canonical_json, canonical_object, freeze, is_digest, sha
 from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
-OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern")
+OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 MODES = ("exact",)
 FAILED, UNSUPPORTED = "failed", "unsupported"
@@ -44,12 +48,14 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "dependency_impact": ("max_expansions", "max_results"),
            "typed_path": ("max_expansions",),
            "shortest_path": ("max_expansions",),
-           "pattern": ("max_expansions", "max_results")}
+           "pattern": ("max_expansions", "max_results"),
+           "support": ("max_expansions", "max_results")}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets",)),
            "shortest_path": (("sources", "targets", "scope", "costs"), ()),
-           "pattern": (("match",), ("steps", "answer"))}
+           "pattern": (("match",), ("steps", "answer")),
+           "support": (("failed", "scope"), ("all_of",))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -173,6 +179,10 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["answer"] = raw.get("answer", "rows")
         if data["answer"] not in PATTERN_ANSWERS:
             raise _fail("invalid_request", f"answer is one of {list(PATTERN_ANSWERS)}, not {data['answer']!r}")
+    elif op == "support":
+        data["failed"] = _ids(raw["failed"], "failed")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["all_of"] = _node_constraint(raw, "support", ("all_of",))["all_of"]
     else:
         data["sources"] = _ids(raw["sources"], "sources")
         data["targets"] = _ids(raw["targets"], "targets")
@@ -321,9 +331,9 @@ def _var(value: Any, where: str, taken: set) -> str:
     return value
 
 
-def _node_constraint(raw: Mapping, where: str) -> dict:
+def _node_constraint(raw: Mapping, where: str, fields: tuple[str, ...] = ("node_types", "nodes")) -> dict:
     out = {}
-    for field in ("node_types", "nodes"):
+    for field in fields:
         v = raw.get(field)
         if v is not None:
             if isinstance(v, (str, bytes)) or not isinstance(v, (list, tuple)) or not v:

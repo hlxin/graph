@@ -136,6 +136,18 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
         want_rows = exp["rows"] if done else exp["rows"][:len(got_rows)]
         if got_rows != want_rows:
             problems.append(f"rows {got_rows}, expected {want_rows}")
+    if "counts" in exp and answer.get("counts") != exp["counts"]:
+        problems.append(f"counts {answer.get('counts')!r}, expected {exp['counts']}")
+    if exp.get("unknown") and any(answer.get(k) is not None for k in ("lost", "weakened", "counts")):
+        problems.append("an answer interrupted before its end lists no lost or weakened node and no counts")
+    for key in ("lost", "weakened"):                        # each node's supports, failing hops and causes
+        if key in exp:
+            got = {e["node"]: {"supports": e["supports"], "standing": e["standing"],
+                               "failing": [h["edge"] for h in e["failing"]], "causes": e["causes"]}
+                   for e in answer.get(key) or []}
+            want = exp[key] if done else {n: exp[key][n] for n in sorted(exp[key])[:len(got)]}
+            if got != want:
+                problems.append(f"{key} {got}, expected {want}")
     if "witness_edges" in exp and done:
         got_edges = [h["edge"] for h in (answer.get("witness") or {}).get("hops") or []]
         if got_edges != exp["witness_edges"]:

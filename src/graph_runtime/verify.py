@@ -4,13 +4,16 @@
 from the engine). It checks the result's contract invariants (:func:`graph_runtime.result.contract_problems`) and
 every witness in its answer: each hop names an input edge, with that edge's relation, in the requested scope and
 direction, and the hops chain from a requested source to the node (or target) they witness; a shortest path's cost
-is the exact sum of its hops' costs. It does not check that an answer is complete or minimal, which takes a second
-search: the tests and the conformance suite do that against independent oracles. A malformed result is reported as
-a problem, never raised.
+is the exact sum of its hops' costs. It does not check that a path answer is complete or minimal, which takes a
+second search: the tests and the conformance suite do that against independent oracles. A support answer is the
+exception: what stands before and after the failure is recomputed from the records (by re-evaluating each node's
+rule until nothing changes, not by the engine's counting), and every listed node, count and cause is compared with
+it. A malformed result is reported as a problem, never raised.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Iterable, Mapping
 from fractions import Fraction
 from typing import Any
@@ -38,6 +41,7 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
         for n in nodes:
             declared = set() if isinstance(n, str) else set(n.get("types") or ())
             types_of[n if isinstance(n, str) else n["id"]] = declared.union(*(type_up.get(t, ()) for t in declared))
+        edges = list(edges)
         check = _Checker(problems, {e["id"]: (e["source"], e["target"], e["relation"]) for e in edges}, types_of,
                          _ancestors(relation_parents))
         op, status = data.get("operation"), data["status"]
@@ -49,6 +53,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.shortest(request, answer, status)
         elif op == "pattern":
             check.pattern(request, answer)
+        elif op == "support":
+            check.support(request, answer, status, edges)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -267,6 +273,99 @@ class _Checker:
                     self.bad(f"row {n}: {s['var']} = {child!r} is not a node step {j} admits")
                 if s.get("edges") is not None and link not in set(s["edges"]):
                     self.bad(f"row {n}: step {j}'s link {link} is not one of its edges")
+
+    def support(self, request: Mapping, answer: Mapping, status: str, edges: list[Mapping]) -> None:
+        """Recompute, from the records alone, what stands before and after the failure, and compare the answer with
+        it: the lost and weakened nodes (a prefix of each when an output limit cut the lists), each node's supports,
+        the supports that still stand, the hops to those that fell, and the failed nodes it rests on."""
+        if answer.get("lost") is None:
+            return
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        every = set(request["all_of"] or ())
+
+        def in_scope(rel: str, direction: str) -> bool:
+            return (rel, direction) in allowed or any((up, direction) in allowed for up in self.relation_up.get(rel, ()))
+
+        supports: dict[Any, set] = {n: set() for n in self.types_of}
+        for e in edges:
+            if in_scope(e["relation"], "forward"):
+                supports[e["source"]].add(e["target"])
+            if in_scope(e["relation"], "reverse"):
+                supports[e["target"]].add(e["source"])
+        dependents: dict[Any, set] = {n: set() for n in self.types_of}
+        for u, sup in supports.items():
+            for v in sup:
+                dependents[v].add(u)
+
+        def holds(u: Any, stands: set) -> bool:
+            sup = supports[u]
+            if every and self.types_of[u] & every:
+                return all(v in stands for v in sup)
+            return not sup or any(v in stands for v in sup)
+
+        def fixpoint(down: set) -> set:
+            stands: set = set()
+            todo = deque(n for n in self.types_of if not supports[n])
+            while todo:
+                u = todo.popleft()
+                if u in stands or u in down or not holds(u, stands):
+                    continue
+                stands.add(u)
+                todo.extend(dependents[u])
+            return stands
+
+        failed = set(request["failed"])
+        before, after = fixpoint(set()), fixpoint(failed)
+        fallen = before - after
+        region, todo = set(failed), deque(failed)
+        while todo:
+            for u in dependents[todo.popleft()]:
+                if u not in region:
+                    region.add(u)
+                    todo.append(u)
+        want_lost = sorted(u for u in fallen if u not in failed)
+        want_weak = sorted(u for u in after if supports[u] & fallen)
+
+        def causes(u: Any) -> list:
+            found, seen, todo = set(), {u}, [u]
+            while todo:
+                for v in supports[todo.pop()] & fallen:
+                    if v in failed:
+                        found.add(v)
+                    elif v not in seen:
+                        seen.add(v)
+                        todo.append(v)
+            return sorted(found)
+
+        counts = {"lost": len(want_lost), "weakened": len(want_weak),
+                  "ungrounded": sum(1 for u in region if u not in before and u not in failed)}
+        if answer.get("counts") != counts:
+            self.bad(f"counts {answer.get('counts')!r}, but the records give {counts}")
+        allowed_dirs = {"forward", "reverse"}
+        for kind, want, got in (("lost", want_lost, answer["lost"]), ("weakened", want_weak, answer["weakened"])):
+            names = [e.get("node") for e in got]
+            if names != want[:len(names)] or (status == COMPLETED and len(names) != len(want)):
+                self.bad(f"{kind}: the answer lists {names[:10]}, but the records give {want[:10]}")
+            for e in got:
+                u, where = e.get("node"), f"{kind} {e.get('node')!r}"
+                if u not in supports:
+                    continue
+                if e.get("supports") != len(supports[u]):
+                    self.bad(f"{where}: {e.get('supports')!r} supports, but the records give {len(supports[u])}")
+                standing = len(supports[u] & after)
+                if e.get("standing") != standing:
+                    self.bad(f"{where}: {e.get('standing')!r} standing supports, but the records give {standing}")
+                hops = e.get("failing") or []
+                if {h.get("to") for h in hops} != supports[u] & fallen or len(hops) != len(supports[u] & fallen):
+                    self.bad(f"{where}: its failing supports are not the ones that fell")
+                for i, h in enumerate(hops):
+                    if h.get("from") != u or h.get("direction") not in allowed_dirs:
+                        self.bad(f"{where}: failing hop {i} does not start at it")
+                        continue
+                    self.hop(f"{where}: failing hop {i}", u, h.get("to"), h.get("edge"), h.get("relation"),
+                             h.get("direction"), allowed)
+                if e.get("causes") != causes(u):
+                    self.bad(f"{where}: causes {e.get('causes')!r}, but the records give {causes(u)}")
 
     def shortest(self, request: Mapping, answer: Mapping, status: str) -> None:
         if answer.get("found") is not True:
