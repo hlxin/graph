@@ -16,6 +16,9 @@ classifiers = [
   "Topic :: Scientific/Engineering",
 ]
 
+[project.scripts]
+graph-runtime = "graph_runtime.cli:main"
+
 [project.optional-dependencies]
 # retrieval: graph_runtime.retrieval alone needs numpy; nothing else imports it
 retrieval = ["numpy>=1.22"]

@@ -10,6 +10,8 @@ witnesses, for scientific applications (SCALE first). Start with the developer n
 python3 -m pytest                                    # runtime tests (needs pytest; networkx, jsonschema, numpy too)
 PYTHONPATH=src python3 examples/synthetic_revision/run.py --check
 python3 benchmarks/bench.py --sizes small,medium     # raw results go to benchmarks/runs/ (ignored)
+python3 benchmarks/revalidation.py --nodes 10000 --edges 50000   # revalidation against recomputation
+PYTHONPATH=src python3 -m graph_runtime call graph_status         # the tools: call, tools, mcp, conformance
 PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale -p no:cacheprovider   # SCALE parity
 PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python -m pytest integrations/states -p no:cacheprovider  # STATES parity
 PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python benchmarks/consumers.py states   # both engines, real requests
@@ -20,8 +22,8 @@ PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python benchmarks/consumers.py sta
 - `src/graph_runtime/`: the runtime. `projection` (immutable views, hierarchies, identity), `request`
   (normalization), `engine` (the six operations, limits), `result` (the result contract), `verify` (independent
   witness, closure and certificate checks), `revalidate` (cached results on edited projections), `hypotheses`
-  (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend cases), `retrieval` (optional
-  text search, needs numpy).
+  (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend cases), `tools` / `mcp` / `cli`
+  (the JSON tool surface, its MCP server and command line), `retrieval` (optional text search, needs numpy).
 - `tests/`: `oracle.py` holds the independent oracles and the random graph generator.
 - `integrations/scale/`, `integrations/states/`: the SCALE and STATES adapters (application-owned, staged here) and
   their parity tests.

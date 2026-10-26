@@ -55,6 +55,29 @@ result.to_json()              # the contract's JSON, with the normalized request
 [examples/synthetic_revision](examples/synthetic_revision/README.md) walks through a revision, its dependency
 impact and a hypothesis candidate about it.
 
+## Tools for agents and other programs
+
+The same tools are reachable as Python (`graph_runtime.tools.GraphToolkit().call(name, arguments)`), on the command
+line and over the Model Context Protocol. Each tool is plain JSON Schema, takes JSON and returns JSON, reports a
+problem as data, and writes nothing.
+
+| Tool | What it does |
+| --- | --- |
+| `graph_status` | versions, operations, whether text search is available, what the session holds |
+| `graph_describe` | the contract's JSON Schema for requests, results, projections and candidates |
+| `graph_projection` | build a projection from records (inline or a file) and keep it under its identity |
+| `graph_execute` | run a request on a projection the session holds, or one given inline |
+| `graph_verify` | check a result against a projection's records |
+| `graph_revalidate` | which cached results still hold after the records changed |
+| `graph_search` | exact text search over items that name records, with the nodes they name (needs numpy) |
+| `graph_conformance` | the conformance suite against this runtime |
+
+```bash
+graph-runtime call graph_execute @args.json          # or python -m graph_runtime; '-' reads stdin
+graph-runtime mcp                                    # MCP over stdio; its session keeps projections
+claude mcp add graph -- python -m graph_runtime mcp  # register it with an MCP host such as Claude Code
+```
+
 ## Development
 
 ```bash
@@ -84,7 +107,7 @@ SCALE and STATES requests with both engines, in each application's environment.
 
 | Path | What it holds |
 | --- | --- |
-| `src/graph_runtime/` | The runtime (standard library only): `projection`, `request`, `engine`, `result`, `verify`, `hypotheses`, `schemas/`, `conformance/`; and `retrieval`, which alone needs numpy |
+| `src/graph_runtime/` | The runtime (standard library only): `projection`, `request`, `engine`, `result`, `verify`, `revalidate`, `hypotheses`, `schemas/`, `conformance/`, the tool surface (`tools`, `mcp`, `cli`); and `retrieval`, which alone needs numpy |
 | `tests/` | Unit, scenario, oracle-parity (independent oracle and NetworkX), limit, schema and conformance tests |
 | `integrations/scale/` | SCALE's adapter (application-owned, staged here) and its parity tests against SCALE's own engine |
 | `integrations/states/` | STATES's adapter (application-owned, staged here) and its parity tests against STATES's own context extraction |

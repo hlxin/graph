@@ -44,3 +44,4 @@ jobs:
           report = run_conformance()
           assert not report['failures'], report['failures']
           print(report['passed'], 'of', report['cases'], 'conformance cases pass')"
+          /tmp/wheel-env/bin/graph-runtime call graph_status

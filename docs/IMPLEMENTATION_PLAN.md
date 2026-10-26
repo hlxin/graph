@@ -40,7 +40,7 @@ into GRAPH in generic form, and each move is checked against SCALE's engine on S
 | Plans of edge steps: chains, trees, optional steps (`pgraph_query`) | The `pattern` operation: semi-join reduction with no dead ends, rows in canonical order, exact totals without listing rows | 8 conformance cases; a brute-force enumerator on 400 random patterns; 39 SCALE question–document pairs, row for row (203 rows) |
 | Evidence search: BM25, hashed int8 vectors, hybrid and rank fusion (`passages`) | `graph_runtime.retrieval` (optional, numpy), with tokenizer settings, index identities and a `records` filter | 50 tests against the plain definitions; 1,980 SCALE searches (130,173 hits) hit for hit; SCALE's text stages; [RETRIEVAL.md](RETRIEVAL.md) |
 | What rests on a retraction, all or in part (`lifecycle`) | Dependency impact, and the `support` operation: what loses all or some of its support when nodes fail, under AND/OR rules, as a least fixpoint, with causes | 8 conformance cases; an independent oracle on 700 random graphs; 18,951 SCALE records on injected retractions, each with SCALE's `all` or `some` and the same sources and datasets |
-| The tool surface (`api`, `mcp_server`) | Next: a command line and an MCP server for GRAPH's operations | |
+| The tool surface (`api`, `mcp_server`, `cli`) | `graph_runtime.tools`: eight JSON tools (status, describe, projection, execute, verify, revalidate, search, conformance), errors as data, nothing written, a session that keeps projections and indexes by identity; reachable from Python, the `graph-runtime` command line and a dependency-free MCP server over stdio | 11 tests: every tool, JSON-RPC handling (initialize, list, call, notifications, batches, parse errors), the command line's exit codes |
 
 ## Beyond the note: answers that prove themselves, and survive edits
 
@@ -161,11 +161,10 @@ contract, so it waits for a decision.
 ## Next
 
 1. Review the contract (work item 1) and settle anything it should change before a consumer depends on it.
-2. Take the rest of SCALE's generic machinery: a command line and an MCP server.
-3. Certificates for patterns (their total and emptiness) and for support, so that every operation can be
+2. Certificates for patterns (their total and emptiness) and for support, so that every operation can be
    revalidated; and witnesses inside negative certificates, so that an edit that breaks one can be shown to refute
    it, not only to leave it unknown.
-4. Propose the SCALE adapter to SCALE as a pull request, under SCALE's process.
-5. Propose the STATES adapter to STATES, under its own process.
-6. Decide on the periodic projection proposed under Real consumer requests.
-7. A third workflow, RATES (its site graphs), when one needs an operation GRAPH has.
+3. Propose the SCALE adapter to SCALE as a pull request, under SCALE's process.
+4. Propose the STATES adapter to STATES, under its own process.
+5. Decide on the periodic projection proposed under Real consumer requests.
+6. A third workflow, RATES (its site graphs), when one needs an operation GRAPH has.
