@@ -1,0 +1,41 @@
+# The runtime's tests, the example's committed outputs and the conformance suite of an installed wheel, on the oldest,
+# a middle and the newest supported Python. The SCALE and STATES parity tests need those checkouts and run locally
+# (docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md).
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the test tools
+        run: python -m pip install pytest networkx jsonschema build
+      - name: Runtime tests
+        run: python -m pytest -q
+      - name: The example's outputs match a fresh run
+        run: PYTHONPATH=src python examples/synthetic_revision/run.py --check
+      - name: An installed wheel passes the conformance suite
+        run: |
+          python -m build --wheel --outdir dist
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/python -m pip install dist/*.whl
+          cd /tmp && /tmp/wheel-env/bin/python -c "
+          from graph_runtime.conformance import run_conformance
+          report = run_conformance()
+          assert not report['failures'], report['failures']
+          print(report['passed'], 'of', report['cases'], 'conformance cases pass')"
