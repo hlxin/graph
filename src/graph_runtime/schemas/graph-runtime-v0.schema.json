@@ -4667,6 +4667,58 @@
             }
           },
           "description": "critical_path: a hop from u to v means u comes first; sources (null: every node) limit the schedule to what they reach; costs as a shortest path's (null: every hop 1)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "x",
+            "y",
+            "given",
+            "scope",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "d_separation"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "x": {
+              "$ref": "#/$defs/ids"
+            },
+            "y": {
+              "$ref": "#/$defs/ids"
+            },
+            "given": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "d_separation: x, y and given are disjoint; a hop in scope from u to v reads as u a parent (direct cause) of v."
         }
       ]
     },
@@ -5218,7 +5270,8 @@
                   "matching",
                   "dominators",
                   "incidence",
-                  "critical_path"
+                  "critical_path",
+                  "d_separation"
                 ]
               }
             }
@@ -6256,6 +6309,49 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "d_separation"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/separation_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "d_separation"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "d_separation"
+              }
+            }
+          }
         }
       ],
       "description": "The runtime additionally checks digests, normalized request identity and binding, counts, limits, exact arithmetic, and witness structure. verify_result checks witnesses against input records; it does not prove completeness or minimality."
@@ -6351,6 +6447,175 @@
           }
         }
       ]
+    },
+    "separation_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "separated",
+        "trail",
+        "colliders",
+        "certificate"
+      ],
+      "properties": {
+        "separated": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "trail": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "edge",
+                  "relation",
+                  "direction",
+                  "from",
+                  "to",
+                  "travel"
+                ],
+                "properties": {
+                  "edge": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "relation": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "direction": {
+                    "$ref": "#/$defs/direction"
+                  },
+                  "from": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "to": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "travel": {
+                    "enum": [
+                      "up",
+                      "down"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "colliders": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "to_given"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "to_given": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "edge",
+                        "relation",
+                        "direction",
+                        "from",
+                        "to"
+                      ],
+                      "properties": {
+                        "edge": {
+                          "$ref": "#/$defs/id"
+                        },
+                        "relation": {
+                          "$ref": "#/$defs/id"
+                        },
+                        "direction": {
+                          "$ref": "#/$defs/direction"
+                        },
+                        "from": {
+                          "$ref": "#/$defs/id"
+                        },
+                        "to": {
+                          "$ref": "#/$defs/id"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "ancestors",
+                "states"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "bayes_ball"
+                },
+                "ancestors": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  }
+                },
+                "states": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "up",
+                      "down"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "up": {
+                        "type": "boolean"
+                      },
+                      "down": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "d_separation: whether x and y are d-separated given the given nodes; when not, an active trail (each step a hop from parent to child, travelled down or up) and, for each collider on it, a directed path down to a given node; when separated, on request the Bayes-ball certificate (the ancestor set used and the visited states). An interrupted answer claims nothing."
     },
     "shortest_answer": {
       "type": "object",

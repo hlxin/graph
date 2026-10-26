@@ -195,6 +195,16 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     for key, field in (("matching_size", "size"), ("left_count", "left_count"), ("deficiency", "deficiency")):
         if key in exp and done and answer.get(field) != exp[key]:
             problems.append(f"{field} {answer.get(field)!r}, expected {exp[key]}")
+    if "separated" in exp and done and answer.get("separated") is not exp["separated"]:   # d-separation
+        problems.append(f"separated {answer.get('separated')!r}, expected {exp['separated']!r}")
+    if "trail_steps" in exp and done:
+        got = [[s["edge"], s["travel"]] for s in answer.get("trail") or []]
+        if got != exp["trail_steps"]:
+            problems.append(f"trail {got}, expected the canonical {exp['trail_steps']}")
+    if "collider_nodes" in exp and done:
+        got = {c["node"]: [h["edge"] for h in c["to_given"]] for c in answer.get("colliders") or []}
+        if got != exp["collider_nodes"]:
+            problems.append(f"colliders {got}, expected {exp['collider_nodes']}")
     if "acyclic" in exp and done and answer.get("acyclic") is not exp["acyclic"]:     # critical path
         problems.append(f"acyclic {answer.get('acyclic')!r}, expected {exp['acyclic']!r}")
     if "makespan" in exp and done:

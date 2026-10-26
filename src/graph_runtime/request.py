@@ -52,6 +52,8 @@ Operations (docs/API_CONTRACT.md):
   node), ``costs`` (as a shortest path's; null: every hop takes 1), ``answer`` (``path``: the makespan and a critical
   path; ``schedule``: every node's earliest and latest time and slack too), ``certificate``; limit
   ``max_expansions``.
+* ``d_separation``: ``x``, ``y``, ``given`` (default none; the three disjoint), ``scope`` (a hop from u to v: u is a
+  parent of v), ``certificate``; limit ``max_expansions``.
 * ``incidence``: ``rows``, ``columns`` (``{node_types, nodes}`` each, disjoint), ``scope``, ``coefficients`` (as
   weights: any finite numbers, by relation or by edge), ``kernels`` (a subset of ``left`` and ``right``; default
   none), ``certificate``; limit ``max_expansions``.
@@ -79,7 +81,7 @@ from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
-              "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path")
+              "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path", "d_separation")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
@@ -107,7 +109,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "matching": ("max_expansions",),
            "dominators": ("max_expansions",),
            "incidence": ("max_expansions",),
-           "critical_path": ("max_expansions",)}
+           "critical_path": ("max_expansions",),
+           "d_separation": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -125,7 +128,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "matching": (("left", "scope"), ("certificate",)),
            "dominators": (("sources", "scope"), ("targets", "certificate")),
            "incidence": (("rows", "columns", "scope", "coefficients"), ("kernels", "certificate")),
-           "critical_path": (("scope",), ("sources", "costs", "answer", "certificate"))}
+           "critical_path": (("scope",), ("sources", "costs", "answer", "certificate")),
+           "d_separation": (("x", "y", "scope"), ("given", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -336,6 +340,15 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["sources"] = _ids(raw["sources"], "sources")
         data["scope"] = _scope(raw["scope"], "scope")
         data["targets"] = None if raw.get("targets") is None else _ids(raw["targets"], "targets")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "d_separation":
+        data["x"], data["y"] = _ids(raw["x"], "x"), _ids(raw["y"], "y")
+        given = raw.get("given")
+        data["given"] = [] if given is None or (isinstance(given, (list, tuple)) and not given) else _ids(given, "given")
+        overlap = (set(data["x"]) & set(data["y"])) | ((set(data["x"]) | set(data["y"])) & set(data["given"]))
+        if overlap:
+            raise _fail("invalid_request", f"x, y and given are disjoint; {sorted(overlap)[:10]} is in two of them")
+        data["scope"] = _scope(raw["scope"], "scope")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "critical_path":
         data["scope"] = _scope(raw["scope"], "scope")

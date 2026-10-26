@@ -48,6 +48,8 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - the `critical_path` operation: the canonical topological order of an acyclic graph, its makespan and a critical
   path, every node's earliest and latest time and slack, or a cycle; certified by the order with earliest times
   (section 4)
+- the `d_separation` operation: whether a causal graph makes two node sets independent given a third, with an active
+  trail as witness or a Bayes-ball certificate (section 4)
 - the `incidence` operation: the exact rank of the matrix of edge coefficients between row and column nodes, and
   canonical bases of its kernels (a reaction network's conservation laws and steady combinations), certified by a
   nonsingular minor and an independent kernel basis (section 4)
@@ -162,6 +164,7 @@ no wildcard: a scope lists what it follows.
 | `matching` | `left` (`{"node_types", "nodes"}`, at least one: the nodes to pair), `scope` (from a left node to its candidate partners), `certificate` (default false) | `max_expansions` |
 | `dominators` | `sources`, `scope`, `targets` (null: every node reached, with its immediate dominator; else each target's dominators), `certificate` (default false) | `max_expansions` |
 | `critical_path` | `scope` (a hop from u to v: u comes first), `sources` (only what they reach; null: every node), `costs` (as for shortest paths; null: every hop takes 1), `answer` (`path`, the default: the makespan and a critical path; `schedule`: every node's times too), `certificate` (default false) | `max_expansions` |
+| `d_separation` | `x`, `y`, `given` (default none; the three disjoint), `scope` (a hop from u to v: u is a parent, a direct cause, of v), `certificate` (default false) | `max_expansions` |
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
@@ -622,6 +625,30 @@ provenance chain, reaction steps in sequence.
 Answer: `{"acyclic", "cycle": {"hops", "reach"} or null, "cost", "path": {"source", "target", "length", "hops"},
 "schedule": [{"node", "earliest", "latest", "slack"}] or null, "certificate"}`.
 
+**d-separation.** Whether a causal graph makes `x` and `y` independent given `given` (Pearl, 1988; Geiger, Verma and
+Pearl, 1990). A hop in scope from u to v reads as "u is a parent of v". A trail follows hops either way; it is active
+when every collider on it (a node both neighbouring hops point into) is given or has a given descendant, and every
+other inner node is not given. `x` and `y` are d-separated when no trail between them is active: then they are
+independent given `given` in every distribution the (acyclic) graph models. On a graph with cycles the same test is
+computed; its causal reading needs an acyclic one.
+
+- **Search.** Shachter's Bayes-ball (1998), as Koller and Friedman write it: the given nodes and their ancestors
+  (each one expansion), then a breadth-first search over states (a node, and whether the trail arrived from a child,
+  going up, or from a parent, going down) from each node of `x` as if arrived going up (each state one expansion):
+  from a node not given, down to its children, and if it arrived going up, up to its parents; from a node arrived at
+  going down that is given or an ancestor of a given node, up to its parents. It stops at the first node of `y`.
+- **Answer.** `separated`. When false, `trail`: the active trail from a node of `x` to one of `y`, each step a hop
+  (from parent to child) with `travel` `down` or `up`; and `colliders`: each collider on it, in order, with
+  `to_given`, a directed path down from it to a given node (empty when it is given).
+- **Certificate.** With `certificate: true` on a separated answer, `{"kind": "bayes_ball", "ancestors", "states":
+  [{"node", "up", "down"}]}`: the ancestor set used and the visited states. A checker confirms the ancestors hold the
+  given nodes and every parent of theirs, the states hold every start and every state a move reaches, and no node of
+  `y` is among them: no active trail reaches `y`. A connected answer needs none: its trail is its proof.
+- **Limits.** An interrupted search claims nothing.
+
+Answer: `{"separated", "trail": [{"edge", "relation", "direction", "from", "to", "travel"}] or null, "colliders":
+[{"node", "to_given"}] or null, "certificate"}`.
+
 **Incidence.** Exact linear algebra of an incidence structure. The matrix N has a row for each row node and a column
 for each column node (both in ascending ID); N[i][j] adds the coefficients of the edges in scope joining row i and
 column j, whichever way they point. For a reaction network's stoichiometric matrix (species by reactions, consumption
@@ -764,6 +791,8 @@ The result contract reports how an execution ended. It carries no scientific ans
   - for a critical path, a cycle's hops closing on themselves; from a certificate, the order covering what is
     scheduled with every hop forward, the earliest times by the longest-path recurrence, and from them the makespan,
     the critical path's costs and the schedule's latest times
+  - for d-separation, every hop of the trail and of each collider's path against the records, and from a
+    certificate the ancestors closed under parents and the visited states closed under the moves, with no node of `y`
   - for incidence, the matrix rebuilt from the records, every listed vector multiplied by it to zero, each basis
     independent, and from a certificate the minor's determinant nonzero: the rank and the kernels' completeness
   - for periodicity, against the cell's records: the tree's hops, every hop from a listed node's image leading to a
@@ -775,7 +804,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 158 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 165 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -804,14 +833,14 @@ A ranking holds while its estimates still prove it on the new projection: put in
 leave no negative residual, and the intervals and certified prefix they prove are within the ones the answer gives. It
 is always checked in full.
 
-Components, biconnectivity, a maximum flow, a matching, dominators, incidence and critical paths are revalidated by
-their certificates, which
+Components, biconnectivity, a maximum flow, a matching, dominators, incidence, critical paths and d-separation are
+revalidated by their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
 kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest
 the sources); otherwise it holds exactly when its certificate still checks against the new projection's records (as
 `verify_result` checks it), and is unknown (`certificate_broken`, with the first problem found) when it does not, or
-(`no_certificate`) when it has none. These are always checked in full.
+(`no_certificate`) when it has none, unless its witness alone proves it (a cycle, an active trail). These are always checked in full.
 
 A derivation holds while every listed node keeps its rule and every use is still a hop in scope, and its certificate's
 conditions still hold over the targets' region in the new projection. An edit far from the answer can join the

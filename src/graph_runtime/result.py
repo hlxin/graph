@@ -446,6 +446,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_incidence_problems(request, answer, status))
     elif op == "critical_path":
         out.extend(_critical_problems(request, answer, status))
+    elif op == "d_separation":
+        out.extend(_separation_problems(request, answer, status))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -898,6 +900,59 @@ def _critical_problems(request: dict, answer: dict, status: str) -> list[str]:
                 out.append("the order and the schedule list the same nodes")
     except (ValueError, KeyError, TypeError, ZeroDivisionError) as exc:
         return [f"critical path: {exc}"]
+    return out
+
+
+def _separation_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A d-separation answer's own consistency, read without the records: nothing claimed when interrupted; when not
+    separated, a trail from a node of x to one of y whose steps chain (down from a hop's parent to its child, up the
+    other way), every collider on it (in going down, out going up) listed once with a path down to a given node, every
+    other inner node not given; when separated, no trail, and a certificate exactly when asked for. Whether the hops
+    and paths are the records' is checked against them (:func:`graph_runtime.verify_result`)."""
+    out = []
+    if status != COMPLETED:
+        if any(answer[k] is not None for k in ("separated", "trail", "colliders", "certificate")):
+            out.append("an interrupted d-separation answer claims nothing")
+        return out
+    given = set(request["given"])
+    if answer["separated"] is True:
+        if answer["trail"] is not None or answer["colliders"] is not None:
+            out.append("a separated answer has no trail")
+        if (answer["certificate"] is not None) != bool(request["certificate"]):
+            out.append("a certificate comes exactly when asked for, on a separated answer")
+        return out
+    if answer["separated"] is not False or answer["certificate"] is not None:
+        return ["a complete answer says whether x and y are separated; a connected one carries no certificate"]
+    steps = answer["trail"] or []
+    if not steps:
+        return ["a connected answer gives its active trail"]
+    at = steps[0]["from"] if steps[0]["travel"] == "down" else steps[0]["to"]
+    if at not in request["x"]:
+        out.append("the trail starts at a node of x")
+    expected = []
+    for i, s in enumerate(steps):
+        here, there = (s["from"], s["to"]) if s["travel"] == "down" else (s["to"], s["from"])
+        if here != at:
+            out.append("the trail's steps chain")
+            break
+        if i:
+            collider = steps[i - 1]["travel"] == "down" and s["travel"] == "up"
+            if collider:
+                expected.append(here)
+            elif here in given:
+                out.append(f"{here!r} is given but not a collider: it blocks the trail")
+        at = there
+    if at not in request["y"]:
+        out.append("the trail ends at a node of y")
+    colliders = answer["colliders"] or []
+    if [c["node"] for c in colliders] != expected:
+        out.append("the colliders are listed once each, in the trail's order")
+    for c in colliders:
+        path = c["to_given"]
+        end = path[-1]["to"] if path else c["node"]
+        if end not in given or any(a["to"] != b["from"] for a, b in zip(path, path[1:])) or (
+                path and path[0]["from"] != c["node"]):
+            out.append(f"collider {c['node']!r}: its path goes down from it to a given node")
     return out
 
 
