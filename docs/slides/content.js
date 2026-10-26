@@ -96,15 +96,15 @@ const families = [
     slideTitle: "Reasoning: AND/OR rules",
     lede: "A node of an `all_of` type needs every input, any other node one: evidence that must all hold, reactions that need all reactants.",
     icon: "LuGitMerge",
-    source: "docs/API_CONTRACT.md §4: Support, Derivation; git log 5e61ca0, eeadc6a",
+    source: "docs/API_CONTRACT.md §4: Support, Derivation; git log 5e61ca0, eeadc6a, 297ca1e",
     ops: [
       {
         name: "support",
         title: "What falls when nodes fail",
         theory: "A node with no support stands; an `all_of` node needs every support, any other node one. What stands is the least fixpoint, so support in a circle grounds nothing.",
         algorithm: "Two fixpoints by counting standing supports, before and after the failures, over only the region they reach: lost and weakened nodes, with their causes.",
-        proofLabel: "Checked by",
-        proof: "`verify_result` recomputes what stands from the records by re-evaluating every rule. Generalizes SCALE's \"rests on a retraction, all or in part\".",
+        proofLabel: "Certificate",
+        proof: "Both fixpoints' ranks: a ranked node meets its rule on lower ranks; the unranked fail theirs on unranked supports, an unfounded set. Generalizes SCALE's \"rests on a retraction\".",
       },
       {
         name: "derivation",
@@ -359,28 +359,27 @@ const revalidation = {
   slow: "≈100 ms",
   context: "100,000 nodes, 500,000 edges, after a 40-edge edit (one 0.32 s diff)",
   scale: { labels: ["holds", "fails", "unknown"], values: [312, 23, 10] },
-  source: "git log e365fdc, 0a58767, 05d3ea5, 1d6dbbf, 83f9ffe; README.md (Revalidation); docs/API_CONTRACT.md §7",
+  source: "git log e365fdc, 0a58767, 05d3ea5, 1d6dbbf, 83f9ffe, 297ca1e; README.md (Revalidation); docs/API_CONTRACT.md §7",
 };
 
 // Verification counts at the time of the build. Update with every increment.
 const verification = [
-  { big: "543", label: "runtime tests pass" },
-  { big: "165", label: "conformance cases" },
+  { big: "555", label: "runtime tests pass" },
+  { big: "168", label: "conformance cases" },
   { big: "16", label: "SCALE parity tests" },
   { big: "6", label: "STATES parity tests" },
   { big: "73 / 73", label: "real requests agree" },
 ];
 
-// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d, 05d3ea5, 1d6dbbf; the d-separation review as the
-// coordinator reported it). Shown under the checks on the verification slide.
+// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d, 05d3ea5, 1d6dbbf, 04532ba, 107dc68, 297ca1e). Shown under the checks on the verification slide.
 const reviews = [
   "Also: an independent fuzzing review (about 50,000 cases), a Codex review of the contract (v0.1), and a golden test of 1,200 pinned result_ids.",
-  "Codex reviews each increment adversarially before commit. Found and fixed with regressions: a request_id collision and two certificate holes (structure); an unverified interrupted bound (flows); a quadratic cycle check (dominators); a float entry that let a false rank verify, a stale nearest cut revalidated as holding, contradicted answers left unknown (incidence); exact fields beside false values, a path from outside the sources' region, controls never polled (critical path). d-separation: approved with no findings after 10,000 oracle comparisons and 5,000 revalidation checks.",
+  "Codex reviews each increment adversarially before commit. Found and fixed with regressions: a request_id collision and two certificate holes (structure); an unverified interrupted bound (flows); a quadratic cycle check (dominators); a float entry that let a false rank verify, a stale nearest cut revalidated as holding, contradicted answers left unknown (incidence); exact fields beside false values, a path from outside the sources' region, controls never polled (critical path); a quadratic certificate check (support). d-separation: no findings. A review of all of 26 October together: a nonuniform PageRank start, a lenient ranking revalidation, a quadratic cyclic join.",
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
 // Development timeline (git log). `when` is local time, -0400.
-const timelineLede = "Thirty-one commits on 25–26 October 2026: from four operations to nineteen.";
+const timelineLede = "Thirty-four commits on 25–26 October 2026: from four operations to nineteen.";
 const timeline = [
   { day: "25 Oct 2026" },
   { when: "17:17", what: "v0: projections, 4 operations, results; SCALE parity" },
@@ -396,22 +395,23 @@ const timeline = [
   { when: "10:43", what: "`dominators` · revalidation by certificate" },
   { when: "11:16", what: "`incidence` (conservation laws)" },
   { when: "11:32", what: "`critical_path` (schedules, slack)" },
-  { when: "11:44", what: "`d_separation` (causal independence)", latest: true },
+  { when: "11:44", what: "`d_separation` (causal independence)" },
+  { when: "17:45", what: "Fixes from a review of the day's increments" },
+  { when: "18:23", what: "Support certificates · support revalidated", latest: true },
 ];
 
 // Hand-worked conformance cases after each increment (commit messages; cases.json now).
 const growth = {
-  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators", "incidence", "crit. path", "d-sep."],
-  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148, 153, 158, 165],
+  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators", "incidence", "crit. path", "d-sep.", "sup. cert."],
+  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148, 153, 158, 165, 168],
   operations: "4 → 19",
-  tests: "178 → 543",
+  tests: "178 → 555",
 };
 
 // ---------------------------------------------------------------------------------------------------------------
 // Roadmap: the next increments (plan.md after the two Codex surveys, codex_literature.md and codex_domains.md).
 const roadmapLede = "From two Codex literature surveys, most of whose list is now done. What remains:";
 const roadmap = [
-  { name: "Support certificates", icon: "LuShieldCheck", answers: "Support answers checked and revalidated without recomputing.", cert: "Derivation ranks and closure under every rule prove the least fixpoint.", ref: "Dowling–Gallier 1984; McConnell et al. 2011" },
   { name: "k-best paths", icon: "LuListOrdered", answers: "Alternative routes and explanations, not only one optimum.", cert: "Path witnesses; a deviation partition with potentials proves the first k.", ref: "Yen 1971 (k shortest simple paths)" },
   { name: "Pattern query planning", icon: "LuDatabase", answers: "Start the semi-join reduction from the most selective variable.", cert: "The same answers; the work statistics, part of result_id, change.", ref: "Selinger et al. 1979 (access paths)" },
   { name: "Incremental repair", icon: "LuRefreshCw", answers: "Repair cached answers that revalidation finds broken.", cert: "A fresh answer with an ordinary certificate on the new projection.", ref: "Gupta et al. 1993; Ramalingam–Reps 1996" },
