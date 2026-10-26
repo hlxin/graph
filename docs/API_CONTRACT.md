@@ -45,6 +45,9 @@ states consistently, and required costs only for edges actually in scope. Revisi
   cover (section 4)
 - the `dominators` operation: the nodes every walk from the sources to a node passes through (its dominator tree, or
   each target's chain), certified by a low-high order of the tree, checked arc by arc (section 4)
+- the `incidence` operation: the exact rank of the matrix of edge coefficients between row and column nodes, and
+  canonical bases of its kernels (a reaction network's conservation laws and steady combinations), certified by a
+  nonsingular minor and an independent kernel basis (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -155,6 +158,7 @@ no wildcard: a scope lists what it follows.
 | `max_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as costs, non-negative; null: every edge 1), `node_capacity` (what each node other than the sources and targets passes; null: no limit), `certificate` (default false) | `max_expansions` |
 | `matching` | `left` (`{"node_types", "nodes"}`, at least one: the nodes to pair), `scope` (from a left node to its candidate partners), `certificate` (default false) | `max_expansions` |
 | `dominators` | `sources`, `scope`, `targets` (null: every node reached, with its immediate dominator; else each target's dominators), `certificate` (default false) | `max_expansions` |
+| `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
@@ -591,6 +595,34 @@ single node dominates, has none (null).
 Answer: `{"reached", "tree": [{"node", "idom"}] or null, "chains": [{"target", "reachable", "dominators"}] or null,
 "certificate"}`.
 
+**Incidence.** Exact linear algebra of an incidence structure. The matrix N has a row for each row node and a column
+for each column node (both in ascending ID); N[i][j] adds the coefficients of the edges in scope joining row i and
+column j, whichever way they point. For a reaction network's stoichiometric matrix (species by reactions, consumption
+negative, production positive), the rank is the number of independent reactions (with the numbers of complexes and
+linkage classes it gives the deficiency of Feinberg's theory, 1987), the left kernel holds the conservation laws
+(species weights no reaction changes) and the right kernel the reaction combinations that change nothing. For a Petri
+net's incidence matrix, they are the place and transition invariants. Coefficients are exact: integers, or floats
+read as their binary values.
+
+- **Search.** The matrix is read from the edges at the row nodes (each row one expansion, each row scaled to
+  integers) and brought to row echelon form by exact fraction-free elimination, column by column, the sparsest open
+  row taking each pivot: the rank and a nonsingular minor. A kernel comes from back elimination of the echelon form
+  of the matrix (right) or of its transpose (left). Each pivot, forward or back, is one expansion.
+- **Answer.** `rows`, `columns`, `rank`, and the requested kernels: `left_kernel` (vectors over the rows, `rows -
+  rank` of them) and `right_kernel` (over the columns, `columns - rank`), each vector its nonzero entries by node ID.
+  Each basis is canonical: the kernel's reduced row echelon basis (one vector per free coordinate, 1 there and 0 at
+  the other free ones), each vector scaled by a positive factor to a primitive integer vector.
+- **Certificate.** With `certificate: true`, `{"kind": "rank", "minor": {"rows", "columns"}, "kernel"}`: an r by r
+  minor of N with a nonzero determinant (rank at least r), and, when the answer lists no kernel, the smaller one as
+  `{"side", "vectors"}` (rows - r independent vectors on the left, or columns - r on the right: rank at most r). A
+  checker rebuilds N from the records, multiplies every vector by it, sees each basis independent (every vector
+  nonzero at a node where the others are zero) and shows the minor nonsingular, by elimination modulo the prime
+  2^61 - 1 (a determinant nonzero modulo p is nonzero) or, should that not settle it, by Bareiss's fraction-free
+  elimination: the rank, and the kernels' completeness, follow.
+- **Limits.** An interrupted reduction claims nothing: rank, kernels and certificate are null.
+
+Answer: `{"rows", "columns", "rank", "left_kernel": [[{"node", "value"}]], "right_kernel": [...], "certificate"}`.
+
 **Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
 SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for
 example from a claim to its evidence items, or from an item to the source it cites.
@@ -702,6 +734,8 @@ The result contract reports how an execution ended. It carries no scientific ans
   - for dominators, from a certificate: the order a preorder of the tree, every hop in scope from a listed node
     landing on a listed node whose dominator is an ancestor of the hop's tail, and every node low-high; the tree or
     chains read from it
+  - for incidence, the matrix rebuilt from the records, every listed vector multiplied by it to zero, each basis
+    independent, and from a certificate the minor's determinant nonzero: the rank and the kernels' completeness
   - for periodicity, against the cell's records: the tree's hops, every hop from a listed node's image leading to a
     listed node by a lattice vector, and the cycles being exactly the edges with a nonzero net, with those nets
   - for a regular path, every hop of a witness or of the tree against the path's automaton, which it builds itself
@@ -711,7 +745,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 148 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 153 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -740,11 +774,13 @@ A ranking holds while its estimates still prove it on the new projection: put in
 leave no negative residual, and the intervals and certified prefix they prove are within the ones the answer gives. It
 is always checked in full.
 
-Components, biconnectivity, a maximum flow, a matching and dominators are revalidated by their certificates, which
+Components, biconnectivity, a maximum flow, a matching, dominators and incidence are revalidated by their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
-`witness_gone`); otherwise it holds exactly when its certificate still checks against the new projection's records
-(as `verify_result` checks it), and is unknown (`certificate_broken`, with the first problem found) when it does not,
-or (`no_certificate`) when it has none. These are always checked in full.
+`witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
+kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest
+the sources); otherwise it holds exactly when its certificate still checks against the new projection's records (as
+`verify_result` checks it), and is unknown (`certificate_broken`, with the first problem found) when it does not, or
+(`no_certificate`) when it has none. These are always checked in full.
 
 A derivation holds while every listed node keeps its rule and every use is still a hop in scope, and its certificate's
 conditions still hold over the targets' region in the new projection. An edit far from the answer can join the
@@ -755,7 +791,7 @@ The verdict is one of three:
 | Verdict | Meaning | Reasons |
 | --- | --- | --- |
 | `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
-| `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `rule_changed` (a derivation's ground is no longer one, or an `all_of` node's inputs changed), `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
+| `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `rule_changed` (a derivation's ground is no longer one, or an `all_of` node's inputs changed), `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost), `answer_refuted` (a claim of a certificate-checked answer the new records contradict) |
 | `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
 
 Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",

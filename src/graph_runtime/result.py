@@ -442,6 +442,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_matching_problems(request, answer, status))
     elif op == "dominators":
         out.extend(_dominator_problems(request, answer, status))
+    elif op == "incidence":
+        out.extend(_incidence_problems(request, answer, status))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -758,6 +760,63 @@ def _matching_problems(request: dict, answer: dict, status: str) -> list[str]:
         out.append("a certificate comes exactly when asked for, on a complete answer")
     elif cert is not None and (len(cert["nodes"]) != answer["size"] or cert["nodes"] != sorted(set(cert["nodes"]))):
         out.append("the cover has as many nodes as there are pairs, unique and ascending")
+    return out
+
+
+def _incidence_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """An incidence answer's own consistency, read without the records: nothing claimed when interrupted; when
+    complete, a rank no larger than either dimension, each requested kernel with as many vectors as its dimension
+    leaves (rows - rank on the left, columns - rank on the right), each vector its nonzero entries by node ID,
+    primitive integers; a certificate exactly when asked for, with a minor of rank rows and columns, and a kernel
+    (left or right) when the answer lists none. Whether the vectors are in the kernels and the minor nonsingular is checked
+    against the records (:func:`graph_runtime.verify_result`)."""
+    out = []
+    from math import gcd
+    if status != COMPLETED:
+        if any(answer[k] is not None for k in ("rank", "left_kernel", "right_kernel", "certificate")):
+            out.append("an interrupted incidence answer claims nothing: rank, kernels and certificate are null")
+        return out
+    rank, m, n = answer["rank"], answer["rows"], answer["columns"]
+    if type(rank) is not int or not 0 <= rank <= min(m, n):
+        out.append("the rank is an integer no larger than either dimension")
+        return out
+
+    def vectors(field: str, size: int, vecs: list) -> None:
+        if len(vecs) != size:
+            out.append(f"{field} has {len(vecs)} vectors, not {size}")
+        for vec in vecs:
+            names = [e["node"] for e in vec]
+            values = [e["value"] for e in vec]
+            if not vec or names != sorted(set(names)) or any(type(v) is not int or v == 0 for v in values):
+                out.append(f"{field}: a vector is its nonzero integer entries by node ID")
+                return
+            g = 0
+            for v in values:
+                g = gcd(g, v)
+            if g != 1:
+                out.append(f"{field}: a vector's entries have no common factor")
+                return
+    kernels = request["kernels"]
+    if (answer["left_kernel"] is not None) != ("left" in kernels) or (answer["right_kernel"] is not None) != (
+            "right" in kernels):
+        out.append("a kernel is listed exactly when asked for")
+        return out
+    if answer["left_kernel"] is not None:
+        vectors("left_kernel", m - rank, answer["left_kernel"])
+    if answer["right_kernel"] is not None:
+        vectors("right_kernel", n - rank, answer["right_kernel"])
+    cert = answer["certificate"]
+    if (cert is not None) != bool(request["certificate"]):
+        out.append("a certificate comes exactly when asked for, on a complete answer")
+    elif cert is not None:
+        minor = cert["minor"]
+        if len(set(minor["rows"])) != rank or len(set(minor["columns"])) != rank:
+            out.append("the minor has rank rows and rank columns")
+        if (cert["kernel"] is None) != bool(kernels):
+            out.append("the certificate carries a kernel exactly when the answer lists none")
+        elif cert["kernel"] is not None:
+            side = cert["kernel"]["side"]
+            vectors("certificate kernel", (m if side == "left" else n) - rank, cert["kernel"]["vectors"])
     return out
 
 

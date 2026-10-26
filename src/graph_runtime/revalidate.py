@@ -21,9 +21,9 @@ The verdict has three values:
   certificates (pattern, support), a negative or an optimum without its certificate, and a certificate an edit
   broke without refuting the answer.
 
-Components, biconnectivity, maximum flows, matchings and dominators are revalidated by their certificates: those
-prove the whole answer from the records alone (trees and an ordered closed partition, a depth-first forest, a cut, a
-vertex cover, a low-high order), so the answer holds on the new projection exactly when its certificate still checks
+Components, biconnectivity, maximum flows, matchings, dominators and incidence are revalidated by their certificates:
+those prove the whole answer from the records alone (trees and an ordered closed partition, a depth-first forest, a
+cut, a vertex cover, a low-high order, a nonsingular minor with a kernel basis), so the answer holds on the new projection exactly when its certificate still checks
 against the new projection's records (:func:`graph_runtime.verify_result`), and a listed node or edge that is gone
 refutes it. These are always checked in full.
 
@@ -45,17 +45,18 @@ from .errors import RequestError
 from .projection import CONTRACT, Projection
 from .request import normalize_request
 from .result import COMPLETED, Result
-from .verify import verify_result
+from .verify import _check
 
 HOLDS, FAILS, UNKNOWN = "holds", "fails", "unknown"
 VERDICTS = (HOLDS, FAILS, UNKNOWN)
 REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
-_RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators")   # by verifying the certificate
+_RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators",   # by verifying the certificate
+              "incidence")
 _NODE_FIELDS = frozenset({"node", "nodes", "left", "right", "idom", "source", "target", "from", "to", "dominators"})
 _EDGE_FIELDS = frozenset({"edge", "edges"})
 _REFUTING = {"node_gone", "witness_gone", "type_changed", "rule_changed", "reaches_unlisted", "reaches_shallower",
-             "unanswerable"}
+             "unanswerable", "answer_refuted"}
 
 
 class ProjectionDiff:
@@ -588,8 +589,10 @@ def _derivation(ctx: SimpleNamespace) -> None:
 # ---------------------------------------------------------------------------------------------- by certificate
 def _recheck(ctx: SimpleNamespace) -> None:
     """An answer its certificate proves from the records alone: every node and edge it names must still exist (one
-    that is gone refutes it), and the certificate must check against the new projection's records, which then proves
-    the answer correct there; one that no longer checks leaves it unknown."""
+    that is gone refutes it), what it claims must agree with the new projection's records (a contradiction, such as
+    a kernel vector that no longer multiplies to zero or a flow beyond a capacity, refutes it), and its certificate
+    must check against them, which then proves the answer correct there; one that no longer checks leaves it
+    unknown."""
     p, answer, out = ctx.p, ctx.answer, ctx.out
     nodes: set = set()
     edges: set = set()
@@ -598,14 +601,18 @@ def _recheck(ctx: SimpleNamespace) -> None:
     out.extend({"code": "witness_gone", "edge": e} for e in sorted(e for e in edges if e not in p._edge_index))
     if out:
         return
-    if answer.get("certificate") is None:
-        out.append({"code": "no_certificate"})
-        return
     records = p._memo.get("records")
     if records is None:
         records = p._memo["records"] = p.to_dict()
-    problems = verify_result(ctx.data, nodes=records["nodes"], edges=records["edges"],
-                             type_parents=records["type_parents"], relation_parents=records["relation_parents"])
+    args = (ctx.data, records["nodes"], records["edges"], records["type_parents"], records["relation_parents"], None)
+    claims = _check(*args, False)                 # what the answer says, without its proof: a contradiction refutes it
+    if claims:
+        out.append({"code": "answer_refuted", "problem": claims[0][:300]})
+        return
+    if answer.get("certificate") is None:
+        out.append({"code": "no_certificate"})
+        return
+    problems = _check(*args, True)
     if problems:
         out.append({"code": "certificate_broken", "problem": problems[0][:300]})
 

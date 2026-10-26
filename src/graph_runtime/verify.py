@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable, Mapping
 from fractions import Fraction
+from math import gcd
 from typing import Any
 
 from .result import COMPLETED, INTERRUPTED, Result, _acyclic, contract_problems
@@ -37,6 +38,14 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
 
     Records whose edges carry a ``shift`` (or ``dimensions`` given) are a periodic projection's cell: the result is
     then checked against the infinite graph they stand for, image by image (:mod:`graph_runtime.periodic`)."""
+    return _check(result, nodes, edges, type_parents, relation_parents, dimensions, True)
+
+
+def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mapping],
+           type_parents: Mapping[str, Iterable[str]] | None, relation_parents: Mapping[str, Iterable[str]] | None,
+           dimensions: int | None, proofs: bool) -> list[str]:
+    """verify_result; with ``proofs`` false, only what the answer claims is checked, not its certificate (what
+    revalidation tells apart: a claim the records contradict refutes the answer, a broken proof does not)."""
     try:
         data = dict(result._data) if isinstance(result, Result) else dict(result)      # read, never changed
         problems = contract_problems(data)
@@ -60,6 +69,7 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
                     *(type_up.get(t, ()) for t in declared))
             check = _Checker(problems, {e["id"]: (e["source"], e["target"], e["relation"]) for e in edges},
                              types_of, _ancestors(relation_parents))
+        check.proofs = proofs
         op, status = data.get("operation"), data["status"]
         if op in ("reachability", "dependency_impact"):
             check.node_set(op, request, answer, status)
@@ -91,6 +101,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.matching(request, answer, status)
         elif op == "dominators":
             check.dominators(request, answer, status)
+        elif op == "incidence":
+            check.incidence(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -227,6 +239,11 @@ class _Checker:
     def __init__(self, problems: list[str], edge_of: Mapping, types_of: Mapping, relation_up: dict):
         self.problems, self.edge_of, self.types_of, self.relation_up = problems, edge_of, types_of, relation_up
         self._ends: tuple[dict, dict] | None = None
+        self.proofs = True                     # False: check what the answer claims, not its certificate
+
+    def proof(self, answer: Mapping) -> Any:
+        """The answer's certificate, when proofs are checked."""
+        return answer.get("certificate") if self.proofs else None
 
     def bad(self, message: str) -> None:
         self.problems.append(message)
@@ -979,7 +996,7 @@ class _Checker:
                 for flag, value in want.items():
                     if c[flag] is not value:
                         self.bad(f"{where}: {flag} is {value}, not {c[flag]}")
-        cert = answer.get("certificate")
+        cert = self.proof(answer)
         if cert is None:
             return
         groups = [g["nodes"] for g in cert["groups"]]
@@ -1054,7 +1071,7 @@ class _Checker:
                     self.in_scope(rec[2], "forward", allowed) or self.in_scope(rec[2], "reverse", allowed)):
                 self.bad(f"bridge {b['edge']!r} is not an input edge with these ends and relation, linking two nodes "
                          "in scope")
-        cert = answer.get("certificate")
+        cert = self.proof(answer)
         if cert is None:
             return
         pre: dict = {}
@@ -1174,10 +1191,10 @@ class _Checker:
         """A flow against the records: every edge's flow a hop in scope, within the edge's capacity; at every node
         other than the sources and targets as much in as out (and no more than the node capacity); the value what
         leaves the sources. An interrupted answer's upper bound: the least of the capacities leaving the sources and
-        entering the targets, recomputed. A complete answer's cut: each hop and node it lists with the capacity the request gives,
-        adding up to the value. With the certificate (the cut's source side), the cut is recomputed from the records:
-        every hop in scope from the source side to the rest and every node whose capacity separates them, so the
-        flow and the cut prove each other optimal, without a search."""
+        entering the targets, recomputed. A complete answer's cut: each hop and node it lists with the capacity the
+        request gives, adding up to the value (so flow and cut prove each other optimal), and exactly the cut nearest
+        the sources: what the flow's residual graph reaches from them (no target among it) is its source side, the
+        same for every maximum flow, which the certificate must name."""
         allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
         sources, targets = set(request["sources"]), set(request["targets"])
         terminals = sources | targets
@@ -1243,25 +1260,61 @@ class _Checker:
             total += read(x, "capacity")
         if total != value:
             self.bad(f"the cut's capacities add up to {total}, not the value {value}")
-        cert = answer.get("certificate")
-        if cert is None:
-            return
-        side = set(cert["source_side"])
-        cut_nodes = {x["node"] for x in answer["cut_nodes"]}
-        if not sources <= side or side & targets or cut_nodes & (side | terminals):
-            self.bad("certificate: the source side holds every source, no target, and no node the cut cuts")
-            return
+        # The residual graph of the flow: what it reaches from the sources is the source side of the minimum cut
+        # nearest them, the same for every maximum flow. A target among it would leave an augmenting path.
+        moved: dict = {}
+        through: dict = {}
+        for f in answer.get("flows") or []:
+            moved[(f["edge"], f["direction"])] = read(f, "flow")
+            through[f["to"]] = through.get(f["to"], Fraction(0)) + read(f, "flow")
 
-        def inward(v: Any) -> bool:                      # the node's inward copy is on the source side
-            return v in side or v in cut_nodes
-        crossing = set()
+        def split(v: Any) -> bool:
+            return node_cap is not None and v not in terminals
+
+        def inward(v: Any) -> tuple:
+            return (v, 0) if split(v) else (v, 1)
+
+        def way(eid: str, u: Any, w: Any) -> str:
+            src, dst, _ = self.edge_of[eid]
+            return "forward" if (src, dst) == (u, w) else "reverse"
+        reached = {(s, 1) for s in sources}
+        todo = list(reached)
+        while todo:
+            v, out = todo.pop()
+            steps = []
+            if out:                                      # a node, or its outward copy: its hops, and back into it
+                for eid, w, _ in self.hops_from(v, allowed):
+                    if w != v and (capacity(eid) or 0) > moved.get((eid, way(eid, v, w)), 0):
+                        steps.append(inward(w))
+                if split(v):
+                    if through.get(v, 0) > 0:
+                        steps.append((v, 0))
+            if not out or not split(v):                  # its inward side: through the node, and back along a flow
+                if split(v) and node_cap > through.get(v, 0):
+                    steps.append((v, 1))
+                for eid, w, _ in self.hops_into(v, allowed):
+                    if w != v and moved.get((eid, way(eid, w, v)), 0) > 0:
+                        steps.append((w, 1))
+            for x in steps:
+                if x not in reached:
+                    reached.add(x)
+                    todo.append(x)
+        side = {v for v, out in reached if out}
+        if side & targets:
+            self.bad(f"the flow is not maximum: its residual graph reaches the target(s) {sorted(side & targets)[:5]}")
+            return
+        nearest_nodes = {v for v, out in reached if not out and (v, 1) not in reached}
+        nearest = set()
         for u in side:
-            for eid, v, _ in self.hops_from(u, allowed):
-                if v != u and not inward(v) and capacity(eid):
-                    src, dst, rel = self.edge_of[eid]
-                    crossing.add((eid, "forward" if (src, dst) == (u, v) else "reverse"))
-        if crossing != listed:
-            self.bad(f"certificate: the hops leaving the source side are {sorted(crossing)[:5]}, not the listed cut")
+            for eid, w, _ in self.hops_from(u, allowed):
+                if w != u and inward(w) not in reached and capacity(eid):
+                    nearest.add((eid, way(eid, u, w)))
+        if nearest != listed or nearest_nodes != {x["node"] for x in answer["cut_nodes"]}:
+            self.bad(f"the cut is not the one nearest the sources, which crosses {sorted(nearest)[:5]} and the nodes "
+                     f"{sorted(nearest_nodes)[:5]}")
+        cert = self.proof(answer)
+        if cert is not None and set(cert["source_side"]) != side:
+            self.bad("certificate: the source side is not what the flow's residual graph reaches from the sources")
 
     def matching(self, request: Mapping, answer: Mapping, status: str) -> None:
         """A matching against the records: every pair a hop in scope from a node of the left set to a node outside
@@ -1282,7 +1335,7 @@ class _Checker:
             lefts.add(x["left"])
             rights.add(x["right"])
             self.hop(where, x["left"], x["right"], x["edge"], x["relation"], x["direction"], allowed)
-        cert = answer.get("certificate")
+        cert = self.proof(answer)
         if cert is None:
             return
         cover = set(cert["nodes"])
@@ -1310,7 +1363,7 @@ class _Checker:
         for e in answer.get("tree") or []:
             if e["node"] not in self.types_of:
                 self.bad(f"{e['node']!r} is not an input node")
-        cert = answer.get("certificate")
+        cert = self.proof(answer)
         if cert is None:
             return
         order = [e["node"] for e in cert["order"]]
@@ -1383,6 +1436,141 @@ class _Checker:
                 k = parent[k]
             if c["reachable"] is not (t in pos) or list(c["dominators"]) != chain[::-1]:
                 self.bad(f"the chain of {t!r} is not the certificate's")
+
+
+    def chosen(self, spec: Mapping) -> set:
+        """The input nodes a ``{node_types, nodes}`` constraint admits (a type through the hierarchy)."""
+        return {n for n in self.types_of if (spec["nodes"] is None or n in spec["nodes"]) and
+                (spec["node_types"] is None or self.types_of[n] & set(spec["node_types"]))}
+
+    def incidence(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """An incidence answer against the records: the matrix rebuilt from them (every edge in scope, either way,
+        joining a row node and a column node, adds its coefficient), every listed vector multiplied by it (the left
+        kernel's from the left, the right kernel's from the right) to zero, each listed basis independent (every
+        vector nonzero at a node where the others are zero), and, from the certificate, the minor's determinant
+        nonzero by Bareiss's fraction-free elimination: the rank is at least the minor's size, and the right kernel's
+        vectors bound it from above, so the rank and the kernels' completeness are proven."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        rows, cols = self.chosen(request["rows"]), self.chosen(request["columns"])
+        if answer.get("rows") != len(rows) or answer.get("columns") != len(cols):
+            self.bad(f"the matrix has {len(rows)} rows and {len(cols)} columns, not {answer.get('rows')} and "
+                     f"{answer.get('columns')}")
+            return
+        if status != COMPLETED:
+            return
+        (kind, table), = request["coefficients"].items()
+        matrix: dict = {}
+        for u in rows:
+            for eid, v, rel in self.links(u, allowed):
+                if v in cols:
+                    x = table.get(rel if kind == "by_relation" else eid)
+                    if x is None:
+                        self.bad(f"edge {eid} in scope has no coefficient")
+                        return
+                    matrix[(u, v)] = matrix.get((u, v), Fraction(0)) + Fraction(x)
+
+        by_row: dict = {}
+        by_col: dict = {}
+        for (u, v), a in matrix.items():
+            by_row.setdefault(u, []).append((v, a))
+            by_col.setdefault(v, []).append((u, a))
+
+        def check(field: str, vecs: list, mine: set, other: set) -> None:
+            products: dict = {}
+            seen: dict = {}
+            line = by_row if mine is rows else by_col
+            for i, vec in enumerate(vecs):
+                for e in vec:
+                    if type(e["value"]) is not int:
+                        self.bad(f"{field}: {e['value']!r} is not an integer")
+                        return
+                    if e["node"] not in mine:
+                        self.bad(f"{field}: {e['node']!r} is not one of the matrix's "
+                                 f"{'rows' if mine is rows else 'columns'}")
+                        return
+                    seen.setdefault(e["node"], []).append(i)
+                    for o, a in line.get(e["node"], ()):
+                        products[(i, o)] = products.get((i, o), Fraction(0)) + a * e["value"]
+            if any(products.values()):
+                self.bad(f"{field}: a vector does not multiply the matrix to zero")
+            alone = {seen[n][0] for n in seen if len(seen[n]) == 1}
+            if len(alone) != len(vecs):
+                self.bad(f"{field}: the vectors are not shown independent (each needs a node where the others are 0)")
+        if answer.get("left_kernel") is not None:
+            check("left_kernel", answer["left_kernel"], rows, cols)
+        if answer.get("right_kernel") is not None:
+            check("right_kernel", answer["right_kernel"], cols, rows)
+        cert = self.proof(answer)
+        if cert is None:
+            return
+        kernel = cert.get("kernel")
+        if kernel is not None:
+            left = kernel["side"] == "left"
+            check("certificate kernel", kernel["vectors"], rows if left else cols, cols if left else rows)
+        minor = cert["minor"]
+        if not set(minor["rows"]) <= rows or not set(minor["columns"]) <= cols:
+            self.bad("certificate: the minor's rows and columns are the matrix's")
+            return
+        if not _nonsingular([[matrix.get((u, v), Fraction(0)) for v in minor["columns"]] for u in minor["rows"]]):
+            self.bad("certificate: the minor's determinant is zero: it does not prove the rank")
+
+
+_PRIME = (1 << 61) - 1
+
+
+def _nonsingular(m: list[list[Fraction]]) -> bool:
+    """Whether a square matrix of rationals has a nonzero determinant. Rows are scaled to integers; elimination modulo
+    the prime 2^61 - 1 (sparse, each pivot the sparsest row) finds a nonzero pivot in every column when the
+    determinant is nonzero modulo p, which proves it nonzero. Otherwise (a determinant that vanishes modulo p, or
+    that is zero) Bareiss's fraction-free elimination decides exactly."""
+    rows = []
+    for r in m:
+        den = 1
+        for x in r:
+            den = den * x.denominator // gcd(den, x.denominator)
+        rows.append([int(x * den) for x in r])
+    work = [{j: x % _PRIME for j, x in enumerate(r) if x % _PRIME} for r in rows]
+    open_rows = set(range(len(work)))
+    full = True
+    for c in range(len(work)):
+        cand = [i for i in open_rows if c in work[i]]
+        if not cand:
+            full = False
+            break
+        i = min(cand, key=lambda k: (len(work[k]), k))
+        open_rows.discard(i)
+        inv = pow(work[i][c], _PRIME - 2, _PRIME)
+        piv = {j: v * inv % _PRIME for j, v in work[i].items()}
+        for k in cand:
+            if k != i:
+                row, f = work[k], work[k][c]
+                for j, v in piv.items():
+                    x = (row.get(j, 0) - f * v) % _PRIME
+                    if x:
+                        row[j] = x
+                    else:
+                        row.pop(j, None)
+    if full:
+        return True
+    return _bareiss(rows)
+
+
+def _bareiss(rows: list[list[int]]) -> bool:
+    """Whether a square integer matrix has a nonzero determinant, by Bareiss's fraction-free elimination (every
+    division exact), with row exchanges."""
+    rows = [list(r) for r in rows]
+    n, prev = len(rows), 1
+    for k in range(n):
+        piv = next((i for i in range(k, n) if rows[i][k]), None)
+        if piv is None:
+            return False
+        rows[k], rows[piv] = rows[piv], rows[k]
+        for i in range(k + 1, n):
+            for j in range(k + 1, n):
+                rows[i][j] = (rows[i][j] * rows[k][k] - rows[i][k] * rows[k][j]) // prev
+            rows[i][k] = 0
+        prev = rows[k][k]
+    return True
 
 
 class _PeriodicChecker(_Checker):

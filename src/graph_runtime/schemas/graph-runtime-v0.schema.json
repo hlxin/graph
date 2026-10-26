@@ -1457,6 +1457,186 @@
         }
       }
     },
+    "incidence_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows",
+        "columns",
+        "rank",
+        "left_kernel",
+        "right_kernel",
+        "certificate"
+      ],
+      "properties": {
+        "rows": {
+          "$ref": "#/$defs/count"
+        },
+        "columns": {
+          "$ref": "#/$defs/count"
+        },
+        "rank": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "left_kernel": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "node",
+                    "value"
+                  ],
+                  "properties": {
+                    "node": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "value": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "right_kernel": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "node",
+                    "value"
+                  ],
+                  "properties": {
+                    "node": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "value": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "minor",
+                "kernel"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "rank"
+                },
+                "minor": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "rows",
+                    "columns"
+                  ],
+                  "properties": {
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/id"
+                      }
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/id"
+                      }
+                    }
+                  }
+                },
+                "kernel": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "side",
+                        "vectors"
+                      ],
+                      "properties": {
+                        "side": {
+                          "enum": [
+                            "left",
+                            "right"
+                          ]
+                        },
+                        "vectors": {
+                          "type": "array",
+                          "items": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "node",
+                                "value"
+                              ],
+                              "properties": {
+                                "node": {
+                                  "$ref": "#/$defs/id"
+                                },
+                                "value": {
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "incidence: the matrix's dimensions, its exact rank, and the requested kernels as canonical bases (the reduced row echelon basis, each vector a primitive integer vector by node ID). The rank certificate names a nonsingular minor and, when the answer lists no kernel, carries the smaller one (its side and vectors). An interrupted answer claims nothing."
+    },
     "lifecycle_event": {
       "type": "object",
       "additionalProperties": false,
@@ -3980,6 +4160,137 @@
             }
           },
           "description": "dominators: the nodes every walk of hops in scope from a source to a node passes through; targets null gives the whole dominator tree, else each target's dominators."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "rows",
+            "columns",
+            "scope",
+            "coefficients",
+            "kernels",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "incidence"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "rows": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "node_types",
+                "nodes"
+              ],
+              "properties": {
+                "node_types": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nodes": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "node_types",
+                "nodes"
+              ],
+              "properties": {
+                "node_types": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nodes": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "coefficients": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 1,
+              "properties": {
+                "by_relation": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/weight"
+                  }
+                },
+                "by_edge": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/weight"
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "kernels": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "left",
+                  "right"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "incidence: the matrix of the coefficients of the edges in scope joining row nodes and column nodes (disjoint sets); kernels: which kernels to list (left: vectors over the rows, right: over the columns)."
         }
       ]
     },
@@ -4529,7 +4840,8 @@
                   "biconnectivity",
                   "max_flow",
                   "matching",
-                  "dominators"
+                  "dominators",
+                  "incidence"
                 ]
               }
             }
@@ -5478,6 +5790,49 @@
             "properties": {
               "operation": {
                 "const": "dominators"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "incidence"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/incidence_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "incidence"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "incidence"
               }
             }
           }
