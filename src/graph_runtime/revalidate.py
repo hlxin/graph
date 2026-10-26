@@ -638,10 +638,11 @@ def _names(value: Any, field: Any, nodes: set, edges: set) -> None:
 
 # ---------------------------------------------------------------------------------------------- pagerank
 def _pagerank(ctx: SimpleNamespace) -> None:
-    """A ranking holds while its proof does on the new projection: its estimates, put into the PageRank equation of
-    the new walk, leave no negative residual, and the intervals and certified prefix that residual proves are within
-    the ones the answer gives. Every residual depends on the walk's hops everywhere the estimates reach, so a ranking
-    is always checked in full."""
+    """A ranking holds while its proof does on the new projection, as ``verify_result`` checks it: its estimates,
+    put into the PageRank equation of the new walk, leave no negative residual, and the residual, intervals and
+    certified prefix they prove are exactly the ones the answer gives (tighter ones would leave its exact numbers
+    false). Every residual depends on the walk's hops everywhere the estimates reach, so a ranking is always checked
+    in full."""
     p, plan, answer, out = ctx.p, ctx.plan, ctx.answer, ctx.out
     for e in answer["ranked"]:
         if e["node"] not in p._node_index:
@@ -670,18 +671,23 @@ def _pagerank(ctx: SimpleNamespace) -> None:
         out.append({"code": "certificate_broken", "node": p._node_ids[min(negative)]})
         return
     total = sum(residual.values(), Fraction(0))
+    if total != Fraction(answer["residual_exact"]):
+        out.append({"code": "certificate_broken",
+                    "problem": f"the residual is {total}, not {answer['residual_exact']}"})
+        return
 
     def upper(u: int) -> Fraction:
         r = residual.get(u, Fraction(0))
         return estimate.get(u, Fraction(0)) + r + (1 - alpha) * (total - r)
     listed = [p._node_index[e["node"]] for e in answer["ranked"]]
     for e, u in zip(answer["ranked"], listed):
-        if upper(u) > Fraction(e["upper_exact"]):
+        if Fraction(e["lower_exact"]) != estimate.get(u, Fraction(0)) or Fraction(e["upper_exact"]) != upper(u):
             out.append({"code": "certificate_broken", "node": e["node"]})
+            return
     m = answer["certified_top"]
     rest = [upper(u) for u in set(estimate) | set(residual) if u not in listed] + [(1 - alpha) * total]
     if m and min(estimate.get(u, Fraction(0)) for u in listed[:m]) <= max(rest + [
-            Fraction(e["upper_exact"]) for e in answer["ranked"][m:]]):
+            upper(u) for u in listed[m:]]):
         out.append({"code": "certificate_broken", "node": answer["ranked"][m - 1]["node"]})
 
 

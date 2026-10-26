@@ -12,8 +12,8 @@ from graph_runtime import (CONTRACT, CandidateError, HypothesisCandidate, Projec
 from graph_runtime._canonical import digest
 from graph_runtime._validation import shape_problems
 from graph_runtime.conformance import check_case, load_cases, run_conformance
-from oracle import (bottleneck, closed_nodes, derivation_values, expand_scope, least_cost, least_depths,
-                    lift_periodic, node_id, pattern_rows, regular_ends, support_answer, typed_ends)
+from oracle import (bottleneck, closed_nodes, derivation_values, expand_scope, is_d_separator, least_cost,
+                    least_depths, lift_periodic, node_id, pattern_rows, regular_ends, support_answer, typed_ends)
 from test_hypotheses import TESTS
 
 
@@ -406,7 +406,7 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             dag.add_nodes_from(node_id(n) for n in g['nodes'])
             dag.add_edges_from((e['source'], e['target']) for e in g['edges'])
             raw = case['request']
-            assert exp['separated'] is nx.is_d_separator(dag, set(raw['x']), set(raw['y']), set(raw['given'])), \
+            assert exp['separated'] is is_d_separator(dag, set(raw['x']), set(raw['y']), set(raw['given'])), \
                 case['name']
         elif op == 'critical_path':
             import networkx as nx

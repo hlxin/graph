@@ -124,6 +124,24 @@ def test_measurements_of_one_claim_from_the_same_dataset():
     assert verify_result(res, nodes=NODES, edges=EDGES) == []
 
 
+def test_a_binding_costs_the_smallest_side_not_every_hop():
+    """A root with n children, each looping to itself: root to a, root to b, a to b has n rows, one per loop. Each
+    binding of a allows b only itself, so binding b must not reindex the root's n hops again (n**2 work)."""
+    import time
+    n = 8000
+    nodes = ["root"] + [f"x{i}" for i in range(n)]
+    edges = [{"id": f"r{i}", "source": "root", "target": f"x{i}", "relation": "R"} for i in range(n)] + \
+            [{"id": f"l{i}", "source": f"x{i}", "target": f"x{i}", "relation": "L"} for i in range(n)]
+    p = Projection.build(nodes=nodes, edges=edges)
+    start = time.perf_counter()
+    res = execute(p, p.request("pattern", match={"var": "r", "nodes": ["root"]}, answer="count", steps=[
+        {"from": "r", "var": "a", "scope": [("R", "forward")]},
+        {"from": "r", "var": "b", "scope": [("R", "forward")]},
+        {"from": "a", "to": "b", "scope": [("L", "forward")]}]))
+    assert res.status == COMPLETED and res.answer["total"] == n
+    assert time.perf_counter() - start < 3              # about 0.06 s; reindexing per binding took 13 s
+
+
 def test_closing_steps_are_checked():
     base = {"operation": "pattern", "projection": "sha256:" + "0" * 64, "match": {"var": "x", "nodes": ["a"]}}
     for steps in ([{"from": "x", "to": "y", "scope": [("R", "forward")]}],

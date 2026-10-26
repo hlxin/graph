@@ -10,6 +10,7 @@ import pytest
 from graph_runtime import COMPLETED, INTERRUPTED, Projection, Result, execute, verify_result
 from graph_runtime.revalidate import revalidate
 from graph_runtime.tools import summarize
+from oracle import is_d_separator
 from test_certificates import reseal
 
 
@@ -45,7 +46,7 @@ def test_d_separation_matches_networkx():
         g = nx.DiGraph()
         g.add_nodes_from(nodes)
         g.add_edges_from((e["source"], e["target"]) for e in edges)
-        want = nx.is_d_separator(g, set(x), set(y), set(z))
+        want = is_d_separator(g, set(x), set(y), set(z))
         assert res.answer["separated"] is want
         tally[want] += 1
         colliders += len(res.answer["colliders"] or [])

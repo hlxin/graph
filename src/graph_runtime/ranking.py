@@ -15,18 +15,26 @@ The push keeps estimates p and residuals r with the invariant
 (P the walk's transition matrix, s the source distribution), so pi = p + sum_u r(u) pi_u, where pi_u is the PageRank
 from u alone. Every pi_u is non-negative, sums to at most 1, gives u at most 1 and any other node at most 1 - alpha;
 hence ``p(v) <= pi(v) <= p(v) + r(v) + (1 - alpha) (R - r(v))``, R the total residual, and a node the push never
-reached holds at most ``(1 - alpha) R``. The push runs in exact integer
-units, moving only amounts that divide evenly, so the invariant holds exactly. The certificate is the estimates
-alone: a checker recomputes r from p by the invariant, exactly, and the bounds follow when every r(v) >= 0.
+reached holds at most ``(1 - alpha) R``. The push runs in exact integer units, 2**-64 or finer so that the
+sources share the mass equally, moving only amounts that divide evenly, so the invariant holds exactly. The
+certificate is the estimates alone: a checker recomputes r from p by the invariant, exactly, and the bounds follow
+when every r(v) >= 0.
 """
 
 from __future__ import annotations
 
+import math
 from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-UNITS = 1 << 64                         # the push's unit of probability: 1 / 2**64
+UNITS = 1 << 64                         # the push's unit of probability: 1 / 2**64, or finer for the sources
+
+
+def units(sources: int) -> int:
+    """The units of probability the push counts in: the least multiple of 2**64 that the sources divide, so each
+    starts with exactly its share."""
+    return UNITS * (sources // math.gcd(UNITS, sources))
 
 
 def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
@@ -42,11 +50,10 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
     sides = _sides(p, plan.fwd, plan.rev)
     st = SimpleNamespace(interruption=None, examined=0, discovered=0, estimate={}, residual={}, pushes=0)
     est, res = st.estimate, st.residual
-    share, extra = divmod(UNITS, len(plan.sources))
-    for i, s in enumerate(plan.sources):                  # the sources share the mass; the first ones the remainder
-        res[s] = share + (1 if i < extra else 0)
-    total = UNITS
-    limit = plan.tolerance * UNITS                        # a Fraction of units
+    st.units = total = units(len(plan.sources))
+    for s in plan.sources:                                # the sources share the mass equally
+        res[s] = total // len(plan.sources)
+    limit = plan.tolerance * total                        # a Fraction of units
     hops_of: dict[int, list] = {}
     examined = 0
     while total > limit:
@@ -96,7 +103,7 @@ def answer(p: Any, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, li
     from .engine import _number
     alpha, ids = plan.alpha, p._node_ids
     a, b = alpha.numerator, alpha.denominator
-    total, est, res = st.total, st.estimate, st.residual
+    total, est, res, unit = st.total, st.estimate, st.residual, st.units
 
     def scaled_upper(u: int) -> int:
         return b * est.get(u, 0) + a * res.get(u, 0) + (b - a) * total
@@ -118,12 +125,12 @@ def answer(p: Any, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, li
         floor = est.get(u, 0) if floor is None else min(floor, est.get(u, 0))
         if b * floor > tail[i + 1]:
             certain = i + 1
-    ranked = [{"node": ids[u], **number("lower", Fraction(est.get(u, 0), UNITS)),
-               **number("upper", Fraction(hi, b * UNITS))} for u, hi in zip(top, uppers)]
+    ranked = [{"node": ids[u], **number("lower", Fraction(est.get(u, 0), unit)),
+               **number("upper", Fraction(hi, b * unit))} for u, hi in zip(top, uppers)]
     out = {"ranked": ranked, "count": len(ranked), "certified_top": certain,
-           **number("residual", Fraction(total, UNITS))}
+           **number("residual", Fraction(total, unit))}
     cert = None
     if plan.certificate:
         cert = {"kind": "estimates", "values": [
-            {"node": ids[u], **number("value", Fraction(x, UNITS))} for u, x in sorted(est.items()) if x]}
+            {"node": ids[u], **number("value", Fraction(x, unit))} for u, x in sorted(est.items()) if x]}
     return {**out, "certificate": cert}, []

@@ -31,7 +31,8 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - the `personalized_pagerank` operation: a relevance ranking around chosen nodes in which every number is proven:
   each listed node carries an interval that contains its personalized PageRank, the top of the ranking is certified
   where intervals separate, and the certificate (the estimates) is checked by recomputing the residuals exactly
-  (section 4)
+  (section 4); its push counts in units the sources divide, so a number of sources that does not divide 2^64 now
+  gets other exact values, and other `result_id`s, than earlier builds of this revision gave
 - periodic projections: one cell of an infinite periodic graph, with image shifts on its edges, searched by
   reachability and dependency impact without lifting it (section 1), and the `periodicity` operation: each
   component's translation lattice (rank, Hermite normal form basis, interpenetration), witnessed (section 4)
@@ -434,7 +435,8 @@ probability that the walk stops there.
 
 - **Push.** The local push of Andersen, Chung and Lang (2006) keeps estimates p and residuals r with the invariant
   `p (I - (1 - alpha) P) / alpha + r = s` (P the walk, s the sources' distribution), so pi = p + sum_u r(u) pi_u. It
-  runs in exact integer units of 2^-64: rounds push, in ascending node order, every node whose residual divides into a
+  runs in exact integer units of 1/N, N the least multiple of 2^64 that the number of sources divides (so each
+  source starts with exactly its share): rounds push, in ascending node order, every node whose residual divides into a
   whole move (a multiple of b times its hops, for alpha = a/b), until the total residual R is at most `tolerance` or
   nothing can move. Each push is one expansion. The invariant then holds exactly.
 - **Intervals.** Each pi_u is non-negative and gives u at most 1 and every other node at most 1 - alpha, so
@@ -829,9 +831,9 @@ step's scope and landing on its step's types, and its certificate is unbroken: a
 below the bound must reach a listed state no further, and end no match the answer lacks. A listed state carries no
 witness of its own, so an edit that breaks the certificate leaves the answer unknown rather than refuted.
 
-A ranking holds while its estimates still prove it on the new projection: put into the new walk's equation they
-leave no negative residual, and the intervals and certified prefix they prove are within the ones the answer gives. It
-is always checked in full.
+A ranking holds while its estimates still prove it on the new projection, as `verify_result` checks it: put into the
+new walk's equation they leave no negative residual, and the residual, intervals and certified prefix they prove are
+exactly the ones the answer gives (tighter ones would leave its exact numbers false). It is always checked in full.
 
 Components, biconnectivity, a maximum flow, a matching, dominators, incidence, critical paths and d-separation are
 revalidated by their certificates, which

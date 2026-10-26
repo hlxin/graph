@@ -48,7 +48,7 @@ def cases(rng, n, **graph):
         nodes, edges = random_graph(rng, **graph)
         p = Projection.build(nodes=nodes, edges=edges, relations=RELATIONS, node_types=TYPES)
         ids = [node_id(x) for x in nodes]
-        raw = {"operation": "personalized_pagerank", "sources": rng.sample(ids, rng.randint(1, min(2, len(ids)))),
+        raw = {"operation": "personalized_pagerank", "sources": rng.sample(ids, rng.randint(1, min(3, len(ids)))),
                "scope": random_scope(rng), "alpha": rng.choice(["3/20", "1/2", 0.25, "1/10"]),
                "tolerance": rng.choice(["1/100", "1/10000", 1e-6]), "top": rng.randint(1, 8),
                "certificate": rng.random() < 0.7}
@@ -123,6 +123,33 @@ def test_a_forged_estimate_is_refused():
         e["lower_exact"] = e["upper_exact"]
         e["lower"] = e["upper"]
     assert verify_result(forged(res, overclaim), nodes=records["nodes"], edges=records["edges"])
+
+
+def test_sources_that_do_not_divide_the_units_share_the_mass_exactly():
+    """Three sources: 2**64 units do not split three ways, so the push counts in thirds of them; handing the first
+    source the remainder would prove it a lower bound above its PageRank of 1/6."""
+    p = Projection.build(nodes=["a", "b", "c"], edges=[], relations=["R"])
+    res = execute(p, p.request("personalized_pagerank", sources=["a", "b", "c"], scope=[("R", "forward")],
+                               alpha="1/2", certificate=True))
+    records = p.to_dict()
+    assert verify_result(res, nodes=records["nodes"], edges=records["edges"]) == []
+    assert [(e["node"], exact(e, "lower"), exact(e, "upper")) for e in res.answer["ranked"]] == [
+        (n, Fraction(1, 6), Fraction(1, 6)) for n in ["a", "b", "c"]]
+    assert exact(res.answer, "residual") == 0
+
+
+def test_revalidation_refuses_a_residual_the_edit_made_false():
+    """s to t, pushed once: residual 1/2 waits at t. Without the hop, s's estimate leaves no residual at all, so the
+    answer's exact residual and upper bounds are no longer the ones its certificate proves."""
+    nodes = ["s", "t"]
+    p = Projection.build(nodes=nodes, edges=[{"id": "st", "source": "s", "target": "t", "relation": "R"}])
+    old = execute(p, p.request("personalized_pagerank", sources=["s"], scope=[("R", "forward")], alpha="1/2",
+                               tolerance="3/4", certificate=True))
+    assert exact(old.answer, "residual") == Fraction(1, 2)
+    q = Projection.build(nodes=nodes, edges=[], relations=["R"])
+    assert verify_result(old, nodes=nodes, edges=[])
+    check = revalidate(old, q, diff=diff(p, q))
+    assert check.verdict == "unknown" and check.reasons[0]["code"] == "certificate_broken"
 
 
 def test_a_ranking_around_a_claim():
