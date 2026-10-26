@@ -44,7 +44,8 @@ HOLDS, FAILS, UNKNOWN = "holds", "fails", "unknown"
 VERDICTS = (HOLDS, FAILS, UNKNOWN)
 REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
-_REFUTING = {"node_gone", "witness_gone", "type_changed", "reaches_unlisted", "reaches_shallower", "unanswerable"}
+_REFUTING = {"node_gone", "witness_gone", "type_changed", "rule_changed", "reaches_unlisted", "reaches_shallower",
+             "unanswerable"}
 
 
 class ProjectionDiff:
@@ -177,7 +178,8 @@ def revalidate_all(results: Iterable[Result | Mapping], old: Projection, new: Pr
 def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[dict], str]:
     """The reasons against the result, and how they were found: ``diff`` when a diff from the result's projection
     to this one, over the same vocabulary, was given and trusted; ``answer`` otherwise."""
-    use = d is not None and d.old == data.get("projection") and d.new == p.identity and not d.vocabulary_changed
+    use = d is not None and d.old == data.get("projection") and d.new == p.identity and not d.vocabulary_changed \
+        and data.get("operation") != "derivation"          # a derivation is always checked in full
     checked = "diff" if use else "answer"
     if data.get("status") != COMPLETED:
         return [{"code": "not_complete", "status": data.get("status")}], checked
@@ -185,7 +187,7 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
         return [], checked
     op = data["operation"]
     if op not in ("reachability", "dependency_impact", "typed_path", "shortest_path", "bottleneck_path",
-                  "regular_path"):
+                  "regular_path", "derivation"):
         return [{"code": "not_certified", "operation": op}], checked
     try:
         req = normalize_request({**data["request"], "projection": p.identity})
@@ -203,6 +205,8 @@ def _decide(data: dict, p: Projection, d: ProjectionDiff | None) -> tuple[list[d
         _shortest(ctx)
     elif op == "regular_path":
         _regular(ctx)
+    elif op == "derivation":
+        _derivation(ctx)
     else:
         _bottleneck(ctx)
     return ctx.out, checked
@@ -469,6 +473,102 @@ def _regular(ctx: SimpleNamespace) -> None:
             b = p._node_index[node]
             for ei, a, _ in _back_hops(p, b, fwd, rev):
                 check(p._edge_ids[ei], a, b, i)
+
+
+# ---------------------------------------------------------------------------------------------- derivation
+def _derivation(ctx: SimpleNamespace) -> None:
+    """A derivation holds while every listed node keeps its rule (a ground stays a ground, an all_of node keeps its
+    type and exactly the inputs it uses, a one-input node does not become all_of) and every use is still a hop in
+    scope; its claims of best values and of underivable targets rest on its certificate, whose conditions are checked
+    again over the targets' region in the new projection. A derivation is local to no part of the graph that a diff
+    can bound (an edit far away can join the region), so it is always checked in full."""
+    from .engine import _Objective
+    p, plan, answer, out = ctx.p, ctx.plan, ctx.answer, ctx.out
+    fwd, rev, every, grounds = plan.fwd, plan.rev, plan.all_of, plan.grounds
+    obj, rational, mask = _Objective(plan.objective), plan.rational, p._node_mask
+    cache: dict[int, list] = {}
+
+    def hops(u: int) -> list:
+        if u not in cache:
+            cache[u] = list(_hops(p, u, fwd, rev))
+        return cache[u]
+
+    def is_all(u: int) -> bool:
+        return every is not None and bool(mask[u] & every)
+
+    def is_ground(u: int) -> bool:
+        return u in grounds if grounds is not None else not hops(u) and not is_all(u)
+
+    for e in answer["derivation"]:
+        u = p._node_index.get(e["node"])
+        if u is None:
+            out.append({"code": "node_gone", "node": e["node"]})
+            continue
+        rule = e["rule"]
+        if (rule == "given") != is_ground(u):
+            out.append({"code": "rule_changed", "node": e["node"]})
+        elif rule != "given" and (rule == "all") != is_all(u):
+            out.append({"code": "type_changed", "node": e["node"]})
+        elif rule == "all" and {h["to"] for h in e["uses"]} != {p._node_ids[v] for _, v, _ in hops(u)}:
+            out.append({"code": "rule_changed", "node": e["node"]})
+        for h in e["uses"]:
+            if not _hop_ok(ctx, h, fwd, rev):
+                out.append({"code": "witness_gone", "edge": h["edge"]})
+    cert = answer["certificate"]
+    if cert is None:
+        out.append({"code": "no_certificate"})
+        return
+    never = object()
+
+    def read(entry: Mapping, field: str) -> Any:
+        if rational:
+            exact = entry.get(f"{field}_exact")
+            return None if exact is None else Fraction(exact)
+        return entry.get(field)
+
+    value = {p._node_index[c["node"]]: read(c, "value") for c in cert["values"] if c["node"] in p._node_index}
+    bound = read(cert, "bound")
+    rest = never if bound is None else bound
+
+    def better(a: Any, b: Any) -> bool:
+        if a is never or b is never:
+            return a is not never and b is never
+        return obj.better(a, b)
+
+    def hop(ei: int, v: int) -> Any:
+        x = value.get(v, rest)
+        if x is never:
+            return never
+        c = plan.cost[ei] if plan.cost is not None else 1
+        return obj.hop(c, x)
+
+    region, todo = set(plan.targets), list(plan.targets)
+    while todo:
+        u = todo.pop()
+        if is_ground(u):
+            continue
+        for _, v, _ in hops(u):
+            if v not in region:
+                region.add(v)
+                todo.append(v)
+    for u in sorted(region):
+        claim = value.get(u, rest)
+        if is_ground(u):
+            offers = [obj.identity]
+        elif is_all(u):
+            best: dict[int, Any] = {}
+            for ei, v, _ in hops(u):
+                x = hop(ei, v)
+                if v not in best or better(x, best[v]):
+                    best[v] = x
+            total = obj.identity
+            for x in best.values():
+                total = never if total is never or x is never else obj.fold(total, x)
+            offers = [total]
+        else:
+            offers = [hop(ei, v) for ei, v, _ in hops(u)]
+        if any(better(x, claim) for x in offers):
+            out.append({"code": "certificate_broken", "node": p._node_ids[u]})
 
 
 # ---------------------------------------------------------------------------------------------- shortest path

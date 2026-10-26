@@ -256,6 +256,15 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.targets = None if req["targets"] is None else set(_nodes(p, req["targets"], "targets"))
         plan.auto = paths.automaton(req["path"])
         plan.states, plan.step_of = _path_states(p, plan.auto)
+    elif op == "derivation":
+        plan.certificate, plan.objective = req["certificate"], req["objective"]
+        plan.targets = _nodes(p, req["targets"], "targets")
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        plan.all_of = None if req["all_of"] is None else _types(p, req["all_of"], "all_of")
+        plan.grounds = None if req["grounds"] is None else set(_nodes(p, req["grounds"], "grounds"))
+        plan.cost = (None if req["costs"] is None
+                     else _costs(p, req["costs"], plan.fwd, plan.rev, scaled=req["objective"] == "min_sum"))
+        plan.rational = plan.cost is not None and plan.cost.rational
     elif op == "support":
         plan.failed = _nodes(p, req["failed"], "failed")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
@@ -1361,6 +1370,224 @@ def _answer_regular(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -
             ([WITNESS_NOTE] if listed else []) + ([CERTIFIED_NOTE] if cert else []))
 
 
+# ---------------------------------------------------------------------------------------------- derivation
+class _Objective:
+    """How a derivation's value is made from its hops' costs, for one objective (Knuth's superior functions: every
+    combination is at least as bad as each of its parts, so the best values can be settled in order).
+
+    ``min_sum``: a derivation's value is the sum of its hops' costs, every use counted (a tree, not a DAG); lower is
+    better; a given node is worth 0. ``min_max``: the highest cost of its hops; lower is better. ``max_min``: the lowest;
+    higher is better. For the last two a given node is worth ``IDENTITY`` (no hop: written null), better than any
+    number. ``hop(c, v)`` is the value of using an input worth v through a hop of cost c; ``fold(a, b)`` combines the
+    inputs of an all_of node, in the order its uses are listed (on a tie, the earlier one is kept, so a reported value
+    is reproducible from the listed uses alone)."""
+
+    IDENTITY = None
+
+    def __init__(self, name: str):
+        self.name = name
+        self.sum = name == "min_sum"
+        self.high = name == "max_min"                     # higher is better
+        self.identity = 0 if self.sum else None
+
+    def better(self, a: Any, b: Any) -> bool:
+        """Whether value a is strictly better than value b (None: no hop, the best there is)."""
+        if self.sum:
+            return a < b
+        if a is None or b is None:
+            return a is None and b is not None
+        return a > b if self.high else a < b
+
+    def hop(self, c: Any, v: Any) -> Any:
+        if self.sum:
+            return c + v
+        if v is None:
+            return c
+        return v if (v <= c if self.high else v >= c) else c
+
+    def fold(self, a: Any, b: Any) -> Any:
+        if self.sum:
+            return a + b
+        if a is None:
+            return b
+        if b is None:
+            return a
+        return a if (a <= b if self.high else a >= b) else b
+
+    def key(self, v: Any) -> Any:
+        """A heap key: smaller is settled first."""
+        if self.sum:
+            return v
+        if v is None:
+            return (0, 0)
+        return (1, -v if self.high else v)
+
+
+def _search_derivation(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
+    """Lightest derivations in an AND/OR graph (Knuth's generalization of Dijkstra's algorithm, 1977; Felzenszwalb and
+    McAllester's lightest derivation problem). A hop in scope leads from a node to one of its inputs. A given node
+    (a ground) needs nothing. A node of an ``all_of`` type is derived from every one of its inputs (one hop each, the
+    best of parallel hops); any other node from one input. Derivations are finite, so support in a circle derives
+    nothing.
+
+    1. The region: the targets and, transitively, their inputs, stopping at grounds. Each node is read once, keeping
+       for each distinct input its best hop (the first in canonical order among equals).
+    2. Settle, best value first (ties by node ID): grounds and all_of nodes without inputs start at the identity; a
+       settled node offers its value to the nodes that use it. A one-input node takes a strictly better offer; an
+       all_of node is ready, with every input combined, when its last input settles. A settled value is final and
+       the best there is; the search stops when every target is settled or nothing is left to settle."""
+    obj = _Objective(plan.objective)
+    st = SimpleNamespace(interruption=None, examined=0, discovered=0, phase="region", obj=obj, bound=None,
+                         settled=[], value={}, choice={}, inputs={}, ground=set())
+    fwd, rev, rel = plan.fwd, plan.rev, p._edge_rel
+    every, mask_of, grounds = plan.all_of, p._node_mask, plan.grounds
+    by_edge = plan.cost.edge if plan.cost is not None else None
+    by_rel = plan.cost.rel if plan.cost is not None else None
+    sides = _sides(p, fwd, rev)
+    examined = 0
+    inputs = st.inputs                                    # node -> [(input, cost, edge, flag)], its best hop to each
+    region, queue = set(plan.targets), deque(plan.targets)
+    while queue:                                          # 1: the region
+        u = queue.popleft()
+        if grounds is not None and u in grounds:
+            inputs[u] = []
+            st.ground.add(u)
+            continue
+        why = ctl.stop()
+        if why:
+            st.interruption, st.examined, st.discovered = why, examined, len(region)
+            return st
+        best: dict[int, tuple] = {}
+        for lists, base, marks, ends, flag in sides:
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                c = by_edge[ei] if by_edge is not None else by_rel[rel[ei]] if by_rel is not None else 1
+                b = best.get(v)
+                if b is None or (c > b[0] if obj.high else c < b[0]):
+                    best[v] = (c, ei, flag)
+                if v not in region:
+                    region.add(v)
+                    queue.append(v)
+        inputs[u] = [(v, c, ei, flag) for v, (c, ei, flag) in best.items()]
+        if not inputs[u] and grounds is None and not (every is not None and mask_of[u] & every):
+            st.ground.add(u)                              # no input, needs one: given
+    st.discovered = len(region)
+    st.phase = "derive"
+    users: dict[int, list] = {u: [] for u in region}
+    for u, ins in inputs.items():
+        for v, c, _, _ in ins:
+            users[v].append((u, c))
+    every_input = {u for u in region if u not in st.ground and every is not None and mask_of[u] & every}
+    need = {u: len(inputs[u]) for u in every_input}
+    acc: dict[int, Any] = {}
+    value, choice, settled = st.value, st.choice, st.settled
+    done: set[int] = set()
+    heap = []
+    for u in sorted(region):
+        if u in st.ground or (u in every_input and not need[u]):
+            value[u] = obj.identity
+            heap.append((obj.key(obj.identity), u))
+    heapq.heapify(heap)
+    waiting = set(plan.targets)
+    while heap and waiting:                               # 2: settle, best first
+        k, u = heapq.heappop(heap)
+        if u in done or k != obj.key(value[u]):
+            continue                                      # settled, or an entry superseded by a better one
+        why = ctl.stop()
+        if why:
+            st.interruption, st.bound = why, value[u]     # nothing unsettled is better than this
+            break
+        done.add(u)
+        settled.append(u)
+        waiting.discard(u)
+        vu = value[u]
+        for d, c in users[u]:
+            examined += 1
+            if d in done or d in st.ground:
+                continue
+            x = obj.hop(c, vu)
+            if d in every_input:
+                acc[d] = x if d not in acc else obj.fold(acc[d], x)
+                need[d] -= 1
+                if not need[d]:
+                    value[d] = acc[d]
+                    heapq.heappush(heap, (obj.key(acc[d]), d))
+            elif d not in value or obj.better(x, value[d]):
+                value[d] = x
+                choice[d] = u
+                heapq.heappush(heap, (obj.key(x), d))
+    if st.interruption is None:                           # the best value still unsettled bounds the rest
+        while heap and (heap[0][1] in done or heap[0][0] != obj.key(value[heap[0][1]])):
+            heapq.heappop(heap)
+        st.bound = value[heap[0][1]] if heap else None
+        st.rest = bool(heap)
+    st.examined, st.done, st.every_input = examined, done, every_input
+    return st
+
+
+def _answer_derivation(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
+    ids, obj, rational = p._node_ids, st.obj, plan.rational
+
+    def number(field: str, x: Any) -> dict:
+        """A value as JSON gives it: a sum is an integer, or in rational mode the nearest float and ``_exact`` (both
+        null for no value)."""
+        if not obj.sum or not rational:
+            return {field: x}
+        if x is None:
+            return {field: None, f"{field}_exact": None}
+        near, exact = _number(plan.cost.exact(x), True)
+        return {field: near, f"{field}_exact": exact}
+
+    if st.phase == "region":                              # stopped while finding the region: nothing is known
+        return {"derived": [], "underived": [], **number("bound", None), "derivation": [], "certificate": None}, []
+    done, inputs = st.done, st.inputs
+    order = {u: i for i, u in enumerate(st.settled)}
+    uses: dict[int, list] = {}                            # node -> its uses (edge, flag, input, cost), canonical order
+    rules: dict[int, str] = {}
+    stack = [t for t in plan.targets if t in done]
+    while stack:                                          # the derivations of the derived targets
+        u = stack.pop()
+        if u in uses:
+            continue
+        if u in st.ground:
+            rules[u], uses[u] = "given", []
+        elif u in st.every_input:
+            rules[u], uses[u] = "all", sorted(((ei, flag, v, c) for v, c, ei, flag in inputs[u]),
+                                              key=lambda h: (h[1], h[0]))
+        else:
+            v = st.choice[u]
+            rules[u], uses[u] = "one", [next((ei, flag, w, c) for w, c, ei, flag in inputs[u] if w == v)]
+        stack.extend(h[2] for h in uses[u])
+    worth: dict[int, Any] = {}                            # each value, recomputed from the listed uses alone
+    for u in sorted(uses, key=order.__getitem__):        # inputs settle before the nodes that use them
+        acc = obj.identity
+        for n, (_, _, v, c) in enumerate(uses[u]):
+            x = obj.hop(c, worth[v])
+            acc = x if n == 0 else obj.fold(acc, x)
+        worth[u] = acc
+    given = plan.cost.given if plan.cost is not None else (lambda ei: 1)
+    derivation = [{"node": ids[u], "rule": rules[u], **number("value", worth[u]),
+                   "uses": [{**_via(p, u, ei, flag), "to": ids[v], "cost": given(ei)} for ei, flag, v, _ in uses[u]]}
+                  for u in sorted(uses)]
+    complete = st.interruption is None
+    answer: dict = {"derived": [{"node": ids[t], **number("value", worth[t])} for t in plan.targets if t in done],
+                    "underived": [ids[t] for t in plan.targets if t not in done] if complete else []}
+    if not complete:                                      # no unsettled target is better (null: nothing is known)
+        answer.update(number("bound", None if st.bound == obj.identity else st.bound))
+    answer["derivation"] = derivation
+    cert = None
+    if plan.certificate and (complete or st.bound != obj.identity):
+        bound = (st.bound if st.rest else None) if complete else st.bound
+        cert = {"kind": "values", **number("bound", bound),
+                "values": [{"node": ids[u], **number("value", st.value[u])} for u in sorted(done)]}
+    notes = ([WITNESS_NOTE] if derivation else []) + ([CERTIFIED_NOTE] if cert else [])
+    return {**answer, "certificate": cert}, notes
+
+
 _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "dependency_impact": (_search_impact, _answer_impact),
                "typed_path": (_search_typed, _answer_typed),
@@ -1368,4 +1595,5 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "pattern": (_search_pattern, _answer_pattern),
                "support": (_search_support, _answer_support),
                "bottleneck_path": (_search_bottleneck, _answer_bottleneck),
-               "regular_path": (_search_regular, _answer_regular)}
+               "regular_path": (_search_regular, _answer_regular),
+               "derivation": (_search_derivation, _answer_derivation)}

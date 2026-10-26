@@ -426,6 +426,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_support_problems(request, answer, status, data.get("interruption")))
     elif op == "regular_path":
         out.extend(_regular_problems(request, answer, status, data.get("interruption")))
+    elif op == "derivation":
+        out.extend(_derivation_problems(request, answer, status))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -549,6 +551,152 @@ def _regular_problems(request: dict, answer: dict, status: str, interruption: di
             out.append("certificate states start with every source at the start state, with no hop")
         if cert["bound"] is not None and any(st["length"] >= cert["bound"] for st in cert["states"]):
             out.append("certificate states have fewer hops than its bound")
+    return out
+
+
+class _Values:
+    """A derivation objective's values, for checking an answer's arithmetic: ``min_sum`` adds costs (exactly, as
+    fractions in rational mode; a given node is worth 0); ``min_max`` and ``max_min`` keep the highest (lowest) cost,
+    and a given node is worth None (no hop). On a tie the earlier value is kept, as the engine lists them."""
+
+    def __init__(self, request: dict):
+        self.objective = request["objective"]
+        costs = request["costs"]
+        self.kind, self.table = next(iter(costs.items())) if costs is not None else (None, None)
+        self.rational = self.objective == "min_sum" and costs is not None and any(
+            isinstance(v, float) for v in self.table.values())
+        self.identity = 0 if self.objective == "min_sum" else None
+
+    def cost_of(self, hop: Mapping) -> Any:
+        """The cost the request gives a hop (1 when it gives none), or None when it gives none for it."""
+        if self.table is None:
+            return 1
+        return self.table.get(hop["relation"] if self.kind == "by_relation" else hop["edge"])
+
+    def read(self, entry: Mapping, field: str) -> Any:
+        """A value as the answer writes it: exact (a fraction from ``_exact`` in rational mode)."""
+        if self.rational:
+            exact = entry.get(f"{field}_exact")
+            if exact is None:
+                return None
+            number = Fraction(exact)
+            if str(number) != exact:
+                raise ValueError(f"{field}_exact must be a rational in lowest terms")
+            near = _nearest(number)
+            if entry.get(field) != near:
+                raise ValueError(f"{field} must be the nearest float to {field}_exact")
+            return number
+        return entry.get(field)
+
+    def hop(self, c: Any, v: Any) -> Any:
+        if self.objective == "min_sum":
+            return (Fraction(c) if self.rational else c) + v
+        if v is None:
+            return c
+        return v if (v <= c if self.objective == "max_min" else v >= c) else c
+
+    def fold(self, a: Any, b: Any) -> Any:
+        if self.objective == "min_sum":
+            return a + b
+        if a is None or b is None:
+            return b if a is None else a
+        return a if (a <= b if self.objective == "max_min" else a >= b) else b
+
+
+def _nearest(x: Fraction) -> float | None:
+    try:
+        return float(x)
+    except OverflowError:
+        return None
+
+
+def _derivation_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A derivation answer's own consistency, read without the records: derived and underived targets (both only when
+    complete), a bound exactly when interrupted, a derivation that is closed (every use leads to a listed node),
+    acyclic, written in canonical order, whose hops cost what the request gives them and whose every value follows
+    from its uses; a certificate exactly when asked for and it says something, agreeing with the derived values.
+    Whether the uses are hops of the records, and the certificate's conditions, are checked against the records
+    (:func:`graph_runtime.verify_result`)."""
+    out = []
+    vals = _Values(request)
+    targets = set(request["targets"])
+    derived, underived = answer["derived"], answer["underived"]
+    names = [d["node"] for d in derived]
+    if names != sorted(set(names)) or underived != sorted(set(underived)) or set(names) & set(underived):
+        out.append("derived and underived targets are unique, in ascending ID order, and never both")
+    if not set(names) | set(underived) <= targets:
+        out.append("derived and underived nodes are requested targets")
+    if status == COMPLETED and set(names) | set(underived) != targets:
+        out.append("a complete derivation answer says of every target whether it is derived")
+    if status != COMPLETED and underived:
+        out.append("only a complete answer certifies a target underived")
+    if ("bound" in answer) != (status == INTERRUPTED):
+        out.append("a bound appears exactly in an interrupted derivation answer")
+    entries = answer["derivation"]
+    nodes = [e["node"] for e in entries]
+    if nodes != sorted(set(nodes)):
+        out.append("derivation entries are unique, in ascending node ID order")
+    by = {e["node"]: e for e in entries}
+    worth: dict[str, Any] = {}
+    state: dict[str, int] = {}                     # 1: being computed (a cycle if met again), 2: done
+
+    def value(n: str) -> Any:
+        if state.get(n) == 2:
+            return worth[n]
+        if state.get(n) == 1:
+            raise ValueError(f"the derivation is circular through {n!r}")
+        state[n] = 1
+        e = by[n]
+        acc = vals.identity
+        for k, h in enumerate(e["uses"]):
+            if h["to"] not in by:
+                raise ValueError(f"{n!r} uses {h['to']!r}, which the derivation does not list")
+            want = vals.cost_of(h)
+            if want is None or h["cost"] != want or type(h["cost"]) is not type(want):
+                raise ValueError(f"the hop {h['edge']} must cost what the request gives it")
+            x = vals.hop(h["cost"], value(h["to"]))
+            acc = x if k == 0 else vals.fold(acc, x)
+        worth[n], state[n] = acc, 2
+        return acc
+
+    try:
+        for e in entries:
+            rule, uses = e["rule"], e["uses"]
+            if (rule == "given" and uses) or (rule == "one" and len(uses) != 1):
+                out.append(f"{e['node']!r}: a given node uses nothing and a one-input node uses one hop")
+            if any(h["from"] != e["node"] for h in uses) or len({h["to"] for h in uses}) != len(uses):
+                out.append(f"{e['node']!r}: its uses are hops from it, one per input")
+            if [(h["direction"] != "forward", h["edge"]) for h in uses] != sorted(
+                    (h["direction"] != "forward", h["edge"]) for h in uses):
+                out.append(f"{e['node']!r}: its uses are in canonical hop order")
+            listed = vals.read(e, "value")
+            if value(e["node"]) != listed or (not vals.rational and type(listed) is not type(worth[e["node"]])):
+                out.append(f"{e['node']!r}: its value is not what its uses give")
+        for d in derived:
+            if d["node"] not in by or vals.read(d, "value") != worth.get(d["node"]):
+                out.append(f"derived {d['node']!r}: its value is its derivation's")
+        bound = vals.read(answer, "bound") if "bound" in answer else None
+    except (ValueError, KeyError, TypeError, ZeroDivisionError) as exc:
+        return out + [f"derivation: {exc}"]
+    cert = answer["certificate"]
+    expected = request["certificate"] and (status == COMPLETED or bound is not None)
+    if (cert is not None) != expected:
+        return out + ["a certificate comes exactly when asked for, with a complete answer or a known bound"]
+    if cert is None:
+        return out
+    try:
+        listed = {c["node"]: vals.read(c, "value") for c in cert["values"]}
+        cbound = vals.read(cert, "bound")
+    except (ValueError, TypeError, ZeroDivisionError) as exc:
+        return out + [f"certificate: {exc}"]
+    if [c["node"] for c in cert["values"]] != sorted(listed):
+        out.append("certificate values are unique, in ascending node ID order")
+    if any(d["node"] not in listed or listed[d["node"]] != worth.get(d["node"]) for d in derived):
+        out.append("the certificate gives every derived target its derived value")
+    if any(t in listed for t in underived) or (underived and cbound is not None):
+        out.append("an underived target is one the certificate leaves unlisted, with no bound")
+    if status == INTERRUPTED and cbound != bound:
+        out.append("an interrupted answer's certificate bound is its bound")
     return out
 
 

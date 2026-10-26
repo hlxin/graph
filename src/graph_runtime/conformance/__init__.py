@@ -116,6 +116,19 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             problems.append(f"reached {got}, expected {exp['path_reached']}")
         if not done and any(exp["path_reached"].get(n) != d for n, d in got.items()):
             problems.append(f"reached {got} lists what the full answer {exp['path_reached']} does not hold")
+    if "derived" in exp:                                    # a derivation's derived targets and best values
+        got = {d["node"]: _cost(d, "value") for d in answer.get("derived") or []}
+        want = {n: Fraction(v) if isinstance(v, str) else v for n, v in exp["derived"].items()}
+        if done and got != want:
+            problems.append(f"derived {got}, expected {want}")
+        if not done and any(n not in want or want[n] != v for n, v in got.items()):
+            problems.append(f"derived {got} lists what the full answer {want} does not hold")
+    if "underived" in exp and done and list(answer.get("underived") or []) != exp["underived"]:
+        problems.append(f"underived {answer.get('underived')}, expected {exp['underived']}")
+    if "derivation_rules" in exp and done:
+        got = {e["node"]: [e["rule"], [h["edge"] for h in e["uses"]]] for e in answer.get("derivation") or []}
+        if got != exp["derivation_rules"]:
+            problems.append(f"derivation {got}, expected the canonical {exp['derivation_rules']}")
     if "count" in exp and answer.get("count") != exp["count"]:
         problems.append(f"count {answer.get('count')}, expected {exp['count']}")
     if "discovered" in exp and data["stats"]["discovered"] != exp["discovered"]:

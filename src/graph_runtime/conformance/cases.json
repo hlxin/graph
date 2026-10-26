@@ -715,6 +715,215 @@
    "bindings": {
     "source": "conformance-g8@1"
    }
+  },
+  "G9": {
+   "nodes": [
+    {
+     "id": "CO2",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "H2",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "CO",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "H2O",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "HCOOH",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "CH3OH",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "rwgs",
+     "types": [
+      "Reaction"
+     ]
+    },
+    {
+     "id": "co_hyd",
+     "types": [
+      "Reaction"
+     ]
+    },
+    {
+     "id": "co2_hyd",
+     "types": [
+      "Reaction"
+     ]
+    },
+    {
+     "id": "fa_form",
+     "types": [
+      "Reaction"
+     ]
+    },
+    {
+     "id": "fa_hyd",
+     "types": [
+      "Reaction"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "rwgs-needs-CO2",
+     "source": "rwgs",
+     "target": "CO2",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "rwgs-needs-H2",
+     "source": "rwgs",
+     "target": "H2",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "CO-by-rwgs",
+     "source": "CO",
+     "target": "rwgs",
+     "relation": "MADE_BY"
+    },
+    {
+     "id": "H2O-by-rwgs",
+     "source": "H2O",
+     "target": "rwgs",
+     "relation": "MADE_BY"
+    },
+    {
+     "id": "co_hyd-needs-CO",
+     "source": "co_hyd",
+     "target": "CO",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "co_hyd-needs-H2",
+     "source": "co_hyd",
+     "target": "H2",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "CH3OH-by-co_hyd",
+     "source": "CH3OH",
+     "target": "co_hyd",
+     "relation": "MADE_BY"
+    },
+    {
+     "id": "co2_hyd-needs-CO2",
+     "source": "co2_hyd",
+     "target": "CO2",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "co2_hyd-needs-H2",
+     "source": "co2_hyd",
+     "target": "H2",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "CH3OH-by-co2_hyd",
+     "source": "CH3OH",
+     "target": "co2_hyd",
+     "relation": "MADE_BY"
+    },
+    {
+     "id": "H2O-by-co2_hyd",
+     "source": "H2O",
+     "target": "co2_hyd",
+     "relation": "MADE_BY"
+    },
+    {
+     "id": "fa_form-needs-CO2",
+     "source": "fa_form",
+     "target": "CO2",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "fa_form-needs-H2",
+     "source": "fa_form",
+     "target": "H2",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "HCOOH-by-fa_form",
+     "source": "HCOOH",
+     "target": "fa_form",
+     "relation": "MADE_BY"
+    },
+    {
+     "id": "fa_hyd-needs-HCOOH",
+     "source": "fa_hyd",
+     "target": "HCOOH",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "fa_hyd-needs-H2",
+     "source": "fa_hyd",
+     "target": "H2",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "CH3OH-by-fa_hyd",
+     "source": "CH3OH",
+     "target": "fa_hyd",
+     "relation": "MADE_BY"
+    }
+   ],
+   "relations": [
+    "MADE_BY",
+    "NEEDS"
+   ],
+   "node_types": [
+    "Reaction",
+    "Species"
+   ],
+   "bindings": {
+    "source": "conformance-g9@1"
+   }
+  },
+  "G10": {
+   "nodes": [
+    "a",
+    "b",
+    "g"
+   ],
+   "edges": [
+    {
+     "id": "ab",
+     "source": "a",
+     "target": "b",
+     "relation": "NEEDS"
+    },
+    {
+     "id": "ba",
+     "source": "b",
+     "target": "a",
+     "relation": "NEEDS"
+    }
+   ],
+   "relations": [
+    "NEEDS"
+   ]
   }
  },
  "cases": [
@@ -4458,6 +4667,609 @@
    "expect": {
     "status": "failed",
     "error_code": "invalid_request"
+   }
+  },
+  {
+   "name": "derivation-least-total-cost",
+   "covers": [
+    "derivation",
+    "and/or",
+    "witness"
+   ],
+   "graph": "G9",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "CH3OH",
+     "CO"
+    ],
+    "scope": [
+     {
+      "relation": "MADE_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Reaction"
+    ],
+    "grounds": [
+     "CO2",
+     "H2"
+    ],
+    "costs": {
+     "by_edge": {
+      "rwgs-needs-CO2": 0,
+      "rwgs-needs-H2": 0,
+      "CO-by-rwgs": 3,
+      "H2O-by-rwgs": 3,
+      "co_hyd-needs-CO": 0,
+      "co_hyd-needs-H2": 0,
+      "CH3OH-by-co_hyd": 2,
+      "co2_hyd-needs-CO2": 0,
+      "co2_hyd-needs-H2": 0,
+      "CH3OH-by-co2_hyd": 7,
+      "H2O-by-co2_hyd": 7,
+      "fa_form-needs-CO2": 0,
+      "fa_form-needs-H2": 0,
+      "HCOOH-by-fa_form": 1,
+      "fa_hyd-needs-HCOOH": 0,
+      "fa_hyd-needs-H2": 0,
+      "CH3OH-by-fa_hyd": 2
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "derived": {
+     "CH3OH": 3,
+     "CO": 3
+    },
+    "underived": [],
+    "derivation_rules": {
+     "CH3OH": [
+      "one",
+      [
+       "CH3OH-by-fa_hyd"
+      ]
+     ],
+     "CO": [
+      "one",
+      [
+       "CO-by-rwgs"
+      ]
+     ],
+     "CO2": [
+      "given",
+      []
+     ],
+     "H2": [
+      "given",
+      []
+     ],
+     "HCOOH": [
+      "one",
+      [
+       "HCOOH-by-fa_form"
+      ]
+     ],
+     "fa_form": [
+      "all",
+      [
+       "fa_form-needs-CO2",
+       "fa_form-needs-H2"
+      ]
+     ],
+     "fa_hyd": [
+      "all",
+      [
+       "fa_hyd-needs-H2",
+       "fa_hyd-needs-HCOOH"
+      ]
+     ],
+     "rwgs": [
+      "all",
+      [
+       "rwgs-needs-CO2",
+       "rwgs-needs-H2"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "name": "derivation-lowest-highest-barrier",
+   "covers": [
+    "derivation",
+    "min_max"
+   ],
+   "graph": "G9",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "CH3OH",
+     "CO"
+    ],
+    "scope": [
+     {
+      "relation": "MADE_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Reaction"
+    ],
+    "grounds": [
+     "CO2",
+     "H2"
+    ],
+    "costs": {
+     "by_edge": {
+      "rwgs-needs-CO2": 0,
+      "rwgs-needs-H2": 0,
+      "CO-by-rwgs": 3,
+      "H2O-by-rwgs": 3,
+      "co_hyd-needs-CO": 0,
+      "co_hyd-needs-H2": 0,
+      "CH3OH-by-co_hyd": 2,
+      "co2_hyd-needs-CO2": 0,
+      "co2_hyd-needs-H2": 0,
+      "CH3OH-by-co2_hyd": 7,
+      "H2O-by-co2_hyd": 7,
+      "fa_form-needs-CO2": 0,
+      "fa_form-needs-H2": 0,
+      "HCOOH-by-fa_form": 1,
+      "fa_hyd-needs-HCOOH": 0,
+      "fa_hyd-needs-H2": 0,
+      "CH3OH-by-fa_hyd": 2
+     }
+    },
+    "objective": "min_max"
+   },
+   "expect": {
+    "status": "completed",
+    "derived": {
+     "CH3OH": 2,
+     "CO": 3
+    },
+    "underived": []
+   }
+  },
+  {
+   "name": "derivation-fastest-slowest-step",
+   "covers": [
+    "derivation",
+    "max_min"
+   ],
+   "graph": "G9",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "CH3OH"
+    ],
+    "scope": [
+     {
+      "relation": "MADE_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Reaction"
+    ],
+    "grounds": [
+     "CO2",
+     "H2"
+    ],
+    "costs": {
+     "by_edge": {
+      "rwgs-needs-CO2": 10,
+      "rwgs-needs-H2": 10,
+      "CO-by-rwgs": 3,
+      "H2O-by-rwgs": 3,
+      "co_hyd-needs-CO": 10,
+      "co_hyd-needs-H2": 10,
+      "CH3OH-by-co_hyd": 2,
+      "co2_hyd-needs-CO2": 10,
+      "co2_hyd-needs-H2": 10,
+      "CH3OH-by-co2_hyd": 7,
+      "H2O-by-co2_hyd": 7,
+      "fa_form-needs-CO2": 10,
+      "fa_form-needs-H2": 10,
+      "HCOOH-by-fa_form": 1,
+      "fa_hyd-needs-HCOOH": 10,
+      "fa_hyd-needs-H2": 10,
+      "CH3OH-by-fa_hyd": 2
+     }
+    },
+    "objective": "max_min"
+   },
+   "expect": {
+    "status": "completed",
+    "derived": {
+     "CH3OH": 7
+    },
+    "underived": [],
+    "derivation_rules": {
+     "CH3OH": [
+      "one",
+      [
+       "CH3OH-by-co2_hyd"
+      ]
+     ],
+     "co2_hyd": [
+      "all",
+      [
+       "co2_hyd-needs-CO2",
+       "co2_hyd-needs-H2"
+      ]
+     ],
+     "CO2": [
+      "given",
+      []
+     ],
+     "H2": [
+      "given",
+      []
+     ]
+    }
+   }
+  },
+  {
+   "name": "derivation-unit-costs",
+   "covers": [
+    "derivation",
+    "default costs"
+   ],
+   "graph": "G9",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "CH3OH"
+    ],
+    "scope": [
+     {
+      "relation": "MADE_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Reaction"
+    ],
+    "grounds": [
+     "CO2",
+     "H2"
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "derived": {
+     "CH3OH": 3
+    },
+    "underived": []
+   }
+  },
+  {
+   "name": "derivation-underivable-certificate",
+   "covers": [
+    "derivation",
+    "negative",
+    "certificate"
+   ],
+   "graph": "G9",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "CH3OH",
+     "CO"
+    ],
+    "scope": [
+     {
+      "relation": "MADE_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Reaction"
+    ],
+    "grounds": [
+     "CO2"
+    ],
+    "costs": {
+     "by_edge": {
+      "rwgs-needs-CO2": 0,
+      "rwgs-needs-H2": 0,
+      "CO-by-rwgs": 3,
+      "H2O-by-rwgs": 3,
+      "co_hyd-needs-CO": 0,
+      "co_hyd-needs-H2": 0,
+      "CH3OH-by-co_hyd": 2,
+      "co2_hyd-needs-CO2": 0,
+      "co2_hyd-needs-H2": 0,
+      "CH3OH-by-co2_hyd": 7,
+      "H2O-by-co2_hyd": 7,
+      "fa_form-needs-CO2": 0,
+      "fa_form-needs-H2": 0,
+      "HCOOH-by-fa_form": 1,
+      "fa_hyd-needs-HCOOH": 0,
+      "fa_hyd-needs-H2": 0,
+      "CH3OH-by-fa_hyd": 2
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "derived": {},
+    "underived": [
+     "CH3OH",
+     "CO"
+    ],
+    "certificate": {
+     "kind": "values",
+     "bound": null,
+     "values": [
+      {
+       "node": "CO2",
+       "value": 0
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "derivation-circular-support",
+   "covers": [
+    "derivation",
+    "cycle",
+    "default grounds"
+   ],
+   "graph": "G10",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "a",
+     "g"
+    ],
+    "scope": [
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "derived": {
+     "g": 0
+    },
+    "underived": [
+     "a"
+    ],
+    "derivation_rules": {
+     "g": [
+      "given",
+      []
+     ]
+    }
+   }
+  },
+  {
+   "name": "derivation-interrupted-bound",
+   "covers": [
+    "derivation",
+    "budget",
+    "certificate"
+   ],
+   "graph": "G9",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "CH3OH",
+     "CO"
+    ],
+    "scope": [
+     {
+      "relation": "MADE_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Reaction"
+    ],
+    "grounds": [
+     "CO2",
+     "H2"
+    ],
+    "costs": {
+     "by_edge": {
+      "rwgs-needs-CO2": 0,
+      "rwgs-needs-H2": 0,
+      "CO-by-rwgs": 3,
+      "H2O-by-rwgs": 3,
+      "co_hyd-needs-CO": 0,
+      "co_hyd-needs-H2": 0,
+      "CH3OH-by-co_hyd": 2,
+      "co2_hyd-needs-CO2": 0,
+      "co2_hyd-needs-H2": 0,
+      "CH3OH-by-co2_hyd": 7,
+      "H2O-by-co2_hyd": 7,
+      "fa_form-needs-CO2": 0,
+      "fa_form-needs-H2": 0,
+      "HCOOH-by-fa_form": 1,
+      "fa_hyd-needs-HCOOH": 0,
+      "fa_hyd-needs-H2": 0,
+      "CH3OH-by-fa_hyd": 2
+     }
+    },
+    "certificate": true,
+    "limits": {
+     "max_expansions": 14
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "derived": {},
+    "bound": 1,
+    "certificate": {
+     "kind": "values",
+     "bound": 1,
+     "values": [
+      {
+       "node": "CO2",
+       "value": 0
+      },
+      {
+       "node": "H2",
+       "value": 0
+      },
+      {
+       "node": "HCOOH",
+       "value": 1
+      },
+      {
+       "node": "co2_hyd",
+       "value": 0
+      },
+      {
+       "node": "fa_form",
+       "value": 0
+      },
+      {
+       "node": "rwgs",
+       "value": 0
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "derivation-interrupted-in-region",
+   "covers": [
+    "derivation",
+    "budget"
+   ],
+   "graph": "G9",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "CH3OH",
+     "CO"
+    ],
+    "scope": [
+     {
+      "relation": "MADE_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Reaction"
+    ],
+    "grounds": [
+     "CO2",
+     "H2"
+    ],
+    "costs": {
+     "by_edge": {
+      "rwgs-needs-CO2": 0,
+      "rwgs-needs-H2": 0,
+      "CO-by-rwgs": 3,
+      "H2O-by-rwgs": 3,
+      "co_hyd-needs-CO": 0,
+      "co_hyd-needs-H2": 0,
+      "CH3OH-by-co_hyd": 2,
+      "co2_hyd-needs-CO2": 0,
+      "co2_hyd-needs-H2": 0,
+      "CH3OH-by-co2_hyd": 7,
+      "H2O-by-co2_hyd": 7,
+      "fa_form-needs-CO2": 0,
+      "fa_form-needs-H2": 0,
+      "HCOOH-by-fa_form": 1,
+      "fa_hyd-needs-HCOOH": 0,
+      "fa_hyd-needs-H2": 0,
+      "CH3OH-by-fa_hyd": 2
+     }
+    },
+    "certificate": true,
+    "limits": {
+     "max_expansions": 3
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "derived": {},
+    "certificate": null
+   }
+  },
+  {
+   "name": "derivation-negative-sum-cost",
+   "covers": [
+    "derivation",
+    "errors"
+   ],
+   "graph": "G9",
+   "request": {
+    "operation": "derivation",
+    "targets": [
+     "CH3OH",
+     "CO"
+    ],
+    "scope": [
+     {
+      "relation": "MADE_BY",
+      "direction": "forward"
+     },
+     {
+      "relation": "NEEDS",
+      "direction": "forward"
+     }
+    ],
+    "all_of": [
+     "Reaction"
+    ],
+    "grounds": [
+     "CO2",
+     "H2"
+    ],
+    "costs": {
+     "by_relation": {
+      "MADE_BY": -1,
+      "NEEDS": 0
+     }
+    }
+   },
+   "expect": {
+    "status": "unsupported",
+    "error_code": "negative_cost"
    }
   }
  ]

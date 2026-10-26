@@ -64,6 +64,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.support(request, answer, status, edges)
         elif op == "regular_path":
             check.regular(request, answer, status)
+        elif op == "derivation":
+            check.derivation(request, answer)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -692,6 +694,125 @@ class _Checker:
                     if lands(i, v) and listed.get((v, i), n + 2) > n + 1:
                         self.bad(f"certificate: the hop {eid} moves from ({u!r}, {q}) to ({v!r}, {i}), which it does "
                                  f"not list within {n + 1} hops")
+
+    def derivation(self, request: Mapping, answer: Mapping) -> None:
+        """A derivation against the records: each listed node's rule is its own (given: a ground; all: a node of an
+        all_of type, using one hop to each of its distinct inputs; one: any other node, using one hop), and every use
+        is a hop in scope. A certificate must satisfy, at every node of the targets' region (the targets and their
+        inputs, transitively, stopping at grounds), the condition that makes its values lower bounds: no rule gives a
+        node a value better than the one listed for it (the bound for an unlisted node; none at all when the bound is
+        null). With the derivation's values as upper bounds, that proves them best, and an unlisted target with no
+        bound underivable."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        every = set(request["all_of"] or ())
+        grounds = None if request["grounds"] is None else set(request["grounds"])
+        objective = request["objective"]
+        kind, table = next(iter(request["costs"].items())) if request["costs"] is not None else (None, None)
+        rational = objective == "min_sum" and table is not None and any(isinstance(x, float) for x in table.values())
+        never = object()                                  # no derivation: worse than every value
+
+        def cost(eid: str, rel: str) -> Any:
+            x = 1 if table is None else table.get(rel if kind == "by_relation" else eid)
+            return Fraction(x) if rational and x is not None else x
+
+        def better(a: Any, b: Any) -> bool:
+            if a is never or b is never:
+                return a is not never and b is never
+            if objective == "min_sum":
+                return a < b
+            if a is None or b is None:
+                return a is None and b is not None
+            return a > b if objective == "max_min" else a < b
+
+        def combine(a: Any, b: Any) -> Any:              # a hop's cost with its input's value, or two inputs
+            if a is never or b is never:
+                return never
+            if objective == "min_sum":
+                return a + b
+            if a is None or b is None:
+                return b if a is None else a
+            return max(a, b) if objective == "min_max" else min(a, b)
+
+        hops: dict[Any, list] = {}
+
+        def hops_of(u: Any) -> list:
+            if u not in hops:
+                hops[u] = self.hops_from(u, allowed)
+            return hops[u]
+
+        def is_all(u: Any) -> bool:
+            return bool(every and self.types_of.get(u, set()) & every)
+
+        def is_ground(u: Any) -> bool:
+            return u in grounds if grounds is not None else not hops_of(u) and not is_all(u)
+
+        for e in answer.get("derivation") or []:
+            u, rule, uses = e.get("node"), e.get("rule"), e.get("uses") or []
+            where = f"derivation {u!r}"
+            if u not in self.types_of:
+                self.bad(f"{where}: not an input node")
+                continue
+            if rule == "given" and not is_ground(u):
+                self.bad(f"{where}: given, but it is not a ground")
+            elif rule != "given" and is_ground(u):
+                self.bad(f"{where}: a ground is given, not derived")
+            elif rule == "all" and (not is_all(u) or {h.get("to") for h in uses} != {v for _, v, _ in hops_of(u)}):
+                self.bad(f"{where}: an all_of node uses one hop to each of its inputs")
+            elif rule == "one" and is_all(u):
+                self.bad(f"{where}: a node of an all_of type needs every input, not one")
+            for n, h in enumerate(uses):
+                self.hop(f"{where}: use {n}", u, h.get("to"), h.get("edge"), h.get("relation"), h.get("direction"),
+                         allowed)
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+
+        def read(entry: Mapping, field: str) -> Any:
+            return (None if entry.get(f"{field}_exact") is None else Fraction(entry[f"{field}_exact"])) \
+                if rational else entry.get(field)
+
+        identity = 0 if objective == "min_sum" else None
+        value = {c["node"]: read(c, "value") for c in cert["values"]}
+        bound = read(cert, "bound")
+        rest = never if bound is None else bound
+
+        def worth(u: Any) -> Any:
+            return value[u] if u in value else rest
+
+        region, todo = set(request["targets"]), list(request["targets"])
+        while todo:
+            u = todo.pop()
+            if is_ground(u):
+                continue
+            for _, v, _ in hops_of(u):
+                if v not in region:
+                    region.add(v)
+                    todo.append(v)
+        for u in sorted(region, key=str):
+            claim = worth(u)
+            uncosted = [eid for eid, _, rel in ([] if is_ground(u) else hops_of(u)) if cost(eid, rel) is None]
+            if uncosted:
+                self.bad(f"certificate: the hop {uncosted[0]} in scope has no cost in the request")
+                continue
+            if is_ground(u):
+                offers = [identity]
+            elif is_all(u):
+                best: dict[Any, Any] = {}                 # each input through its best hop
+                for eid, v, rel in hops_of(u):
+                    x = combine(cost(eid, rel), worth(v))
+                    if v not in best or better(x, best[v]):
+                        best[v] = x
+                total = identity
+                for x in best.values():
+                    total = combine(total, x)
+                offers = [total]
+            else:
+                offers = [combine(cost(eid, rel), worth(v)) for eid, v, rel in hops_of(u)]
+            for x in offers:
+                if better(x, claim):
+                    self.bad(f"certificate: a rule gives {u!r} a value better than the "
+                             f"{'listed' if u in value else 'bound'} {claim if claim is not never else 'none'}")
+                    break
 
     def shortest(self, request: Mapping, answer: Mapping, status: str) -> None:
         if answer.get("certificate") is not None:

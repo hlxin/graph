@@ -553,6 +553,111 @@
               "type": "boolean"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "targets",
+            "scope",
+            "all_of",
+            "grounds",
+            "costs",
+            "objective",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "derivation"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "targets": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "all_of": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grounds": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "costs": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "properties": {
+                    "by_relation": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/weight"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    },
+                    "by_edge": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/weight"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "objective": {
+              "enum": [
+                "min_sum",
+                "min_max",
+                "max_min"
+              ]
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "derivation: costs are non-negative for min_sum (as a shortest path's), any finite number otherwise; null: every hop costs 1."
         }
       ]
     },
@@ -1536,7 +1641,8 @@
                   "pattern",
                   "support",
                   "bottleneck_path",
-                  "regular_path"
+                  "regular_path",
+                  "derivation"
                 ]
               }
             }
@@ -2141,6 +2247,49 @@
                     ]
                   }
                 }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "derivation"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/derivation_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "derivation"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "derivation"
               }
             }
           }
@@ -3858,6 +4007,211 @@
         }
       },
       "description": "answer reached: every node (among the targets) a matching walk from a source ends at, with its fewest hops and the accepting state that gives them; tree: the product states on their witnesses, by node then state, each with the hop it was first reached by."
+    },
+    "derivation_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "value"
+      ],
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/id"
+        },
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/weight"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value_exact": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/exact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "derivation_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "derived",
+        "underived",
+        "derivation",
+        "certificate"
+      ],
+      "properties": {
+        "derived": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/derivation_value"
+          }
+        },
+        "underived": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "bound": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/weight"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bound_exact": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/exact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "derivation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "rule",
+              "value",
+              "uses"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "rule": {
+                "enum": [
+                  "given",
+                  "all",
+                  "one"
+                ]
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/weight"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "value_exact": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/exact"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "uses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "edge",
+                    "relation",
+                    "direction",
+                    "from",
+                    "to",
+                    "cost"
+                  ],
+                  "properties": {
+                    "edge": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "relation": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "direction": {
+                      "$ref": "#/$defs/direction"
+                    },
+                    "from": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "to": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "cost": {
+                      "$ref": "#/$defs/weight"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "bound",
+                "values"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "values"
+                },
+                "bound": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/weight"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bound_exact": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/exact"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/derivation_value"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "derived: each derived target with its best value; underived (complete only): targets with no derivation; bound (interrupted only): no unsettled target has a better derivation (null: nothing known); derivation: every node the derived targets' derivations use, given (a ground), all (every input) or one (one input), with its value and the hops it uses. A value is a number, exact as value_exact in rational mode; for min_max and max_min, null is a given node's (no hop). The values certificate: values no derivation beats, the bound for every node it leaves unlisted (null: no derivation at all)."
     }
   }
 }
