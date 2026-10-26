@@ -1157,6 +1157,150 @@
     "IN",
     "SUPPORTED_BY"
    ]
+  },
+  "G12": {
+   "nodes": [
+    {
+     "id": "claim",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "m1",
+     "types": [
+      "Measurement"
+     ]
+    },
+    {
+     "id": "m2",
+     "types": [
+      "Measurement"
+     ]
+    },
+    {
+     "id": "m3",
+     "types": [
+      "Measurement"
+     ]
+    },
+    {
+     "id": "d1",
+     "types": [
+      "Dataset"
+     ]
+    },
+    {
+     "id": "d2",
+     "types": [
+      "Dataset"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "s1",
+     "source": "claim",
+     "target": "m1",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "s2",
+     "source": "claim",
+     "target": "m2",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "s3",
+     "source": "claim",
+     "target": "m3",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "i1",
+     "source": "m1",
+     "target": "d1",
+     "relation": "IN"
+    },
+    {
+     "id": "i2",
+     "source": "m2",
+     "target": "d1",
+     "relation": "IN"
+    },
+    {
+     "id": "i3",
+     "source": "m3",
+     "target": "d2",
+     "relation": "IN"
+    }
+   ]
+  },
+  "G13": {
+   "nodes": [
+    {
+     "id": "a",
+     "types": [
+      "N"
+     ]
+    },
+    {
+     "id": "b",
+     "types": [
+      "N"
+     ]
+    },
+    {
+     "id": "c",
+     "types": [
+      "N"
+     ]
+    },
+    {
+     "id": "d",
+     "types": [
+      "N"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "e1",
+     "source": "a",
+     "target": "b",
+     "relation": "R"
+    },
+    {
+     "id": "e2",
+     "source": "b",
+     "target": "c",
+     "relation": "R"
+    },
+    {
+     "id": "e3",
+     "source": "c",
+     "target": "a",
+     "relation": "R"
+    },
+    {
+     "id": "e4",
+     "source": "b",
+     "target": "d",
+     "relation": "R"
+    },
+    {
+     "id": "e5",
+     "source": "c",
+     "target": "a",
+     "relation": "R"
+    },
+    {
+     "id": "l1",
+     "source": "d",
+     "target": "d",
+     "relation": "R"
+    }
+   ]
   }
  },
  "cases": [
@@ -6165,6 +6309,359 @@
      }
     ],
     "alpha": 1
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "invalid_request"
+   }
+  },
+  {
+   "name": "pattern-corroborating-diamond",
+   "covers": [
+    "pattern",
+    "cycle",
+    "generic join"
+   ],
+   "graph": "G12",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "c",
+     "node_types": [
+      "Claim"
+     ]
+    },
+    "steps": [
+     {
+      "from": "c",
+      "var": "a",
+      "scope": [
+       {
+        "relation": "SUPPORTED_BY",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "c",
+      "var": "b",
+      "scope": [
+       {
+        "relation": "SUPPORTED_BY",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "a",
+      "var": "d",
+      "scope": [
+       {
+        "relation": "IN",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "b",
+      "to": "d",
+      "scope": [
+       {
+        "relation": "IN",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 5,
+    "exists": true,
+    "rows": [
+     [
+      {
+       "c": "claim",
+       "a": "m1",
+       "b": "m1",
+       "d": "d1"
+      },
+      [
+       "s1",
+       "s1",
+       "i1",
+       "i1"
+      ]
+     ],
+     [
+      {
+       "c": "claim",
+       "a": "m1",
+       "b": "m2",
+       "d": "d1"
+      },
+      [
+       "s1",
+       "s2",
+       "i1",
+       "i2"
+      ]
+     ],
+     [
+      {
+       "c": "claim",
+       "a": "m2",
+       "b": "m1",
+       "d": "d1"
+      },
+      [
+       "s2",
+       "s1",
+       "i2",
+       "i1"
+      ]
+     ],
+     [
+      {
+       "c": "claim",
+       "a": "m2",
+       "b": "m2",
+       "d": "d1"
+      },
+      [
+       "s2",
+       "s2",
+       "i2",
+       "i2"
+      ]
+     ],
+     [
+      {
+       "c": "claim",
+       "a": "m3",
+       "b": "m3",
+       "d": "d2"
+      },
+      [
+       "s3",
+       "s3",
+       "i3",
+       "i3"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-triangles-with-parallel-closing-edges",
+   "covers": [
+    "pattern",
+    "cycle",
+    "parallel edges"
+   ],
+   "graph": "G13",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "a"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "z",
+      "to": "x",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ],
+      "edge_var": "back"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 2,
+    "rows": [
+     [
+      {
+       "x": "a",
+       "y": "b",
+       "z": "c"
+      },
+      [
+       "e1",
+       "e2",
+       "e3"
+      ]
+     ],
+     [
+      {
+       "x": "a",
+       "y": "b",
+       "z": "c"
+      },
+      [
+       "e1",
+       "e2",
+       "e5"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-triangles-counted",
+   "covers": [
+    "pattern",
+    "cycle",
+    "count",
+    "self-loop"
+   ],
+   "graph": "G13",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "node_types": [
+      "N"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "z",
+      "to": "x",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ],
+      "edge_var": "back"
+     }
+    ],
+    "answer": "count"
+   },
+   "expect": {
+    "status": "completed",
+    "total": 7,
+    "exists": true
+   }
+  },
+  {
+   "name": "pattern-self-closure",
+   "covers": [
+    "pattern",
+    "cycle",
+    "self-loop"
+   ],
+   "graph": "G13",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "node_types": [
+      "N"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "to": "x",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 1,
+    "rows": [
+     [
+      {
+       "x": "d"
+      },
+      [
+       "l1"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-closing-an-unbound-variable",
+   "covers": [
+    "pattern",
+    "errors"
+   ],
+   "graph": "G13",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "node_types": [
+      "N"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "to": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
    },
    "expect": {
     "status": "failed",

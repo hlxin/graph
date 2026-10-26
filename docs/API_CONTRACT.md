@@ -26,6 +26,8 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - the `derivation` operation: the best derivation of each target in an AND/OR graph (a node of an `all_of` type needs
   every input, any other node one), for a sum of costs, the least highest cost or the greatest lowest, with a
   derivation as witness, certified by values no rule improves on (section 4)
+- cycles in patterns: a step may close a cycle between bound variables, evaluated by a generic (worst-case optimal)
+  join (section 4)
 - the `personalized_pagerank` operation: a relevance ranking around chosen nodes in which every number is proven:
   each listed node carries an interval that contains its personalized PageRank, the top of the ranking is certified
   where intervals separate, and the certificate (the estimates) is checked by recomputing the residuals exactly
@@ -132,7 +134,7 @@ no wildcard: a scope lists what it follows.
 | `typed_path` | `sources`, `pattern` (positions `{"scope", "node_types"}`; `node_types` null: any), `targets` (null: any node), `certificate` (default false) | `max_expansions` |
 | `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}`, `certificate` (default false) | `max_expansions` |
 | `dependency_impact` | `changed` (node IDs), `scope` (the direction in which a change propagates), `max_depth` | `max_expansions`, `max_results` |
-| `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
+| `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`, or, to close a cycle, `{"from", "to", "scope", "edges", "edge_var"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
 | `bottleneck_path` | `sources`, `targets`, `scope`, `weights` (as costs, but any finite number), `objective` (`max_min`, the default, or `min_max`), `certificate` (default false) | `max_expansions` |
 | `regular_path` | `sources`, `path` (a path expression: text, a list or a tree, normalized to the tree), `targets` (null: any node), `answer` (`witness`, the default, or `reached`), `certificate` (default false) | `max_expansions`, `max_results` |
@@ -237,7 +239,7 @@ With `certificate: true`, the answer carries its proof:
 - **A closure** proves a complete negative: `{"kind": "closure", "reached": [...]}`, everything the sources reach,
   closed under the scope's hops, with no target among it.
 
-**Pattern.** Matches a tree pattern, SCALE's query plans in generic form:
+**Pattern.** Matches a pattern of variables and steps, SCALE's query plans in generic form, trees and cycles:
 
 - **Variables.** `match` binds a variable to the nodes it admits: its types, through the hierarchy, and/or explicit
   node IDs. Each step binds a new variable to a node one hop away from an earlier variable. The hop follows the
@@ -251,6 +253,12 @@ With `certificate: true`, the answer carries its proof:
   self-loop in a scope of both directions gives one row, not two.
 - **Order.** Rows come in canonical order: matched nodes by ascending ID, then each step's hops in the order every
   operation uses.
+- **Cycles.** A step with `to` instead of `var` closes a cycle: it binds no variable, and needs a hop in its scope
+  (through its edges, when it names them) from the node of `from` to the node of `to`, two variables bound before it
+  by the match or by required steps (the same one, for a loop). It is never optional and constrains no node; its link
+  is the hop's edge, one row per parallel edge, in canonical order. Corroboration and contradiction motifs (two
+  supports of a claim from one dataset; a triangle of citations) are such patterns. A tree step keeps its form, so
+  tree patterns keep their request and result IDs.
 
 Evaluation never meets a dead end; this is Yannakakis' semi-join reduction, over the region the match reaches.
 
@@ -268,6 +276,17 @@ along the kept hops, without listing them.
 - `coverage` gives each variable's candidates and the number it kept, and each step's kept hops.
 - An expansion budget, a deadline or a cancellation that stops discovery leaves `exists` and `total` null: unknown,
   never false.
+
+A pattern with a cycle has no full reducer, and its rows cannot be counted without being listed. After the tree's
+semi-join reduction (its closing steps aside), each closing step is indexed over the kept candidates: from each
+candidate of its `from` variable (one expansion each), its hops landing on a candidate of its `to` variable, by that
+node. Rows are then built by a generic join (the worst-case optimal join of Ngo, Porat, Ré and Rudra; Veldhuizen's
+Leapfrog Triejoin): when a step binds the later of a closing step's two variables, its candidates are intersected with
+what every such closing step allows, iterating the smallest of the sets and keeping the canonical order of the rest;
+each candidate tried, and each closing link, is one expansion. `total` is the number of rows the enumeration lists,
+known when it ends; `answer: count` and `exists` list none but enumerate them all. An interruption while listing keeps
+the rows found so far (a prefix of the canonical order) and leaves `total` null, `exists` true when a row was found;
+an `output_limit` interruption still counts every row. `coverage` gives a closing step's indexed hops.
 
 Answer: `{"exists", "total", "rows": [{"nodes", "edges", "links"}], "count", "coverage"}`.
 
@@ -536,7 +555,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 116 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 121 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.

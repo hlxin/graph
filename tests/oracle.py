@@ -179,6 +179,11 @@ def pattern_rows(nodes, edges, match, steps, type_parents=None, relation_parents
             return
         s = steps[i]
         u = bind[s["from"]]
+        if "to" in s:                                  # a step that closes a cycle: hops from one bound node to another
+            for eid, w in hops({**s, "node_types": None, "nodes": None}, u):
+                if w == bind[s["to"]]:
+                    extend(i + 1, bind, links + [eid])
+            return
         hs = [] if u is None else hops(s, u)
         if not hs:
             if s.get("optional"):

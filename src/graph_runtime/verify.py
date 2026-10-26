@@ -448,7 +448,8 @@ class _Checker:
                     if not s.get("optional"):
                         self.bad(f"row {n}: required step {j} has no link")
                     continue
-                parent, child = nodes.get(s["from"]), nodes.get(s["var"])
+                closing = "to" in s                     # a step that closes a cycle: its link joins two variables
+                parent, child = nodes.get(s["from"]), nodes.get(s["to" if closing else "var"])
                 rec = self.edge_of.get(link)
                 if rec is None:
                     self.bad(f"row {n}: step {j}'s link {link!r} is not an input edge")
@@ -460,7 +461,7 @@ class _Checker:
                            for d in directions):
                     self.bad(f"row {n}: step {j}'s link {link} ({src} -{rel}-> {dst}) does not join {parent!r} to "
                              f"{child!r} in its scope")
-                if not self.admits(s, child):
+                if not closing and not self.admits(s, child):
                     self.bad(f"row {n}: {s['var']} = {child!r} is not a node step {j} admits")
                 if s.get("edges") is not None and link not in set(s["edges"]):
                     self.bad(f"row {n}: step {j}'s link {link} is not one of its edges")
