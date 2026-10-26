@@ -12,7 +12,7 @@ from graph_runtime import (CONTRACT, CandidateError, HypothesisCandidate, Projec
 from graph_runtime._canonical import digest
 from graph_runtime._validation import shape_problems
 from graph_runtime.conformance import check_case, load_cases, run_conformance
-from oracle import (bottleneck, closed_nodes, expand_scope, least_cost, least_depths, pattern_rows,
+from oracle import (bottleneck, closed_nodes, expand_scope, least_cost, least_depths, pattern_rows, regular_ends,
                     support_answer, typed_ends)
 from test_hypotheses import TESTS
 
@@ -278,6 +278,17 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 assert exp['found'] is (want is not None), case['name']
             if 'value' in exp:
                 assert want[0] == exp['value'] and len(exp['witness_edges']) == want[1], case['name']
+        elif op == 'regular_path':
+            raw, graph = case['request'], suite['graphs'][case['graph']]     # the oracle expands the hierarchies
+            path = normalize_request({**raw, 'projection': 'sha256:' + '0' * 64}).to_dict()['path']
+            want = regular_ends(graph['nodes'], graph['edges'], raw['sources'], path, raw.get('targets'),
+                                graph.get('type_parents'), rp, relations)
+            if 'found' in exp:
+                assert exp['found'] is bool(want), case['name']
+            if 'witness_edges' in exp and want:
+                assert len(exp['witness_edges']) == min(want.values()), case['name']
+            if 'path_reached' in exp:
+                assert exp['path_reached'] == want, case['name']
         elif op == 'pattern':
             raw = case['request']             # the brute force expands the hierarchies itself
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],

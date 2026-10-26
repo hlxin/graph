@@ -207,6 +207,8 @@ class Result:
     # ------------------------------------------------------------------------------------------------ reading answers
     def _entries(self) -> Mapping[str, Mapping]:
         key = _SET_OPERATIONS.get(self.operation or "")
+        if self.operation == "regular_path" and "reached" in (self.answer or {}):
+            key = "reached"
         if key is None:
             raise ValueError(f"a {self.operation} result lists no node set")
         if self._index is None:
@@ -215,10 +217,13 @@ class Result:
         return self._index
 
     def reachable(self, node_id: str) -> bool | None:
-        """For reachability: True when ``node_id`` was reached, False only when the answer is complete and it was
-        not, None when that is unknown (an interrupted search, or a result with no answer)."""
-        if self.operation != "reachability":
-            raise ValueError(f"reachable() reads a reachability result, not {self.operation}")
+        """For reachability (and a regular path's ``reached`` answer): True when ``node_id`` was reached, False only
+        when the answer is complete and it was not, None when that is unknown (an interrupted search, or a result with
+        no answer)."""
+        if self.operation not in ("reachability", "regular_path"):
+            raise ValueError(f"reachable() reads a reachability or regular_path result, not {self.operation}")
+        if self.operation == "regular_path" and self.answer is not None and "reached" not in self.answer:
+            raise ValueError("reachable() reads a regular_path result whose answer is reached, not witness")
         return self._member(node_id)
 
     def affected(self, node_id: str) -> bool | None:
@@ -236,10 +241,22 @@ class Result:
 
     def path_to(self, node_id: str) -> list[dict]:
         """The witness of a reached (or affected) node: its hops ``{edge, relation, direction, from, to}`` from a
-        source (or a changed node), reconstructed from the answer's ``via`` links."""
+        source (or a changed node), reconstructed from the answer's ``via`` links (for a regular path, from its tree,
+        each hop with the automaton ``state`` it moves to)."""
         entries = self._entries()
         if node_id not in entries:
             raise KeyError(f"{node_id!r} is not in this result's answer")
+        if self.operation == "regular_path":
+            tree = {(t["node"], t["state"]): t for t in self.answer["tree"]}
+            hops: list[dict] = []
+            key = (node_id, entries[node_id]["state"])
+            while tree[key]["via"] is not None:
+                via = tree[key]["via"]
+                hops.append({"edge": via["edge"], "relation": via["relation"], "direction": via["direction"],
+                             "from": via["from"], "to": key[0], "state": key[1]})
+                key = (via["from"], via["from_state"])
+            hops.reverse()
+            return hops
         hops: list[dict] = []
         node, entry = node_id, entries[node_id]
         for _ in range(entries[node_id]["depth"]):        # a node at depth d is d hops from where it was reached
@@ -255,9 +272,11 @@ class Result:
 
     @property
     def found(self) -> bool | None:
-        """For typed and shortest paths: True (a witness is given), False (only when complete) or None (unknown)."""
-        if self.operation not in _WITNESS_OPERATIONS:
-            raise ValueError(f"found reads a typed_path or shortest_path result, not {self.operation}")
+        """For typed, shortest, bottleneck and regular paths (a ``witness`` answer): True (a witness is given), False
+        (only when complete) or None (unknown)."""
+        if self.operation not in _WITNESS_OPERATIONS and not (
+                self.operation == "regular_path" and "found" in (self.answer or {"found": None})):
+            raise ValueError(f"found reads a path result with a witness, not {self.operation}")
         found = None if self.answer is None else self.answer["found"]
         return None if found is False and self.status != COMPLETED else found
 
@@ -271,9 +290,9 @@ class Result:
 
     @property
     def witness(self) -> list[dict] | None:
-        """For typed and shortest paths: the witness hops, or None."""
-        if self.operation not in _WITNESS_OPERATIONS:
-            raise ValueError(f"witness reads a typed_path or shortest_path result, not {self.operation}")
+        """For typed, shortest, bottleneck and regular paths (a ``witness`` answer): the witness hops, or None."""
+        if self.operation not in _WITNESS_OPERATIONS and self.operation != "regular_path":
+            raise ValueError(f"witness reads a path result with a witness, not {self.operation}")
         w = (self.answer or {}).get("witness")
         return None if w is None else thaw(w["hops"])
 
@@ -405,6 +424,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_pattern_problems(request, answer, status, data.get("interruption")))
     elif op == "support":
         out.extend(_support_problems(request, answer, status, data.get("interruption")))
+    elif op == "regular_path":
+        out.extend(_regular_problems(request, answer, status, data.get("interruption")))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -435,6 +456,99 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_bottleneck_problems(request, answer, status))
     if op in _WITNESS_OPERATIONS:
         out.extend(_certificate_problems(op, request, answer, status))
+    return out
+
+
+def _regular_problems(request: dict, answer: dict, status: str, interruption: dict | None) -> list[str]:
+    """A regular path answer's own consistency, read without the records: a witness chains from a source to a target
+    with one automaton state per hop; reached nodes are unique, in ascending ID order, within the targets and the
+    output limit, each named by a branch of the tree that leads back to a source at the start state; a certificate
+    appears exactly when asked for and there is something to prove, in canonical form. Whether hops match the path
+    and the certificate is closed is checked against the records (:func:`graph_runtime.verify_result`)."""
+    out = []
+    sources = set(request["sources"])
+    targets = None if request["targets"] is None else set(request["targets"])
+    cert = answer.get("certificate")
+    if request["answer"] == "witness":
+        if "found" not in answer:
+            return ["a regular path witness answer says whether it found a walk"]
+        found = answer["found"]
+        if found is False and status != COMPLETED:
+            out.append("found is false only in a complete answer")
+        if found is None and status != INTERRUPTED:
+            out.append("found is unknown (null) only in an interrupted answer")
+        hops: list = []
+        if found is True:
+            witness = answer["witness"]
+            hops = witness["hops"]
+            if type(witness["length"]) is not int or witness["length"] != len(hops):
+                out.append("witness length must match its hops")
+            if witness["source"] not in sources:
+                out.append("a witness must start at a requested source")
+            if targets is not None and witness["target"] not in targets:
+                out.append("a witness must end at a requested target")
+            at = witness["source"]
+            for hop in hops:
+                if hop["from"] != at or type(hop["state"]) is not int or hop["state"] < 1:
+                    out.append("witness hops must chain, each moving to an automaton state")
+                at = hop["to"]
+            if at != witness["target"]:
+                out.append("witness hops must end at the witness target")
+        want = None
+        if request["certificate"] and status == COMPLETED and (found is False or (found is True and hops)):
+            want = len(hops) if found else None
+            if cert is None or cert["bound"] != want:
+                out.append("a requested certificate comes with a complete negative (bound null) and with a found "
+                           "witness of at least one hop (bound: its length)")
+        elif cert is not None:
+            out.append("a certificate comes only when asked for, with a complete negative or a found witness of at "
+                       "least one hop")
+    else:
+        if "reached" not in answer:
+            return ["a regular path reached answer lists the nodes reached"]
+        entries, tree = answer["reached"], answer["tree"]
+        names = [e["node"] for e in entries]
+        if names != sorted(set(names)):
+            out.append("reached nodes must be unique and in ascending ID order")
+        if answer["count"] != len(entries) or len(entries) > request["limits"]["max_results"]:
+            out.append("count must match the reached entries and fit max_results")
+        if status == INTERRUPTED and (interruption or {}).get("reason") == "output_limit" \
+                and len(entries) != request["limits"]["max_results"]:
+            out.append("output_limit requires a full output buffer")
+        if targets is not None and not set(names) <= targets:
+            out.append("reached nodes must be requested targets")
+        keys = [(t["node"], t["state"]) for t in tree]
+        if keys != sorted(set(keys)):
+            out.append("tree entries must be unique, by node then state")
+        by_key = {(t["node"], t["state"]): t for t in tree}
+        for e in entries:
+            t = by_key.get((e["node"], e["state"]))
+            if t is None or t["length"] != e["length"]:
+                out.append(f"reached {e['node']!r} is not named by a tree entry with its state and length")
+        for t in tree:
+            via = t["via"]
+            if via is None:
+                if t["length"] != 0 or t["state"] != 0 or t["node"] not in sources:
+                    out.append("a tree entry without a hop is a source at the start state, with no hop")
+                continue
+            parent = by_key.get((via["from"], via["from_state"]))
+            if parent is None or parent["length"] != t["length"] - 1 or t["state"] < 1:
+                out.append("a tree entry's hop must come from a tree entry one hop shorter")
+        if request["certificate"] and status == COMPLETED:
+            if cert is None or cert["bound"] is not None:
+                out.append("a requested certificate of a complete reached answer lists every product state (bound "
+                           "null)")
+        elif cert is not None:
+            out.append("a certificate comes only when asked for, with a complete answer")
+    if cert is not None:
+        states = [(st["state"], st["node"]) for st in cert["states"]]
+        if states != sorted(set(states)):
+            out.append("certificate states are unique, by state then node ID")
+        if not {(0, s) for s in sources} <= set(states) or any(
+                (st["state"], st["node"]) in {(0, s) for s in sources} and st["length"] != 0 for st in cert["states"]):
+            out.append("certificate states start with every source at the start state, with no hop")
+        if cert["bound"] is not None and any(st["length"] >= cert["bound"] for st in cert["states"]):
+            out.append("certificate states have fewer hops than its bound")
     return out
 
 

@@ -23,6 +23,9 @@ Operations (docs/API_CONTRACT.md):
 * ``bottleneck_path``: ``sources``, ``targets``, ``scope``, ``weights`` (as costs, any finite number),
   ``objective`` (``max_min``: the path whose weakest edge is strongest; ``min_max``: the path whose highest edge is
   lowest), ``certificate``; limit ``max_expansions``.
+* ``regular_path``: ``sources``, ``path`` (a regular path expression: text, a list or a tree, see
+  :mod:`graph_runtime.paths`), ``targets`` (null: any node), ``answer`` (``witness``: one walk with the fewest hops;
+  ``reached``: every node a matching walk reaches), ``certificate``; limits ``max_expansions``, ``max_results``.
 
 A scope is a list of ``{relation, direction}`` (``forward``: from an edge's source to its target; ``reverse``: from
 its target to its source); there is no wildcard.
@@ -37,14 +40,16 @@ import sys
 from collections.abc import Mapping
 from typing import Any
 
+from . import paths
 from ._canonical import canonical_json, canonical_object, freeze, is_digest, sha256_text, thaw
 from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
-              "bottleneck_path")
+              "bottleneck_path", "regular_path")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
+PATH_ANSWERS = ("witness", "reached")
 MODES = ("exact",)
 FAILED, UNSUPPORTED = "failed", "unsupported"
 REQUEST_KIND = "graph_runtime.request"
@@ -56,14 +61,16 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "shortest_path": ("max_expansions",),
            "pattern": ("max_expansions", "max_results"),
            "support": ("max_expansions", "max_results"),
-           "bottleneck_path": ("max_expansions",)}
+           "bottleneck_path": ("max_expansions",),
+           "regular_path": ("max_expansions", "max_results")}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
            "shortest_path": (("sources", "targets", "scope", "costs"), ("certificate",)),
            "pattern": (("match",), ("steps", "answer")),
            "support": (("failed", "scope"), ("all_of",)),
-           "bottleneck_path": (("sources", "targets", "scope", "weights"), ("objective", "certificate"))}
+           "bottleneck_path": (("sources", "targets", "scope", "weights"), ("objective", "certificate")),
+           "regular_path": (("sources", "path"), ("targets", "answer", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -196,6 +203,17 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["objective"] = raw.get("objective", "max_min")
         if data["objective"] not in OBJECTIVES:
             raise _fail("invalid_request", f"objective is one of {list(OBJECTIVES)}, not {data['objective']!r}")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "regular_path":
+        data["sources"] = _ids(raw["sources"], "sources")
+        data["targets"] = None if raw.get("targets") is None else _ids(raw["targets"], "targets")
+        try:
+            data["path"] = paths.normalize(raw["path"], _scope, _type_list)
+        except paths.PathError as exc:
+            raise _fail("invalid_request", f"path: {exc}") from None
+        data["answer"] = raw.get("answer", "witness")
+        if data["answer"] not in PATH_ANSWERS:
+            raise _fail("invalid_request", f"answer is one of {list(PATH_ANSWERS)}, not {data['answer']!r}")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "support":
         data["failed"] = _ids(raw["failed"], "failed")
@@ -376,6 +394,15 @@ def _var(value: Any, where: str, taken: set) -> str:
         raise _fail("invalid_request", f"{where}: the variable {value!r} is already bound")
     taken.add(value)
     return value
+
+
+def _type_list(value: Any, where: str) -> list[str]:
+    """A non-empty list of node types, sorted and de-duplicated (a path step's node_types)."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)) or not value:
+        raise _fail("invalid_request", f"{where} is a non-empty list of node types, or null")
+    if not all(isinstance(t, str) and t for t in value):
+        raise _fail("invalid_request", f"{where} holds a type that is not a non-empty string")
+    return sorted(set(value))
 
 
 def _node_constraint(raw: Mapping, where: str, fields: tuple[str, ...] = ("node_types", "nodes")) -> dict:

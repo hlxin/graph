@@ -610,6 +610,111 @@
    "bindings": {
     "source": "conformance-g7@1"
    }
+  },
+  "G8": {
+   "nodes": [
+    {
+     "id": "c1",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "c2",
+     "types": [
+      "Claim"
+     ]
+    },
+    {
+     "id": "m1",
+     "types": [
+      "Measurement"
+     ]
+    },
+    {
+     "id": "m2",
+     "types": [
+      "Measurement"
+     ]
+    },
+    {
+     "id": "d1",
+     "types": [
+      "Dataset"
+     ]
+    },
+    {
+     "id": "s1",
+     "types": [
+      "Source"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "x1",
+     "source": "c1",
+     "target": "c2",
+     "relation": "DERIVED_FROM"
+    },
+    {
+     "id": "x2",
+     "source": "c2",
+     "target": "m1",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "x3",
+     "source": "c1",
+     "target": "m2",
+     "relation": "SUPPORTED_BY"
+    },
+    {
+     "id": "x4",
+     "source": "m1",
+     "target": "d1",
+     "relation": "IN"
+    },
+    {
+     "id": "x5",
+     "source": "m2",
+     "target": "d1",
+     "relation": "IN"
+    },
+    {
+     "id": "x6",
+     "source": "d1",
+     "target": "s1",
+     "relation": "FROM"
+    },
+    {
+     "id": "x7",
+     "source": "m2",
+     "target": "d1",
+     "relation": "IN"
+    },
+    {
+     "id": "x8",
+     "source": "c2",
+     "target": "c1",
+     "relation": "DERIVED_FROM"
+    }
+   ],
+   "relations": [
+    "DERIVED_FROM",
+    "FROM",
+    "IN",
+    "SUPPORTED_BY"
+   ],
+   "node_types": [
+    "Claim",
+    "Dataset",
+    "Measurement",
+    "Source"
+   ],
+   "bindings": {
+    "source": "conformance-g8@1"
+   }
   }
  },
  "cases": [
@@ -3961,6 +4066,398 @@
       "X"
      ]
     }
+   }
+  },
+  {
+   "name": "regular-path-fewest-hops",
+   "covers": [
+    "regular_path",
+    "witness",
+    "parallel edges",
+    "cycle"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "c1"
+    ],
+    "targets": [
+     "s1"
+    ],
+    "path": "DERIVED_FROM*/SUPPORTED_BY[Measurement]/IN/FROM[Source]"
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "witness_edges": [
+     "x3",
+     "x5",
+     "x6"
+    ],
+    "discovered": 7
+   }
+  },
+  {
+   "name": "regular-path-tree-form",
+   "covers": [
+    "regular_path",
+    "normalization"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "c1"
+    ],
+    "targets": [
+     "s1"
+    ],
+    "path": {
+     "op": "seq",
+     "items": [
+      {
+       "op": "repeat",
+       "item": {
+        "op": "step",
+        "scope": [
+         {
+          "relation": "DERIVED_FROM",
+          "direction": "forward"
+         }
+        ]
+       },
+       "min": 0,
+       "max": null
+      },
+      {
+       "op": "step",
+       "scope": [
+        [
+         "SUPPORTED_BY",
+         "forward"
+        ]
+       ],
+       "node_types": [
+        "Measurement"
+       ]
+      },
+      "IN",
+      "FROM[Source]"
+     ]
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "witness_edges": [
+     "x3",
+     "x5",
+     "x6"
+    ]
+   }
+  },
+  {
+   "name": "regular-path-reached-lengths",
+   "covers": [
+    "regular_path",
+    "reached",
+    "cycle"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "c1"
+    ],
+    "path": "DERIVED_FROM*/SUPPORTED_BY",
+    "answer": "reached"
+   },
+   "expect": {
+    "status": "completed",
+    "path_reached": {
+     "m1": 2,
+     "m2": 1
+    },
+    "count": 2
+   }
+  },
+  {
+   "name": "regular-path-reverse-steps",
+   "covers": [
+    "regular_path",
+    "reverse",
+    "reached"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "s1"
+    ],
+    "path": "^FROM/^IN/^SUPPORTED_BY/^DERIVED_FROM*",
+    "answer": "reached"
+   },
+   "expect": {
+    "status": "completed",
+    "path_reached": {
+     "c1": 3,
+     "c2": 3
+    }
+   }
+  },
+  {
+   "name": "regular-path-empty-walk",
+   "covers": [
+    "regular_path",
+    "nullable"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "c1"
+    ],
+    "targets": [
+     "c1"
+    ],
+    "path": "DERIVED_FROM*",
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "witness_edges": [],
+    "discovered": 1,
+    "certificate": null
+   }
+  },
+  {
+   "name": "regular-path-negative-certificate",
+   "covers": [
+    "regular_path",
+    "certificate",
+    "negative"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "m1"
+    ],
+    "path": "IN/FROM/FROM",
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": false,
+    "certificate": {
+     "kind": "product_states",
+     "bound": null,
+     "states": [
+      {
+       "node": "m1",
+       "state": 0,
+       "length": 0
+      },
+      {
+       "node": "d1",
+       "state": 1,
+       "length": 1
+      },
+      {
+       "node": "s1",
+       "state": 2,
+       "length": 2
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "regular-path-fewest-hops-certificate",
+   "covers": [
+    "regular_path",
+    "certificate",
+    "alternation"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "c1"
+    ],
+    "targets": [
+     "d1"
+    ],
+    "path": "(SUPPORTED_BY|DERIVED_FROM)+/IN",
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "witness_edges": [
+     "x3",
+     "x5"
+    ],
+    "certificate": {
+     "kind": "product_states",
+     "bound": 2,
+     "states": [
+      {
+       "node": "c1",
+       "state": 0,
+       "length": 0
+      },
+      {
+       "node": "c2",
+       "state": 1,
+       "length": 1
+      },
+      {
+       "node": "m2",
+       "state": 2,
+       "length": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "regular-path-budget-never-negative",
+   "covers": [
+    "regular_path",
+    "budget"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "m1"
+    ],
+    "path": "IN/FROM/FROM",
+    "certificate": true,
+    "limits": {
+     "max_expansions": 1
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "found": false,
+    "certificate": null
+   }
+  },
+  {
+   "name": "regular-path-output-limit",
+   "covers": [
+    "regular_path",
+    "reached",
+    "output limit"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "c1"
+    ],
+    "path": "DERIVED_FROM*/SUPPORTED_BY",
+    "answer": "reached",
+    "limits": {
+     "max_results": 1
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "path_reached": {
+     "m1": 2,
+     "m2": 1
+    },
+    "count": 1
+   }
+  },
+  {
+   "name": "regular-path-relation-hierarchy",
+   "covers": [
+    "regular_path",
+    "hierarchies"
+   ],
+   "graph": "G4",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "sample"
+    ],
+    "path": "^USES/^CONTROL_FOR[Experiment]",
+    "answer": "reached"
+   },
+   "expect": {
+    "status": "completed",
+    "path_reached": {
+     "dark": 2,
+     "plain": 2
+    }
+   }
+  },
+  {
+   "name": "regular-path-specialized-relation",
+   "covers": [
+    "regular_path",
+    "hierarchies"
+   ],
+   "graph": "G4",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "sample"
+    ],
+    "path": "^USES/^DARK_CONTROL_FOR",
+    "answer": "reached"
+   },
+   "expect": {
+    "status": "completed",
+    "path_reached": {
+     "dark": 2
+    }
+   }
+  },
+  {
+   "name": "regular-path-unknown-relation",
+   "covers": [
+    "regular_path",
+    "errors"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "c1"
+    ],
+    "path": "CITES+"
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "unknown_relation"
+   }
+  },
+  {
+   "name": "regular-path-malformed",
+   "covers": [
+    "regular_path",
+    "errors"
+   ],
+   "graph": "G8",
+   "request": {
+    "operation": "regular_path",
+    "sources": [
+     "c1"
+    ],
+    "path": "IN|"
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "invalid_request"
    }
   }
  ]

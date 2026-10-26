@@ -495,6 +495,64 @@
               "type": "boolean"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "sources",
+            "targets",
+            "path",
+            "answer",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "regular_path"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_sets"
+            },
+            "sources": {
+              "$ref": "#/$defs/ids"
+            },
+            "targets": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "path": {
+              "$ref": "#/$defs/path_expression"
+            },
+            "answer": {
+              "enum": [
+                "witness",
+                "reached"
+              ]
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          }
         }
       ]
     },
@@ -1477,7 +1535,8 @@
                   "shortest_path",
                   "pattern",
                   "support",
-                  "bottleneck_path"
+                  "bottleneck_path",
+                  "regular_path"
                 ]
               }
             }
@@ -1971,6 +2030,117 @@
             "properties": {
               "operation": {
                 "const": "bottleneck_path"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "regular_path"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/regular_witness_answer"
+                  },
+                  {
+                    "$ref": "#/$defs/regular_reached_answer"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "regular_path"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "regular_path"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              },
+              "operation": {
+                "const": "regular_path"
+              },
+              "answer": {
+                "type": "object",
+                "required": [
+                  "found"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "properties": {
+                  "found": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "interrupted"
+              },
+              "operation": {
+                "const": "regular_path"
+              },
+              "answer": {
+                "type": "object",
+                "required": [
+                  "found"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "properties": {
+                  "found": {
+                    "enum": [
+                      true,
+                      null
+                    ]
+                  }
+                }
               }
             }
           }
@@ -3329,6 +3499,365 @@
         }
       ],
       "description": "value: the witness's weakest hop weight (max_min) or its highest (min_max), null for a path with no hop. bound (interrupted only): no path to a target is strictly better. threshold: what the sources reach by hops strictly better than it holds no target."
+    },
+    "path_expression": {
+      "description": "A regular path expression in normal form (graph_runtime.paths): a step matches one hop in its scope landing on a node of its node types (any when null); seq and alt hold at least two items (alt de-duplicated and sorted by canonical JSON); repeat matches its item min to max times (max null: no bound; never min 1 and max 1).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "scope",
+            "node_types"
+          ],
+          "properties": {
+            "op": {
+              "const": "step"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "node_types": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "items"
+          ],
+          "properties": {
+            "op": {
+              "enum": [
+                "seq",
+                "alt"
+              ]
+            },
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "$ref": "#/$defs/path_expression"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "item",
+            "min",
+            "max"
+          ],
+          "properties": {
+            "op": {
+              "const": "repeat"
+            },
+            "item": {
+              "$ref": "#/$defs/path_expression"
+            },
+            "min": {
+              "$ref": "#/$defs/count"
+            },
+            "max": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "path_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "relation",
+        "direction",
+        "from",
+        "to",
+        "state"
+      ],
+      "properties": {
+        "edge": {
+          "$ref": "#/$defs/id"
+        },
+        "relation": {
+          "$ref": "#/$defs/id"
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "description": "A hop of a regular path witness; state: the automaton state it moves to (the step it matched)."
+    },
+    "path_certificate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "bound",
+            "states"
+          ],
+          "properties": {
+            "kind": {
+              "const": "product_states"
+            },
+            "bound": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "states": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "state",
+                  "length"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "state": {
+                    "$ref": "#/$defs/count"
+                  },
+                  "length": {
+                    "$ref": "#/$defs/count"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Every product state (node, automaton state) the sources reach with fewer than bound hops (all of them when bound is null), by state then node, each with its fewest hops: from a listed state with fewer than bound - 1 hops, every move leads to a listed state at most one hop further, and no listed state ends a match at a target. So no matching walk to a target is shorter than bound (exists at all, when null), and reached lengths are least."
+    },
+    "regular_witness_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "found",
+        "witness",
+        "certificate"
+      ],
+      "properties": {
+        "found": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "witness": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "target",
+                "length",
+                "hops"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/id"
+                },
+                "target": {
+                  "$ref": "#/$defs/id"
+                },
+                "length": {
+                  "$ref": "#/$defs/count"
+                },
+                "hops": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/path_hop"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "$ref": "#/$defs/path_certificate"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "found": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "witness": {
+                "type": "object"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "witness": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "description": "answer witness: one matching walk with the fewest hops from a source to a target."
+    },
+    "regular_reached_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reached",
+        "count",
+        "tree",
+        "certificate"
+      ],
+      "properties": {
+        "reached": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "length",
+              "state"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "length": {
+                "$ref": "#/$defs/count"
+              },
+              "state": {
+                "$ref": "#/$defs/count"
+              }
+            }
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "tree": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "state",
+              "length",
+              "via"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "state": {
+                "$ref": "#/$defs/count"
+              },
+              "length": {
+                "$ref": "#/$defs/count"
+              },
+              "via": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "edge",
+                      "relation",
+                      "direction",
+                      "from",
+                      "from_state"
+                    ],
+                    "properties": {
+                      "edge": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "relation": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "direction": {
+                        "$ref": "#/$defs/direction"
+                      },
+                      "from": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "from_state": {
+                        "$ref": "#/$defs/count"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "certificate": {
+          "$ref": "#/$defs/path_certificate"
+        }
+      },
+      "description": "answer reached: every node (among the targets) a matching walk from a source ends at, with its fewest hops and the accepting state that gives them; tree: the product states on their witnesses, by node then state, each with the hop it was first reached by."
     }
   }
 }

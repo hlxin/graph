@@ -62,6 +62,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.pattern(request, answer)
         elif op == "support":
             check.support(request, answer, status, edges)
+        elif op == "regular_path":
+            check.regular(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -82,6 +84,105 @@ def _ancestors(parents: Mapping[str, Iterable[str]] | None) -> dict[str, set[str
                 todo.extend(up.get(x, ()))
         out[name] = seen
     return out
+
+
+def _path_automaton(expr: Mapping) -> tuple[list, dict, set, bool]:
+    """(steps, follow, accepting, nullable) of a normalized path expression, computed independently of
+    :mod:`graph_runtime.paths`: every repetition is first written out as a tree of copies (``e{m,n}``: m copies, then
+    n - m optional copies; ``e{m,}``: m - 1 copies, then one or more; ``e{0,}``: zero or more), the steps are numbered
+    left to right from 1, and nullable, first, last and follow are computed on that tree by their textbook
+    definitions. ``steps[i]`` is step i's expression (``steps[0]`` is None, the start)."""
+    def expand(x: Mapping) -> tuple:
+        op = x["op"]
+        if op == "step":
+            return ("step", x)
+        if op in ("seq", "alt"):
+            return (op, [expand(i) for i in x["items"]])
+        lo, hi, item = x["min"], x["max"], x["item"]
+        if hi is None:
+            if lo == 0:
+                return ("star", expand(item))
+            return ("seq", [expand(item) for _ in range(lo - 1)] + [("plus", expand(item))])
+        return ("seq", [expand(item) for _ in range(lo)] + [("opt", expand(item)) for _ in range(hi - lo)])
+
+    steps: list = [None]
+
+    def number(t: tuple) -> tuple:
+        if t[0] == "step":
+            steps.append(t[1])
+            return ("step", len(steps) - 1)
+        if t[0] in ("seq", "alt"):
+            return (t[0], [number(c) for c in t[1]])
+        return (t[0], number(t[1]))
+
+    tree = number(expand(expr))
+
+    def nullable(t: tuple) -> bool:
+        kind = t[0]
+        if kind == "step":
+            return False
+        if kind == "seq":
+            return all(nullable(c) for c in t[1])
+        if kind == "alt":
+            return any(nullable(c) for c in t[1])
+        return kind in ("star", "opt") or nullable(t[1])
+
+    def first(t: tuple) -> set:
+        kind = t[0]
+        if kind == "step":
+            return {t[1]}
+        if kind == "alt":
+            return set().union(*(first(c) for c in t[1]))
+        if kind == "seq":
+            out: set = set()
+            for c in t[1]:
+                out |= first(c)
+                if not nullable(c):
+                    break
+            return out
+        return first(t[1])
+
+    def last(t: tuple) -> set:
+        kind = t[0]
+        if kind == "step":
+            return {t[1]}
+        if kind == "alt":
+            return set().union(*(last(c) for c in t[1]))
+        if kind == "seq":
+            out: set = set()
+            for c in reversed(t[1]):
+                out |= last(c)
+                if not nullable(c):
+                    break
+            return out
+        return last(t[1])
+
+    follow: dict[int, set] = {i: set() for i in range(len(steps))}
+
+    def links(t: tuple) -> None:
+        kind = t[0]
+        if kind == "step":
+            return
+        if kind in ("seq", "alt"):
+            for c in t[1]:
+                links(c)
+            if kind == "seq":
+                for i, a in enumerate(t[1]):
+                    for b in t[1][i + 1:]:
+                        for x in last(a):
+                            follow[x] |= first(b)
+                        if not nullable(b):
+                            break
+            return
+        links(t[1])
+        if kind in ("star", "plus"):
+            for x in last(t[1]):
+                follow[x] |= first(t[1])
+
+    links(tree)
+    follow[0] = first(tree)
+    empty = nullable(tree)
+    return steps, follow, last(tree) | ({0} if empty else set()), empty
 
 
 def _is_int(x: Any) -> bool:
@@ -519,6 +620,78 @@ class _Checker:
                              h.get("direction"), allowed)
                 if e.get("causes") != causes(u):
                     self.bad(f"{where}: causes {e.get('causes')!r}, but the records give {causes(u)}")
+
+    def regular(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """A regular path answer against the records and the path's automaton (computed here, independently of the
+        engine): every hop is an input edge in its step's scope landing on its step's types, each state follows the
+        one before it from the start state, and a witness ends in an accepting state at a target. A certificate
+        must be closed below its bound (every move from a listed state leads to a listed state at most one hop
+        further) and list no state that ends a match at a target, except, for reached nodes, ones the answer lists
+        no shorter."""
+        steps, follow, accepting, _ = _path_automaton(request["path"])
+        sources = set(request["sources"])
+        targets = None if request.get("targets") is None else set(request["targets"])
+        ends_at = (lambda v: True) if targets is None else (lambda v: v in targets)
+
+        def scope(i: int) -> set:
+            return {(e["relation"], e["direction"]) for e in steps[i]["scope"]}
+
+        def lands(i: int, v: Any) -> bool:
+            wanted = steps[i]["node_types"]
+            return wanted is None or bool(self.types_of.get(v, set()) & set(wanted))
+
+        def move(where: str, frm: Any, to: Any, hop: Mapping, q: Any, i: Any) -> None:
+            if not _is_int(i) or not 0 < i < len(steps) or not _is_int(q) or i not in follow.get(q, ()):
+                self.bad(f"{where}: state {i!r} does not follow state {q!r} in the path's automaton")
+                return
+            self.hop(where, frm, to, hop.get("edge"), hop.get("relation"), hop.get("direction"), scope(i))
+            if not lands(i, to):
+                self.bad(f"{where}: {to!r} has none of the types step {i} lands on")
+
+        if request["answer"] == "witness":
+            if answer.get("found") is True:
+                w = answer.get("witness") or {}
+                hops = w.get("hops") or []
+                if w.get("source") not in sources or (targets is not None and w.get("target") not in targets):
+                    self.bad("the witness must run from a requested source to a requested target")
+                at, q = w.get("source"), 0
+                for n, h in enumerate(hops):
+                    if h.get("from") != at:
+                        self.bad(f"hop {n} starts at {h.get('from')!r}, not where the previous one ended ({at!r})")
+                    move(f"hop {n}", h.get("from"), h.get("to"), h, q, h.get("state"))
+                    at, q = h.get("to"), h.get("state")
+                if at != w.get("target") or q not in accepting:
+                    self.bad(f"the witness must end at its target in an accepting state, not at {at!r} in state {q!r}")
+            elif answer.get("witness") is not None:
+                self.bad("only a found witness is given")
+        else:
+            tree = {(t["node"], t["state"]): t for t in answer.get("tree") or []}
+            for (node, state), t in tree.items():
+                via = t.get("via")
+                if via is None:
+                    if node not in sources or state != 0:
+                        self.bad(f"tree ({node!r}, {state}): only a source at the start state has no hop")
+                    continue
+                move(f"tree ({node!r}, {state})", via.get("from"), node, via, via.get("from_state"), state)
+            for e in answer.get("reached") or []:
+                if e.get("state") not in accepting or not ends_at(e.get("node")):
+                    self.bad(f"reached {e.get('node')!r}: state {e.get('state')!r} does not end a match there")
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+        bound = cert.get("bound")
+        listed = {(st["node"], st["state"]): st["length"] for st in cert["states"]}
+        reached = {e["node"]: e["length"] for e in answer.get("reached") or []}
+        for (u, q), n in sorted(listed.items(), key=lambda x: (x[0][1], str(x[0][0]))):
+            if q in accepting and ends_at(u) and not (u in reached and reached[u] <= n):
+                self.bad(f"certificate: the state ({u!r}, {q}) ends a match at {u!r}, which the answer does not give")
+            if bound is not None and n + 1 >= bound:
+                continue
+            for i in sorted(follow.get(q, ())):
+                for eid, v, _ in self.hops_from(u, scope(i)):
+                    if lands(i, v) and listed.get((v, i), n + 2) > n + 1:
+                        self.bad(f"certificate: the hop {eid} moves from ({u!r}, {q}) to ({v!r}, {i}), which it does "
+                                 f"not list within {n + 1} hops")
 
     def shortest(self, request: Mapping, answer: Mapping, status: str) -> None:
         if answer.get("certificate") is not None:

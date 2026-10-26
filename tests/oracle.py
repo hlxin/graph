@@ -285,3 +285,108 @@ def bottleneck(nodes, edges, sources, targets, scope, weights, objective="max_mi
                 return t, depth
             seen |= layer
     return None
+
+
+def regular_ends(nodes, edges, sources, path, targets=None, type_parents=None, relation_parents=None,
+                 relations=RELATIONS):
+    """``{node: least hops}`` for every node (within targets) at which a walk from a source matching the normalized
+    path expression ends, by breadth-first search over (node, Brzozowski derivative of the expression) pairs. No
+    automaton and no state numbering: the expression itself is rewritten hop by hop, kept finite by simplifying
+    sequences and alternations (an alternation is a set). Shares no code with the engine or the verifier."""
+    types = {n["id"]: set(n["types"]) for n in closed_nodes(nodes, type_parents)}
+    names = set(relations) | {e["relation"] for e in edges}
+    steps = []
+
+    def term(x):
+        op = x["op"]
+        if op == "step":
+            scope = expand_scope(x["scope"], relation_parents or {}, names)
+            steps.append(({(s["relation"], s["direction"]) for s in scope},
+                          None if x["node_types"] is None else set(x["node_types"])))
+            return ("step", len(steps) - 1)
+        if op == "seq":
+            return seq([term(i) for i in x["items"]])
+        if op == "alt":
+            return alt([term(i) for i in x["items"]])
+        return ("rep", term(x["item"]), x["min"], x["max"])
+
+    EPS, EMPTY = ("eps",), ("empty",)
+
+    def seq(items):
+        flat = []
+        for i in items:
+            if i == EMPTY:
+                return EMPTY
+            if i == EPS:
+                continue
+            flat.extend(i[1] if i[0] == "seq" else [i])
+        return EPS if not flat else flat[0] if len(flat) == 1 else ("seq", tuple(flat))
+
+    def alt(items):
+        flat = set()
+        for i in items:
+            if i != EMPTY:
+                flat |= set(i[1]) if i[0] == "alt" else {i}
+        return EMPTY if not flat else next(iter(flat)) if len(flat) == 1 else ("alt", frozenset(flat))
+
+    def rep(x, lo, hi):
+        if hi == 0 or x == EPS:
+            return EPS
+        if x == EMPTY:
+            return EPS if lo == 0 else EMPTY
+        return ("rep", x, lo, hi)
+
+    def nullable(e):
+        kind = e[0]
+        if kind in ("eps",):
+            return True
+        if kind in ("empty", "step"):
+            return False
+        if kind == "seq":
+            return all(nullable(i) for i in e[1])
+        if kind == "alt":
+            return any(nullable(i) for i in e[1])
+        return e[2] == 0 or nullable(e[1])
+
+    def derive(e, match):
+        kind = e[0]
+        if kind in ("eps", "empty"):
+            return EMPTY
+        if kind == "step":
+            return EPS if match(e[1]) else EMPTY
+        if kind == "seq":
+            head, rest = e[1][0], seq(list(e[1][1:]))
+            out = [seq([derive(head, match), rest])]
+            if nullable(head):
+                out.append(derive(rest, match))
+            return alt(out)
+        if kind == "alt":
+            return alt([derive(i, match) for i in e[1]])
+        x, lo, hi = e[1], e[2], e[3]
+        return seq([derive(x, match), rep(x, max(lo - 1, 0), None if hi is None else hi - 1)])
+
+    start = term(path)
+    hops = []
+    for e in edges:
+        hops.append((e["source"], e["target"], e["relation"], "forward"))
+        hops.append((e["target"], e["source"], e["relation"], "reverse"))
+    out = {}
+    layer = {(s, start) for s in sources}
+    seen = set(layer)
+    depth = 0
+    while layer:
+        for v, e in layer:
+            if nullable(e) and (targets is None or v in targets) and v not in out:
+                out[v] = depth
+        nxt = set()
+        for u, e in layer:
+            for a, b, rel, direction in hops:
+                if a != u:
+                    continue
+                d = derive(e, lambda i: (rel, direction) in steps[i][0]
+                           and (steps[i][1] is None or bool(types[b] & steps[i][1])))
+                if d != EMPTY and (b, d) not in seen:
+                    seen.add((b, d))
+                    nxt.add((b, d))
+        layer, depth = nxt, depth + 1
+    return out

@@ -20,6 +20,9 @@ states consistently, and required costs only for edges actually in scope. Revisi
   certificate (section 7)
 - the `bottleneck_path` operation: the path whose weakest edge is strongest, or whose highest edge is lowest, with
   the fewest hops among those, certified by a threshold closure (section 4)
+- the `regular_path` operation: walks whose hops match a regular expression of steps (regular path queries), one
+  with the fewest hops or every node reached, certified by the closed product states of the expression's automaton
+  (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -99,6 +102,7 @@ no wildcard: a scope lists what it follows.
 | `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
 | `bottleneck_path` | `sources`, `targets`, `scope`, `weights` (as costs, but any finite number), `objective` (`max_min`, the default, or `min_max`), `certificate` (default false) | `max_expansions` |
+| `regular_path` | `sources`, `path` (a path expression: text, a list or a tree, normalized to the tree), `targets` (null: any node), `answer` (`witness`, the default, or `reached`), `certificate` (default false) | `max_expansions`, `max_results` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
 normalized request always states it.
@@ -252,6 +256,57 @@ With `certificate: true`, the answer carries its proof. A **threshold** (`{"kind
 no target. It proves that no path is strictly better than the threshold: the value, or the bound. A **closure**
 proves a complete negative, as for shortest paths.
 
+**Regular path.** Finds walks whose hops match a regular expression of steps: the regular path queries of
+Mendelzon and Wood (1995), which SPARQL 1.1 property paths and GQL path patterns also write. One request replaces a
+family of typed paths (any number of repetitions, alternatives) and of reachability questions (a scope that changes
+along the walk).
+
+- **Expressions.** A `step` matches one hop: an edge in its scope (with the relation hierarchy), followed in its
+  direction, landing on a node of its `node_types` (any node when null). `seq` matches its items one after another,
+  `alt` any one of them, and `repeat` its item `min` to `max` times (`max` null: no bound). The normal form is a
+  tree: `{"op": "step", "scope", "node_types"}`, `{"op": "seq" | "alt", "items"}` (at least two; nested ones
+  flattened; an alternation de-duplicated and sorted by canonical JSON, so `A|B` and `B|A` are one request) and
+  `{"op": "repeat", "item", "min", "max"}` (never `{1, 1}`). A request may give the tree, a list (a sequence) or
+  text, also for any part of a tree: `CITES+/^SUPPORTS[Claim]` is one or more CITES hops forward, then one SUPPORTS
+  hop in reverse landing on a Claim. The text syntax is `|` (alternation), `/` (sequence), postfix `*`, `+`, `?`,
+  `{m}`, `{m,}` and `{m,n}`, parentheses, `^` before a relation (reverse) and `[T1,T2]` after it (node types); a name
+  is letters, digits and `_ . : -`, or any text between backquotes. An expression written out (below) has at most
+  4,096 steps.
+- **The automaton.** Each expression has a Glushkov automaton, without empty moves. State 0 is the start; state i
+  (from 1) means the i-th step was the last hop matched. Steps are numbered in the order they are written once
+  bounded repetitions are written out: `e{m,n}` is m copies of `e` then n - m optional copies, `e{m,}` (m > 0) is
+  m - 1 copies then `e+`, and `e{0,}` is `e*`. The states a hop can move to from state q are those whose step may come
+  next; a walk matches when it ends in an accepting state (a step that may come last, or the start when the
+  expression matches the empty walk). States appear in answers and certificates, so this numbering is part of the
+  contract.
+- **Search.** Breadth-first over product states (node, automaton state), from every source at state 0, sources in
+  ascending ID. A state is expanded once; a state from which no step may follow is not expanded. From a node, its
+  hops in scope of any step that may follow are read once, in the canonical order; each hop moves to every state
+  whose step it matches, in ascending state order. The first discovery of a product state has its fewest hops.
+- **`answer: witness`** finds one walk with the fewest hops from a source to a target (any node when `targets` is
+  null), stopping at the first accepting product state at a target. When the expression matches the empty walk, a
+  source that is a target is the answer with no hop. Answer: `{"found", "witness": {"source", "target", "length",
+  "hops": [{"edge", "relation", "direction", "from", "to", "state"}]}, "certificate"}`; each hop names the state it
+  moves to.
+- **`answer: reached`** lists every node (within `targets`, when given) at which a matching walk from a source
+  ends, with its fewest hops and the accepting state that gives them. `max_results` bounds the nodes listed; more is
+  an `output_limit` interruption, the listed ones chosen in discovery order. `tree` holds the product states on the
+  listed nodes' witnesses, by node then state, each with the hop it was first reached by (`via`: `{"edge",
+  "relation", "direction", "from", "from_state"}`, null for a source at the start), and `result.path_to(node)`
+  rebuilds a witness from it. Without a certificate, a search with targets stops once every target is listed.
+  Answer: `{"reached": [{"node", "length", "state"}], "count", "tree": [{"node", "state", "length", "via"}],
+  "certificate"}`.
+
+With `certificate: true`, a complete answer that claims more than its witnesses carries its proof: `{"kind":
+"product_states", "bound", "states": [{"node", "state", "length"}]}`, the product states found with fewer than
+`bound` hops (all of them when `bound` is null), by state then node ID, each with its fewest hops. Every source is
+listed at state 0 with no hop. From every listed state with fewer than `bound` - 1 hops, every move leads to a listed
+state at most one hop further, and no listed state ends a match at a target, except at a node a `reached` answer
+lists no further away. By induction on the hops, no matching walk to a target is shorter than `bound` (none exists
+when `bound` is null), and every listed fewest-hop count is exact. A found witness of length L carries `bound` L; a
+complete negative and a complete `reached` answer carry `bound` null; a witness with no hop and an interrupted answer
+carry none.
+
 **Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
 SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for
 example from a claim to its evidence items, or from an item to the source it cites.
@@ -298,9 +353,8 @@ Answer: `{"failed", "lost": [{"node", "supports", "standing", "failing": [hop], 
   the literature or the physical world.
 - **Interrupted.** What the answer lists is valid, each item with its witness, and listed depths are least depths.
   Nothing is certified absent: `found` is `null` (unknown), or `true` when a witness was already found.
-  `result.reachable(x)`, `result.affected(x)`, `result.found` and `result.exists` (patterns) give `False` only for a
-  complete answer, and `None` when the
-  answer cannot say.
+  `result.reachable(x)` (reachability, and a regular path's `reached` answer), `result.affected(x)`, `result.found`
+  and `result.exists` (patterns) give `False` only for a complete answer, and `None` when the answer cannot say.
 - **Interrupted shortest path.** A tentative witness has `optimal: false`. `lower_bound` (with `lower_bound_exact`
   in rational mode) brackets the minimum: if a target is reachable at all, the minimum cost lies in
   `[lower_bound, cost]`. In rational mode use the exact fields for this comparison; the displayed floats may round.
@@ -344,10 +398,14 @@ The result contract reports how an execution ended. It carries no scientific ans
   - for support, everything: it recomputes what stands before and after from the records, by re-evaluating each
     node's rule until nothing changes rather than by the engine's counting, and compares every listed node, count,
     failing hop and cause
+  - for a regular path, every hop of a witness or of the tree against the path's automaton, which it builds itself
+    (writing repetitions out first, then nullable, first, last and follow sets by their textbook definitions): each
+    state may follow the one before it, each hop is in its step's scope and lands on its step's types, and a witness
+    or a reached node ends in an accepting state; and a certificate's closure below its bound
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 70 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 91 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -367,13 +425,18 @@ after the records were edited, without searching again.
   projection. When the vocabulary (relations, node types, hierarchies) changed, the full check runs instead.
 - `revalidate_all(results, old, new)` revalidates every result with one diff.
 
+A regular path answer holds while its witness (or its tree) is still made of hops of the new projection, each in its
+step's scope and landing on its step's types, and its certificate is unbroken: an added move from a listed state
+below the bound must reach a listed state no further, and end no match the answer lacks. A listed state carries no
+witness of its own, so an edit that breaks the certificate leaves the answer unknown rather than refuted.
+
 The verdict is one of three:
 
 | Verdict | Meaning | Reasons |
 | --- | --- | --- |
 | `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
 | `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
-| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support), `no_certificate` (a negative or optimum without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
+| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
 
 Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",
 "operation", "result_id", "request_id", "from_projection", "to_projection", "verdict", "reasons", "reason_count",

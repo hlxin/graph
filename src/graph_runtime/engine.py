@@ -26,6 +26,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
+from . import paths
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -248,7 +249,13 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = set(_nodes(p, req["targets"], "targets"))
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
-        plan.weight = _costs(p, req["weights"], plan.fwd, plan.rev, "weights")[0]
+        plan.weight = _costs(p, req["weights"], plan.fwd, plan.rev, "weights", scaled=False)
+    elif op == "regular_path":
+        plan.certificate, plan.answer = req["certificate"], req["answer"]
+        plan.sources = _nodes(p, req["sources"], "sources")
+        plan.targets = None if req["targets"] is None else set(_nodes(p, req["targets"], "targets"))
+        plan.auto = paths.automaton(req["path"])
+        plan.states, plan.step_of = _path_states(p, plan.auto)
     elif op == "support":
         plan.failed = _nodes(p, req["failed"], "failed")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
@@ -258,8 +265,39 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = set(_nodes(p, req["targets"], "targets"))
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
-        plan.given, plan.cost, plan.zero, plan.rational = _costs(p, req["costs"], plan.fwd, plan.rev)
+        plan.cost = _costs(p, req["costs"], plan.fwd, plan.rev)
+        plan.rational = plan.cost.rational
     return plan
+
+
+def _path_states(p: Projection, auto: paths.Automaton) -> tuple[list, list]:
+    """For each state q of a path automaton that has moves, what one hop from it can do: ``(sides, by_relation)``,
+    where ``sides`` are the hops of every step it can move to (:func:`_sides`), and ``by_relation[flag][r]`` lists
+    ``(state, type mask)`` for the steps a hop of relation r in direction flag (0 forward, 1 reverse) matches, in
+    ascending state order. A state with no moves has None. Also each state's step as ``(fwd, rev, type mask)`` (None
+    for the start). Each distinct step is checked against the projection once (unknown relations and types fail as
+    for every scope)."""
+    compiled: dict[int, tuple] = {}
+    step_of: list = [None]
+    for i, step in enumerate(auto.steps[1:], 1):
+        key = id(step)                    # a step written out several times by a bounded repetition: one object
+        if key not in compiled:
+            fwd, rev = _scope(p, step["scope"], f"path step {i} scope")
+            mask = None if step["node_types"] is None else _types(p, step["node_types"], f"path step {i} node_types")
+            compiled[key] = (fwd, rev, mask)
+        step_of.append(compiled[key])
+    relations = range(len(p._relations))
+    out: list = []
+    for q, moves in enumerate(auto.follow):
+        if not moves:
+            out.append(None)
+            continue
+        by_relation = tuple(tuple(tuple((i, step_of[i][2]) for i in moves if step_of[i][flag][r]) for r in relations)
+                            for flag in (0, 1))
+        fwd = [bool(x) for x in by_relation[0]]
+        rev = [bool(x) for x in by_relation[1]]
+        out.append((_sides(p, fwd, rev), by_relation))
+    return out, step_of
 
 
 def _node_filter(p: Projection, spec: Any, where: str) -> tuple[int | None, set[int] | None]:
@@ -301,43 +339,92 @@ def _types(p: Projection, types: Any, field: str) -> int:
     return mask
 
 
-def _costs(p: Projection, costs: Any, fwd: list[bool], rev: list[bool],
-           field: str = "costs") -> tuple[list, list, Any, bool]:
-    """(the cost the request gives each edge in scope, its exact value, zero, rational): integers are added as
-    integers; when the request gives any float, every cost is added as an exact fraction instead, so that no sum is
-    rounded and every comparison is exact. ``field`` names the table in messages (bottleneck weights use it too)."""
+class _Costs:
+    """The costs (or weights) a request gives the edges in scope, compiled for a search.
+
+    ``edge`` (a table ``by_edge``: by edge index) or ``rel`` (``by_relation``: by relation index) holds the value a
+    search computes with, read as ``edge[ei]`` or ``rel[edge_rel[ei]]``. Integers are used as they are. When the
+    request gives any float (``rational``), every cost is an exact rational with a power-of-two denominator, so each
+    is held as an integer count of ``1/scale``, where ``scale`` is the largest denominator: sums and comparisons of
+    these integers are those of the exact values, without the cost of fractions, and :meth:`exact` turns one back.
+    Weights (``scaled`` false) are only compared, so they are kept as given. ``costs[ei]`` is the exact value of an
+    edge's cost, and :meth:`given` the number the request wrote for it."""
+
+    __slots__ = ("edge", "rel", "edge_rel", "given_edge", "given_rel", "rational", "scale")
+
+    def __init__(self, p: Projection, table: Mapping, given_edge: list | None, scaled: bool):
+        """``given_edge``: a ``by_edge`` table's values by edge index (None for a ``by_relation`` table)."""
+        self.edge_rel, self.rational, self.scale = p._edge_rel, False, 1
+        self.given_edge = given_edge
+        self.given_rel = None if given_edge is not None else [table.get(r) for r in p._relations]
+        values = given_edge if given_edge is not None else self.given_rel
+        if scaled and any(type(x) is float for x in table.values()):
+            ratio = {x: x.as_integer_ratio() for x in set(table.values())}
+            self.scale = scale = max(d for _, d in ratio.values())
+            exact = {x: n * (scale // d) for x, (n, d) in ratio.items()}
+            values = [None if x is None else exact[x] for x in values]
+            self.rational = True
+        self.edge = values if given_edge is not None else None
+        self.rel = values if given_edge is None else None
+
+    def given(self, ei: int) -> Any:
+        """The cost (or weight) the request wrote for edge ``ei``."""
+        return self.given_edge[ei] if self.given_edge is not None else self.given_rel[self.edge_rel[ei]]
+
+    def exact(self, x: Any) -> Any:
+        """A sum of search values as its exact number: an integer, or in rational mode a fraction."""
+        return Fraction(x, self.scale) if self.rational else x
+
+    def __getitem__(self, ei: int) -> Any:
+        """The exact cost of edge ``ei`` (what revalidation compares certificate values with)."""
+        x = self.edge[ei] if self.edge is not None else self.rel[self.edge_rel[ei]]
+        return Fraction(x, self.scale) if self.rational else x
+
+
+def _costs(p: Projection, costs: Any, fwd: list[bool], rev: list[bool], field: str = "costs",
+           scaled: bool = True) -> _Costs:
+    """The request's cost table checked against the projection and compiled (:class:`_Costs`): every relation or edge
+    it names exists, and every edge in scope has a cost. Integers are added as integers; when the request gives any
+    float, every cost is added exactly as a rational instead, so that no sum is rounded and every comparison is exact.
+    ``field`` names the table in messages; bottleneck weights (``scaled`` false) use it too.
+
+    The checks read the per-relation edge counts (:func:`_relation_counts`) and the table, not every edge in scope: a
+    ``by_relation`` table is compiled in time proportional to the relations, a ``by_edge`` one to its entries."""
     (kind, table), = costs.items()
-    rel = p._edge_rel
-    in_scope = [ei for ei in range(len(p._edge_ids)) if fwd[rel[ei]] or rev[rel[ei]]]
-    given: list = [None] * len(p._edge_ids)
+    counts = _relation_counts(p)
+    scoped = [r for r in range(len(counts)) if counts[r] and (fwd[r] or rev[r])]
     if kind == "by_relation":
         unknown = sorted(r for r in table if r not in p._rel_index)
         if unknown:
             raise RequestError(FAILED, "unknown_relation", f"{field}.by_relation names relations the projection does "
                                f"not declare: {unknown}", {"field": field, "relations": unknown})
-        scoped = sorted({p._relations[rel[ei]] for ei in in_scope})
-        missing = [r for r in scoped if r not in table]
+        missing = [p._relations[r] for r in scoped if p._relations[r] not in table]
         if missing:
             raise RequestError(FAILED, "missing_cost", f"{field}.by_relation gives nothing for the relations in "
                                f"scope {missing}", {"field": field, "relations": missing})
-        for ei in in_scope:
-            given[ei] = table[p._relations[rel[ei]]]
-    else:
-        unknown = sorted(e for e in table if e not in p._edge_index)
-        if unknown:
-            raise RequestError(FAILED, "unknown_edge", f"{field}.by_edge names {len(unknown)} edge(s) the "
-                               f"projection does not hold: {unknown[:10]}", {"field": field, "edges": unknown[:100]})
-        missing = [p._edge_ids[ei] for ei in in_scope if p._edge_ids[ei] not in table]
-        if missing:
-            raise RequestError(FAILED, "missing_cost", f"{field}.by_edge gives nothing for {len(missing)} edge(s) "
-                               f"in scope: {missing[:10]}", {"field": field, "edges": missing[:100],
-                                                             "count": len(missing)})
-        for ei in in_scope:
-            given[ei] = table[p._edge_ids[ei]]
-    rational = any(isinstance(x, float) for x in table.values())
-    if not rational:
-        return given, given, 0, False
-    return given, [None if x is None else Fraction(x) for x in given], Fraction(0), True
+        return _Costs(p, table, None, scaled)
+    index, rel = p._edge_index, p._edge_rel
+    given: list = [None] * len(p._edge_ids)
+    covered, unknown = 0, []
+    for e, x in table.items():                                 # one pass: unknown edges, values, edges in scope
+        ei = index.get(e)
+        if ei is None:
+            unknown.append(e)
+            continue
+        given[ei] = x
+        if fwd[rel[ei]] or rev[rel[ei]]:
+            covered += 1
+    if unknown:
+        unknown.sort()
+        raise RequestError(FAILED, "unknown_edge", f"{field}.by_edge names {len(unknown)} edge(s) the "
+                           f"projection does not hold: {unknown[:10]}", {"field": field, "edges": unknown[:100]})
+    if covered < sum(counts[r] for r in scoped):               # some edge in scope has no cost: name them
+        missing = [p._edge_ids[ei] for ei in range(len(p._edge_ids))
+                   if (fwd[rel[ei]] or rev[rel[ei]]) and given[ei] is None]
+        raise RequestError(FAILED, "missing_cost", f"{field}.by_edge gives nothing for {len(missing)} edge(s) "
+                           f"in scope: {missing[:10]}", {"field": field, "edges": missing[:100],
+                                                         "count": len(missing)})
+    return _Costs(p, table, given, scaled)
 
 
 def _hops(p: Projection, u: int, fwd: list[bool], rev: list[bool]) -> Iterator[tuple[int, int, int]]:
@@ -361,6 +448,65 @@ def _back_hops(p: Projection, v: int, fwd: list[bool], rev: list[bool]) -> Itera
     for ei in p._out[v]:
         if rev[rel[ei]]:
             yield ei, dst[ei], 1
+
+
+_MEMO_LISTS = 16                         # compiled edge lists a projection keeps (by end and relation selection)
+
+
+def _relation_counts(p: Projection) -> tuple[int, ...]:
+    """How many edges each relation has (by relation index), counted once per projection."""
+    counts = p._memo.get("relation_counts")
+    if counts is None:
+        tally = [0] * len(p._relations)
+        for r in p._edge_rel:
+            tally[r] += 1
+        counts = p._memo["relation_counts"] = tuple(tally)
+    return counts
+
+
+def _edge_lists(p: Projection, marks: list[bool], incoming: bool) -> Any:
+    """Per node, the edges at one of its ends whose relation ``marks`` selects, in ascending edge ID: the edges it is
+    the source of (``incoming`` false) or the target of. These are a node's hops in one direction, compiled once and
+    kept on the projection, so that a search reads plain lists rather than filtering every edge it meets.
+
+    A selection of every relation the edges use is the projection's own adjacency, and a selection of none is empty
+    lists, both shared at no cost. Any other selection is a list whose entries stay None until a search first reads
+    that node and fills it (``lists[u] = [ei for ei in base[u] if marks[rel[ei]]]``): a search that reaches a few
+    nodes of a large projection compiles only those."""
+    memo = p._memo
+    key = ("in" if incoming else "out", tuple(marks))
+    kept = memo.setdefault("edge_lists", {})
+    lists = kept.get(key)
+    if lists is None:
+        counts = _relation_counts(p)
+        chosen = [marks[r] for r in range(len(counts)) if counts[r]]
+        if all(chosen):
+            lists = p._in if incoming else p._out
+        elif not any(chosen):
+            lists = memo.get("no_edges")
+            if lists is None:
+                lists = memo["no_edges"] = ((),) * len(p._node_ids)
+        else:
+            lists = [None] * len(p._node_ids)
+        while len(kept) >= _MEMO_LISTS:                       # the oldest selection goes first
+            kept.pop(next(iter(kept)), None)
+        kept[key] = lists
+    return lists
+
+
+def _sides(p: Projection, fwd: list[bool], rev: list[bool]) -> tuple[tuple, tuple]:
+    """A scope's hops from a node, as two sides to read in order: ``(lists, base, marks, ends, flag)`` for its
+    forward hops (the edges it is the source of, leading to their targets) and then its reverse hops. ``lists[u]`` is
+    None until filled from ``base[u]`` by ``marks`` (:func:`_edge_lists`); ``ends[ei]`` is the node a hop leads to."""
+    return ((_edge_lists(p, fwd, False), p._out, fwd, p._edge_dst, 0),
+            (_edge_lists(p, rev, True), p._in, rev, p._edge_src, 1))
+
+
+def _back_sides(p: Projection, fwd: list[bool], rev: list[bool]) -> tuple[tuple, tuple]:
+    """The hops of :func:`_sides` read backwards: for a node v, the hops in scope that lead to it, as ``(lists, base,
+    marks, ends, flag)`` where ``ends[ei]`` is the node whose hop it is (the order of :func:`_back_hops`)."""
+    return ((_edge_lists(p, fwd, True), p._in, fwd, p._edge_src, 0),
+            (_edge_lists(p, rev, False), p._out, rev, p._edge_dst, 1))
 
 
 def _via(p: Projection, u: int, ei: int, flag: int) -> dict:
@@ -389,8 +535,9 @@ def _search_bfs(p: Projection, plan: SimpleNamespace, ctl: _Control, strict: boo
                 return st
             depth[s] = 0
             order.append(s)
-    examined = 0
-    while queue and st.interruption is None:
+    sides, rel = _sides(p, plan.fwd, plan.rev), p._edge_rel
+    examined, full = 0, False
+    while queue and not full:
         u = queue.popleft()
         d = level[u]
         if max_depth is not None and d >= max_depth:
@@ -399,28 +546,44 @@ def _search_bfs(p: Projection, plan: SimpleNamespace, ctl: _Control, strict: boo
         if why:
             st.interruption = why
             break
-        for ei, v, flag in _hops(p, u, plan.fwd, plan.rev):
-            examined += 1
-            if v in depth:
-                continue
-            if len(order) >= cap:
+        d += 1
+        for lists, base, marks, ends, flag in sides:
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                if v in depth:
+                    continue
+                if len(order) >= cap:
+                    full = True
+                    examined -= len(hs) - 1 - hs.index(ei)        # the hops after this one were not examined
+                    break
+                depth[v] = d
+                parent[v] = (u, ei, flag)
+                order.append(v)
+                if v not in level:
+                    level[v] = d
+                    queue.append(v)
+            if full:
                 st.interruption = "output_limit"
                 break
-            depth[v] = d + 1
-            parent[v] = (u, ei, flag)
-            order.append(v)
-            if v not in level:
-                level[v] = d + 1
-                queue.append(v)
     st.examined, st.discovered = examined, len(level)
     return st
 
 
 def _answer_bfs(p: Projection, plan: SimpleNamespace, st: SimpleNamespace, strict: bool) -> tuple[dict, list[str]]:
+    ids, eids, names, rel, depth, parent = p._node_ids, p._edge_ids, p._relations, p._edge_rel, st.depth, st.parent
     items = []
     for v in sorted(st.order):
-        par = st.parent.get(v)
-        items.append({"node": p._node_ids[v], "depth": st.depth[v], "via": None if par is None else _via(p, *par)})
+        par = parent.get(v)
+        if par is None:
+            items.append({"node": ids[v], "depth": depth[v], "via": None})
+        else:                                         # _via, written out: this loop runs once per listed node
+            u, ei, flag = par
+            items.append({"node": ids[v], "depth": depth[v], "via": {
+                "edge": eids[ei], "relation": names[rel[ei]], "direction": _DIRECTION[flag], "from": ids[u]}})
     if strict:
         answer = {"changed": [p._node_ids[s] for s in plan.sources], "affected": items, "count": len(items)}
     else:
@@ -458,7 +621,8 @@ def _search_typed(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simple
     for s in plan.sources:
         seen[s * stride] = None
         queue.append(s * stride)
-    examined = 0
+    sides = [_sides(p, fwd, rev) for fwd, rev, _ in positions]
+    rel, examined = p._edge_rel, 0
     while queue and st.goal is None:
         k = queue.popleft()
         u, i = divmod(k, stride)
@@ -466,19 +630,27 @@ def _search_typed(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simple
         if why:
             st.interruption = why
             break
-        fwd, rev, tmask = positions[i]
-        for ei, v, flag in _hops(p, u, fwd, rev):
-            examined += 1
-            if tmask is not None and not mask_of[v] & tmask:
-                continue
-            nk = v * stride + i + 1
-            if nk in seen:
-                continue
-            seen[nk] = (k, ei, flag)
-            if i + 1 < last:
-                queue.append(nk)
-            elif targets is None or v in targets:
-                st.goal = nk
+        tmask, nxt = positions[i][2], i + 1
+        for lists, base, marks, ends, flag in sides[i]:
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                if tmask is not None and not mask_of[v] & tmask:
+                    continue
+                nk = v * stride + nxt
+                if nk in seen:
+                    continue
+                seen[nk] = (k, ei, flag)
+                if nxt < last:
+                    queue.append(nk)
+                elif targets is None or v in targets:
+                    st.goal = nk
+                    examined -= len(hs) - 1 - hs.index(ei)        # the hops after this one were not examined
+                    break
+            if st.goal is not None:
                 break
     st.examined, st.discovered = examined, len(seen)
     return st
@@ -509,7 +681,8 @@ def _answer_typed(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> 
 # ---------------------------------------------------------------------------------------------- shortest path
 def _search_shortest(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
     """Dijkstra's algorithm from every source at once, with exact arithmetic (:func:`_costs`). The first target
-    settled is the answer: no other target costs less, because every cost is non-negative."""
+    settled is the answer: no other target costs less, because every cost is non-negative. Distances are held as the
+    cost table's search values (integers; in rational mode, counts of ``1/scale``)."""
     dist: dict[int, Any] = {}
     parent: dict[int, tuple[int, int, int]] = {}
     settled: set[int] = set()
@@ -518,20 +691,22 @@ def _search_shortest(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Sim
     at_zero = [s for s in plan.sources if s in plan.targets]
     if at_zero:                                   # a source that is a target costs nothing to reach
         st.goal = at_zero[0]
-        dist[st.goal] = plan.zero
+        dist[st.goal] = 0
         st.discovered = len(plan.sources)
         return st
-    heap = [(plan.zero, s) for s in plan.sources]
+    heap = [(0, s) for s in plan.sources]
     for s in plan.sources:
-        dist[s] = plan.zero
+        dist[s] = 0
     heapq.heapify(heap)
-    cost = plan.cost
+    by_edge, by_rel, rel = plan.cost.edge, plan.cost.rel, p._edge_rel
+    sides, targets = _sides(p, plan.fwd, plan.rev), plan.targets
+    push, pop = heapq.heappush, heapq.heappop
     examined = 0
     while heap:
-        c, u = heapq.heappop(heap)
+        c, u = pop(heap)
         if u in settled or c > dist[u]:
             continue                              # an entry superseded by a cheaper one
-        if u in plan.targets:
+        if u in targets:
             st.goal = u
             break
         why = ctl.stop()
@@ -539,16 +714,21 @@ def _search_shortest(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Sim
             st.interruption, st.lower = why, c    # every node not yet settled costs at least c
             break
         settled.add(u)
-        for ei, v, flag in _hops(p, u, plan.fwd, plan.rev):
-            examined += 1
-            if v in settled:
-                continue
-            nc = c + cost[ei]
-            old = dist.get(v)
-            if old is None or nc < old:
-                dist[v] = nc
-                parent[v] = (u, ei, flag)
-                heapq.heappush(heap, (nc, v))
+        for lists, base, marks, ends, flag in sides:
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                if v in settled:
+                    continue
+                nc = c + (by_edge[ei] if by_edge is not None else by_rel[rel[ei]])
+                old = dist.get(v)
+                if old is None or nc < old:
+                    dist[v] = nc
+                    parent[v] = (u, ei, flag)
+                    push(heap, (nc, v))
     st.examined, st.discovered = examined, len(dist)
     return st
 
@@ -568,20 +748,20 @@ def _number(x: Any, rational: bool) -> tuple[Any, str | None]:
 
 def _answer_shortest(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
     def costed(field: str, x: Any) -> dict:
-        value, exact = _number(x, plan.rational)
+        value, exact = _number(plan.cost.exact(x), plan.rational)
         return {field: value, **({f"{field}_exact": exact} if plan.rational else {})}
 
     def witness(t: int) -> dict:
         hops, v = [], t
         while v in st.parent:
             u, ei, flag = st.parent[v]
-            hops.append({**_via(p, u, ei, flag), "to": p._node_ids[v], "cost": plan.given[ei]})
+            hops.append({**_via(p, u, ei, flag), "to": p._node_ids[v], "cost": plan.cost.given(ei)})
             v = u
         hops.reverse()
         return {"source": p._node_ids[v], "target": p._node_ids[t], "length": len(hops), "hops": hops}
 
     def exact(x: Any) -> Any:
-        return _number(x, True)[1] if plan.rational else x
+        return _number(plan.cost.exact(x), True)[1] if plan.rational else x
 
     def potentials(bound: Any) -> dict | None:
         """Settled distances below ``bound``: every other node counts ``bound``. No hop in scope lowers them (a node
@@ -634,26 +814,32 @@ def _search_pattern(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
     cand: list[set[int]] = [set() for _ in plan.vars]
     cand[0] = root
     found: list[dict[int, list]] = []
-    mask_of = p._node_mask
+    mask_of, rel = p._node_mask, p._edge_rel
     examined = 0
     for s in plan.steps:                                     # 1: discover, downward
         hops: dict[int, list] = {}
         child = cand[s.child]
+        edges, tmask, nodes, fwd = s.edges, s.tmask, s.nodes, s.fwd
+        sides = _sides(p, s.fwd, s.rev)
         for u in sorted(cand[s.parent]):
             why = ctl.stop()
             if why:
                 st.interruption, st.examined = why, examined
                 st.discovered = sum(len(c) for c in cand)
                 return st
-            kept, seen = [], set()
-            for ei, w, flag in _hops(p, u, s.fwd, s.rev):
-                examined += 1
-                # a self-loop in a scope of both directions joins u to itself twice by one edge: one row, not two
-                if (s.edges is None or ei in s.edges) and (s.tmask is None or mask_of[w] & s.tmask) \
-                        and (s.nodes is None or w in s.nodes) and (ei, w) not in seen:
-                    seen.add((ei, w))
-                    kept.append((ei, w, flag))
-                    child.add(w)
+            kept = []
+            for lists, base, marks, ends, flag in sides:
+                hs = lists[u]
+                if hs is None:
+                    hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+                examined += len(hs)
+                for ei in hs:
+                    w = ends[ei]
+                    # a self-loop in a scope of both directions joins u to itself twice by one edge: one row, not two
+                    if (edges is None or ei in edges) and (tmask is None or mask_of[w] & tmask) \
+                            and (nodes is None or w in nodes) and not (flag and w == u and fwd[rel[ei]]):
+                        kept.append((ei, w, flag))
+                        child.add(w)
             hops[u] = kept
         found.append(hops)
     st.scanned = [len(c) for c in cand]
@@ -771,12 +957,13 @@ def _search_bottleneck(p: Projection, plan: SimpleNamespace, ctl: _Control) -> S
     for s in plan.sources:
         val[s] = start
     heapq.heapify(heap)
-    weight, examined = plan.weight, 0
+    by_edge, by_rel, rel = plan.weight.edge, plan.weight.rel, p._edge_rel
+    sides, targets, examined = _sides(p, plan.fwd, plan.rev), plan.targets, 0
     while heap:                                   # 1: the best value
         k, u = heapq.heappop(heap)
         if u in settled or k != key(val[u]):
             continue                              # an entry superseded by a better one
-        if u in plan.targets:
+        if u in targets:
             st.goal = u
             break
         why = ctl.stop()
@@ -784,19 +971,24 @@ def _search_bottleneck(p: Projection, plan: SimpleNamespace, ctl: _Control) -> S
             st.interruption, st.bound = why, (None if val[u] == start else val[u])
             break
         settled.add(u)
-        for ei, v, flag in _hops(p, u, plan.fwd, plan.rev):
-            examined += 1
-            if v in settled:
-                continue
-            nv = combine(val[u], weight[ei])
-            if v not in val or better(nv, val[v]):
-                val[v] = nv
-                parent[v] = (u, ei, flag)
-                heapq.heappush(heap, (key(nv), v))
+        vu = val[u]
+        for lists, base, marks, ends, flag in sides:
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                if v in settled:
+                    continue
+                nv = combine(vu, by_edge[ei] if by_edge is not None else by_rel[rel[ei]])
+                if v not in val or better(nv, val[v]):
+                    val[v] = nv
+                    parent[v] = (u, ei, flag)
+                    heapq.heappush(heap, (key(nv), v))
     st.discovered = len(val)
     if st.goal is not None:                       # 2: the fewest hops at that value
         best = val[st.goal]
-        good = (lambda w: w >= best) if max_min else (lambda w: w <= best)
         seen: dict[int, tuple[int, int, int] | None] = {s: None for s in plan.sources}
         queue = deque(plan.sources)
         found = None
@@ -806,14 +998,25 @@ def _search_bottleneck(p: Projection, plan: SimpleNamespace, ctl: _Control) -> S
             if why:                               # the value is known; the fewest hops are not
                 st.interruption, st.bound = why, best
                 break
-            for ei, v, flag in _hops(p, u, plan.fwd, plan.rev):
-                examined += 1
-                if v not in seen and good(weight[ei]):
-                    seen[v] = (u, ei, flag)
-                    if v in plan.targets:
-                        found = v
-                        break
-                    queue.append(v)
+            for lists, base, marks, ends, flag in sides:
+                hs = lists[u]
+                if hs is None:
+                    hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+                examined += len(hs)
+                for ei in hs:
+                    v = ends[ei]
+                    if v in seen:
+                        continue
+                    w = by_edge[ei] if by_edge is not None else by_rel[rel[ei]]
+                    if w >= best if max_min else w <= best:
+                        seen[v] = (u, ei, flag)
+                        if v in targets:
+                            found = v
+                            examined -= len(hs) - 1 - hs.index(ei)    # the hops after this one were not examined
+                            break
+                        queue.append(v)
+                if found is not None:
+                    break
         if found is not None:
             path, v = [], found
             while seen[v] is not None:
@@ -828,7 +1031,7 @@ def _answer_bottleneck(p: Projection, plan: SimpleNamespace, st: SimpleNamespace
     ids = p._node_ids
 
     def witness(path: list) -> dict:
-        hops = [{**_via(p, u, ei, flag), "to": ids[v], "weight": plan.weight[ei]} for u, ei, flag, v in path]
+        hops = [{**_via(p, u, ei, flag), "to": ids[v], "weight": plan.weight.given(ei)} for u, ei, flag, v in path]
         source = ids[path[0][0]] if path else ids[st.goal]
         return {"source": source, "target": ids[path[-1][3]] if path else ids[st.goal], "length": len(hops),
                 "hops": hops}
@@ -876,7 +1079,7 @@ def _answer_bottleneck(p: Projection, plan: SimpleNamespace, st: SimpleNamespace
 
 
 def _path_value(plan: SimpleNamespace, path: list) -> Any:
-    weights = [plan.weight[ei] for _, ei, _, _ in path]
+    weights = [plan.weight.given(ei) for _, ei, _, _ in path]
     return (min if plan.objective == "max_min" else max)(weights)
 
 
@@ -906,33 +1109,46 @@ def _search_support(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
             st.interruption, st.examined = why, examined
         return why is not None
 
+    rel = p._edge_rel
     region, queue = set(failed), deque(plan.failed)          # 1: the failed nodes and their dependents
+    sides = _back_sides(p, fwd, rev)
     while queue:
         v = queue.popleft()
         if stopped():
             st.discovered = len(region)
             return st
-        for _, u, _ in _back_hops(p, v, fwd, rev):
-            examined += 1
-            if u not in region:
-                region.add(u)
-                queue.append(u)
+        for lists, base, marks, ends, _ in sides:
+            hs = lists[v]
+            if hs is None:
+                hs = lists[v] = [ei for ei in base[v] if marks[rel[ei]]]
+            examined += len(hs)
+            for ei in hs:
+                u = ends[ei]
+                if u not in region:
+                    region.add(u)
+                    queue.append(u)
     supports: dict[int, list[tuple[int, int, int]]] = {}     # 2: their support closure, each node's supports once
     closure, queue = set(region), deque(sorted(region))
+    sides = _sides(p, fwd, rev)
     while queue:
         u = queue.popleft()
         if stopped():
             st.discovered = len(closure)
             return st
         sup, seen = [], set()
-        for ei, v, flag in _hops(p, u, fwd, rev):
-            examined += 1
-            if v not in seen:                                 # parallel hops to one support: one support
-                seen.add(v)
-                sup.append((v, ei, flag))
-                if v not in closure:
-                    closure.add(v)
-                    queue.append(v)
+        for lists, base, marks, ends, flag in sides:
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                if v not in seen:                             # parallel hops to one support: one support
+                    seen.add(v)
+                    sup.append((v, ei, flag))
+                    if v not in closure:
+                        closure.add(v)
+                        queue.append(v)
         supports[u] = sup
     st.discovered = len(closure)
     dependents: dict[int, list[int]] = {u: [] for u in closure}
@@ -1014,10 +1230,142 @@ def _answer_support(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -
     return answer, ([WITNESS_NOTE] if lost or weakened else [])
 
 
+# ---------------------------------------------------------------------------------------------- regular path
+def _search_regular(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
+    """Breadth-first search over product states (node, automaton state) of the path's Glushkov automaton
+    (:func:`graph_runtime.paths.automaton`), from every source at the start state: a hop from (u, q) to v moves to
+    (v, i) for every state i that follows q and whose step the hop matches. Each product state is expanded once (a
+    state with no moves is not expanded), so the search ends; its first discovery has the fewest hops.
+
+    ``witness``: stop at the first accepting state at a target (any node when targets is null); a source that is a
+    target matches with no hop when the path matches the empty walk. ``reached``: list every node (among the targets)
+    at which an accepting state is reached, with its fewest hops; without a certificate, stop once every target is
+    listed."""
+    auto, states = plan.auto, plan.states
+    stride, follow, accepting = len(auto.steps), auto.follow, auto.accepting
+    targets, cap, witness = plan.targets, plan.max_results, plan.answer == "witness"
+    seen: dict[int, tuple[int, int, int] | None] = {}
+    length: dict[int, int] = {}
+    reached: dict[int, int] = {}                          # node -> its first accepting state (key), in order found
+    st = SimpleNamespace(goal=None, seen=seen, length=length, reached=reached, stride=stride, examined=0,
+                         discovered=0, interruption=None)
+    for s in plan.sources:
+        seen[s * stride] = None
+        length[s * stride] = 0
+    st.discovered = len(seen)
+    if auto.nullable:                                     # the empty walk matches: a source is its own end
+        for s in plan.sources:
+            if targets is None or s in targets:
+                if witness:
+                    st.goal = s * stride
+                    return st
+                if len(reached) >= cap:
+                    st.interruption = "output_limit"
+                    return st
+                reached[s] = s * stride
+    queue = deque(s * stride for s in plan.sources) if follow[0] else deque()
+    early = not witness and targets is not None and not plan.certificate
+    if early and len(reached) == len(targets):
+        queue.clear()
+    mask_of, rel, examined, done = p._node_mask, p._edge_rel, 0, False
+    while queue and not done:
+        k = queue.popleft()
+        u, q = divmod(k, stride)
+        why = ctl.stop()
+        if why:
+            st.interruption = why
+            break
+        sides, by_relation = states[q]
+        nl = length[k] + 1
+        for (lists, base, marks, ends, flag), matches in zip(sides, by_relation):
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                for i, tmask in matches[rel[ei]]:
+                    if tmask is not None and not mask_of[v] & tmask:
+                        continue
+                    nk = v * stride + i
+                    if nk in seen:
+                        continue
+                    ends_here = i in accepting and (targets is None or v in targets)
+                    if ends_here and not witness and v not in reached and len(reached) >= cap:
+                        st.interruption, done = "output_limit", True
+                        break
+                    seen[nk] = (k, ei, flag)
+                    length[nk] = nl
+                    if ends_here:
+                        if witness:
+                            st.goal, done = nk, True
+                            break
+                        if v not in reached:
+                            reached[v] = nk
+                            if early and len(reached) == len(targets):
+                                done = True
+                                break
+                    if follow[i]:
+                        queue.append(nk)
+                if done:
+                    examined -= len(hs) - 1 - hs.index(ei)        # the hops after this one were not examined
+                    break
+            if done:
+                break
+    st.examined, st.discovered = examined, len(seen)
+    return st
+
+
+def _answer_regular(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
+    ids, stride, seen, length = p._node_ids, st.stride, st.seen, st.length
+
+    def certificate(bound: int | None) -> dict:
+        """Every product state found with fewer than ``bound`` hops (all, when null), by state then node, with its
+        fewest hops: closed under the path's moves below the bound, so no walk the states do not list matches."""
+        keys = sorted((k for k in seen if bound is None or length[k] < bound), key=lambda k: (k % stride, k // stride))
+        return {"kind": "product_states", "bound": bound,
+                "states": [{"node": ids[k // stride], "state": k % stride, "length": length[k]} for k in keys]}
+
+    complete = st.interruption is None
+    if plan.answer == "witness":
+        if st.goal is None:
+            cert = certificate(None) if plan.certificate and complete else None
+            return ({"found": None if st.interruption else False, "witness": None, "certificate": cert},
+                    [CERTIFIED_NOTE] if cert else [])
+        hops, k = [], st.goal
+        while seen[k] is not None:
+            pk, ei, flag = seen[k]
+            hops.append({**_via(p, pk // stride, ei, flag), "to": ids[k // stride], "state": k % stride})
+            k = pk
+        hops.reverse()
+        cert = certificate(len(hops)) if plan.certificate and hops else None
+        witness = {"source": ids[k // stride], "target": ids[st.goal // stride], "length": len(hops), "hops": hops}
+        return ({"found": True, "witness": witness, "certificate": cert},
+                [WITNESS_NOTE] + ([CERTIFIED_NOTE] if cert else []))
+    tree: set[int] = set()
+    for nk in st.reached.values():                      # the branches of the search tree that witness the answer
+        while nk is not None and nk not in tree:
+            tree.add(nk)
+            nk = seen[nk][0] if seen[nk] is not None else None
+    entries = []
+    for k in sorted(tree, key=lambda k: (k // stride, k % stride)):
+        par = seen[k]
+        via = None
+        if par is not None:
+            pk, ei, flag = par
+            via = {**_via(p, pk // stride, ei, flag), "from_state": pk % stride}
+        entries.append({"node": ids[k // stride], "state": k % stride, "length": length[k], "via": via})
+    listed = [{"node": ids[v], "length": length[k], "state": k % stride} for v, k in sorted(st.reached.items())]
+    cert = certificate(None) if plan.certificate and complete else None
+    return ({"reached": listed, "count": len(listed), "tree": entries, "certificate": cert},
+            ([WITNESS_NOTE] if listed else []) + ([CERTIFIED_NOTE] if cert else []))
+
+
 _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "dependency_impact": (_search_impact, _answer_impact),
                "typed_path": (_search_typed, _answer_typed),
                "shortest_path": (_search_shortest, _answer_shortest),
                "pattern": (_search_pattern, _answer_pattern),
                "support": (_search_support, _answer_support),
-               "bottleneck_path": (_search_bottleneck, _answer_bottleneck)}
+               "bottleneck_path": (_search_bottleneck, _answer_bottleneck),
+               "regular_path": (_search_regular, _answer_regular)}
