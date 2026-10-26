@@ -262,6 +262,14 @@ class Result:
         return None if found is False and self.status != COMPLETED else found
 
     @property
+    def exists(self) -> bool | None:
+        """For patterns: True (rows exist), False (only when complete) or None (unknown)."""
+        if self.operation != "pattern":
+            raise ValueError(f"exists reads a pattern result, not {self.operation}")
+        exists = None if self.answer is None else self.answer["exists"]
+        return None if exists is False and self.status != COMPLETED else exists
+
+    @property
     def witness(self) -> list[dict] | None:
         """For typed and shortest paths: the witness hops, or None."""
         if self.operation not in _WITNESS_OPERATIONS:
@@ -393,6 +401,8 @@ def _contract_problems(data: dict) -> list[str]:
                 out.append("a via chain must decrease depth and end at a requested source")
         if not strict and status == COMPLETED and any(by_node.get(s, {}).get("depth") != 0 for s in seeds):
             out.append("a complete reachability answer includes every source at depth zero")
+    elif op == "pattern":
+        out.extend(_pattern_problems(request, answer, status, data.get("interruption")))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -419,6 +429,53 @@ def _contract_problems(data: dict) -> list[str]:
                     out.append("a typed hop goes in a direction its pattern position does not follow")
     if op == "shortest_path":
         out.extend(_cost_problems(request, answer, status))
+    return out
+
+
+def _pattern_problems(request: dict, answer: dict, status: str, interruption: dict | None) -> list[str]:
+    """A pattern answer's own consistency: the rows, the exact total and exists agree with each other, the request's
+    answer kind and its limits; every row binds every variable and aligns its links with the steps."""
+    out = []
+    rows, total, exists = answer["rows"], answer["total"], answer["exists"]
+    steps, names = request["steps"], [request["match"]["var"]] + [s["var"] for s in request["steps"]]
+    edge_vars = [s["edge_var"] for s in steps if s["edge_var"] is not None]
+    if answer["count"] != len(rows):
+        out.append("count must equal the number of rows")
+    if exists is None:
+        if status != INTERRUPTED or total is not None or rows:
+            out.append("an unknown answer (exists null) is an interrupted one, with no total and no rows")
+        return out
+    if type(total) is not int or total < 0 or exists is not (total > 0):
+        out.append("total is a non-negative integer and exists says whether it is positive")
+        return out
+    if request["answer"] != "rows" and rows:
+        out.append(f"an answer of {request['answer']} lists no rows")
+    if request["answer"] == "rows":
+        if status == COMPLETED and len(rows) != total:
+            out.append("a complete answer lists every row")
+        if status == INTERRUPTED and (interruption or {}).get("reason") == "output_limit" \
+                and not len(rows) == request["limits"]["max_results"] < total:
+            out.append("an output-limited answer lists max_results rows of a larger total")
+    if len(rows) > total:
+        out.append("more rows than the total")
+    seen = set()
+    for n, row in enumerate(rows):
+        if set(row["nodes"]) != set(names) or set(row["edges"]) != set(edge_vars) or len(row["links"]) != len(steps):
+            out.append(f"row {n} binds every variable, every edge variable, and one link per step")
+            continue
+        if row["nodes"][names[0]] is None:
+            out.append(f"row {n} binds the matched variable")
+        for j, s in enumerate(steps):
+            unbound = row["links"][j] is None
+            if unbound != (row["nodes"][s["var"]] is None) or (unbound and not s["optional"]):
+                out.append(f"row {n}: step {j} binds its variable exactly when it has a link, and only an optional "
+                           "step goes unbound")
+            if s["edge_var"] is not None and row["edges"][s["edge_var"]] != row["links"][j]:
+                out.append(f"row {n}: {s['edge_var']} names step {j}'s link")
+        key = canonical_json([row["nodes"], row["links"]])
+        if key in seen:
+            out.append(f"row {n} repeats an earlier row")
+        seen.add(key)
     return out
 
 

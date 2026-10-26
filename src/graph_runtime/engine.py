@@ -220,12 +220,39 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
             fwd, rev = _scope(p, pos["scope"], f"pattern[{i}].scope")
             mask = None if pos["node_types"] is None else _types(p, pos["node_types"], f"pattern[{i}].node_types")
             plan.positions.append((fwd, rev, mask))
+    elif op == "pattern":
+        m = req["match"]
+        names = [m["var"]] + [st["var"] for st in req["steps"]]
+        index = {name: i for i, name in enumerate(names)}
+        plan.vars, plan.answer = names, req["answer"]
+        plan.match = _node_filter(p, m, "match")
+        plan.steps = []
+        for i, st in enumerate(req["steps"]):
+            fwd, rev = _scope(p, st["scope"], f"steps[{i}].scope")
+            tmask, nodes = _node_filter(p, st, f"steps[{i}]")
+            edges = None
+            if st["edges"] is not None:
+                unknown = [e for e in st["edges"] if e not in p._edge_index]
+                if unknown:
+                    raise RequestError(FAILED, "unknown_edge", f"steps[{i}].edges names {len(unknown)} edge(s) the "
+                                       f"projection does not hold: {unknown[:10]}", {"edges": unknown[:100]})
+                edges = {p._edge_index[e] for e in st["edges"]}
+            plan.steps.append(SimpleNamespace(parent=index[st["from"]], child=index[st["var"]], fwd=fwd, rev=rev,
+                                              tmask=tmask, nodes=nodes, edges=edges, optional=st["optional"],
+                                              edge_var=st["edge_var"]))
     else:
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = set(_nodes(p, req["targets"], "targets"))
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
         plan.given, plan.cost, plan.zero, plan.rational = _costs(p, req["costs"], plan.fwd, plan.rev)
     return plan
+
+
+def _node_filter(p: Projection, spec: Any, where: str) -> tuple[int | None, set[int] | None]:
+    """(a type mask, an explicit node set): what a pattern variable may bind."""
+    tmask = None if spec["node_types"] is None else _types(p, spec["node_types"], f"{where}.node_types")
+    nodes = None if spec["nodes"] is None else set(_nodes(p, spec["nodes"], f"{where}.nodes"))
+    return tmask, nodes
 
 
 def _nodes(p: Projection, ids: Any, field: str) -> list[int]:
@@ -531,7 +558,135 @@ def _answer_shortest(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) 
             [TENTATIVE_NOTE, WITNESS_NOTE])
 
 
+# ---------------------------------------------------------------------------------------------- pattern
+def _search_pattern(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
+    """Match a tree pattern without dead ends (Yannakakis' semi-join reduction, over the region the match reaches).
+
+    1. Downward, the only pass that expands states: from each variable's candidates, scan each step's hops once, and
+       keep the hops to nodes the step's constraints admit; the children reached are the child's candidates.
+    2. Upward: a required step keeps only the parents with a hop into its child's remaining candidates.
+    3. Downward: each step keeps the hops from its parent's remaining candidates into its child's, and the child keeps
+       the nodes those hops reach.
+
+    Every remaining value then completes to a match, so the rows are enumerated, and counted, from the kept hops
+    alone, in time proportional to the input scanned and the rows returned."""
+    st = SimpleNamespace(interruption=None, examined=0, discovered=0, kept=None, hops=None, scanned=None)
+    tmask0, nodes0 = plan.match
+    if nodes0 is not None:
+        root = {u for u in nodes0 if tmask0 is None or p._node_mask[u] & tmask0}
+    else:
+        root = {u for u in range(len(p._node_ids)) if p._node_mask[u] & tmask0}
+    cand: list[set[int]] = [set() for _ in plan.vars]
+    cand[0] = root
+    found: list[dict[int, list]] = []
+    mask_of = p._node_mask
+    examined = 0
+    for s in plan.steps:                                     # 1: discover, downward
+        hops: dict[int, list] = {}
+        child = cand[s.child]
+        for u in sorted(cand[s.parent]):
+            why = ctl.stop()
+            if why:
+                st.interruption, st.examined = why, examined
+                st.discovered = sum(len(c) for c in cand)
+                return st
+            kept, seen = [], set()
+            for ei, w, flag in _hops(p, u, s.fwd, s.rev):
+                examined += 1
+                # a self-loop in a scope of both directions joins u to itself twice by one edge: one row, not two
+                if (s.edges is None or ei in s.edges) and (s.tmask is None or mask_of[w] & s.tmask) \
+                        and (s.nodes is None or w in s.nodes) and (ei, w) not in seen:
+                    seen.add((ei, w))
+                    kept.append((ei, w, flag))
+                    child.add(w)
+            hops[u] = kept
+        found.append(hops)
+    st.scanned = [len(c) for c in cand]
+    for i in range(len(plan.steps) - 1, -1, -1):              # 2: prune parents, upward
+        s = plan.steps[i]
+        if not s.optional:
+            child = cand[s.child]
+            cand[s.parent] = {u for u in cand[s.parent] if any(w in child for _, w, _ in found[i].get(u, ()))}
+    kept_hops: list[dict[int, list]] = []
+    for i, s in enumerate(plan.steps):                       # 3: prune children, downward
+        child, reached, hops = cand[s.child], set(), {}
+        for u in cand[s.parent]:
+            hs = [h for h in found[i].get(u, ()) if h[1] in child]
+            hops[u] = hs
+            reached.update(w for _, w, _ in hs)
+        cand[s.child] = reached
+        kept_hops.append(hops)
+    st.kept, st.hops, st.examined = cand, kept_hops, examined
+    st.discovered = sum(st.scanned)
+    return st
+
+
+def _pattern_total(plan: SimpleNamespace, st: SimpleNamespace) -> int:
+    """The number of rows, exactly, without enumerating them: per variable value, the product over its steps of the
+    number of ways to continue (an optional step with no hop continues one way, unbound)."""
+    ways = [dict.fromkeys(c, 1) for c in st.kept]
+    for i in range(len(plan.steps) - 1, -1, -1):
+        s = plan.steps[i]
+        child_ways = ways[s.child]
+        parent_ways = ways[s.parent]
+        for u in parent_ways:
+            hs = st.hops[i].get(u, ())
+            n = sum(child_ways[w] for _, w, _ in hs)
+            parent_ways[u] *= n if hs else (1 if s.optional else 0)
+    return sum(ways[0].values())
+
+
+def _answer_pattern(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
+    names = plan.vars
+    if st.interruption is not None and st.kept is None:       # stopped while discovering: nothing is known
+        return {"exists": None, "total": None, "rows": [], "count": 0, "coverage": None}, []
+    total = _pattern_total(plan, st)
+    coverage = {"vars": [{"var": names[i], "candidates": st.scanned[i], "kept": len(st.kept[i])}
+                         for i in range(len(names))],
+                "steps": [sum(len(h) for h in st.hops[i].values()) for i in range(len(plan.steps))]}
+    rows: list[dict] = []
+    if plan.answer == "rows":
+        cap = plan.max_results
+        ids, eids = p._node_ids, p._edge_ids
+        val: list = [None] * len(names)
+        link: list = [None] * len(plan.steps)
+        steps = plan.steps
+
+        def emit() -> None:
+            rows.append({"nodes": {names[i]: (None if v is None else ids[v]) for i, v in enumerate(val)},
+                         "edges": {s.edge_var: (None if link[j] is None else eids[link[j]])
+                                   for j, s in enumerate(steps) if s.edge_var is not None},
+                         "links": [None if x is None else eids[x] for x in link]})
+
+        def extend(i: int) -> bool:
+            """Bind steps i and on; False once the rows reach the cap."""
+            if i == len(steps):
+                if len(rows) >= cap:
+                    return False
+                emit()
+                return True
+            s = steps[i]
+            u = val[s.parent]
+            hs = () if u is None else st.hops[i].get(u, ())
+            if not hs:                                       # an unbound or unmatched optional step
+                val[s.child], link[i] = None, None
+                return extend(i + 1)
+            for ei, w, _ in hs:
+                val[s.child], link[i] = w, ei
+                if not extend(i + 1):
+                    return False
+            return True
+        for u in sorted(st.kept[0]):
+            val[0] = u
+            if not extend(0):
+                st.interruption = "output_limit"
+                break
+    answer = {"exists": total > 0, "total": total, "rows": rows, "count": len(rows), "coverage": coverage}
+    return answer, ([WITNESS_NOTE] if rows else [])
+
+
 _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "dependency_impact": (_search_impact, _answer_impact),
                "typed_path": (_search_typed, _answer_typed),
-               "shortest_path": (_search_shortest, _answer_shortest)}
+               "shortest_path": (_search_shortest, _answer_shortest),
+               "pattern": (_search_pattern, _answer_pattern)}

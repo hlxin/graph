@@ -12,6 +12,7 @@ Revision `v0.1` tightened transport validation, ordered node-set answers by asce
 states consistently, and required costs only for edges actually in scope. Revision `v0.2`, in development, adds:
 
 - type and relation hierarchies (section 1)
+- the `pattern` operation: tree patterns, enumerated without dead ends and counted without listing (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -88,6 +89,7 @@ no wildcard: a scope lists what it follows.
 | `typed_path` | `sources`, `pattern` (positions `{"scope", "node_types"}`; `node_types` null: any), `targets` (null: any node) | `max_expansions` |
 | `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}` | `max_expansions` |
 | `dependency_impact` | `changed` (node IDs), `scope` (the direction in which a change propagates), `max_depth` | `max_expansions`, `max_results` |
+| `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
 normalized request always states it.
@@ -170,6 +172,40 @@ search state is a node plus its position in the sequence. Hop `i` follows `patte
 exact arithmetic. A source that is also a target is the answer at cost 0. Each hop carries the cost the request
 gave its edge. Answer: `{"found", "optimal", "cost", ["cost_exact"], "witness"}`.
 
+**Pattern.** Matches a tree pattern, SCALE's query plans in generic form:
+
+- **Variables.** `match` binds a variable to the nodes it admits: its types, through the hierarchy, and/or explicit
+  node IDs. Each step binds a new variable to a node one hop away from an earlier variable. The hop follows the
+  step's scope (with the relation hierarchy) to a node the step admits, by the same constraints, through an edge in
+  the step's explicit edge IDs when it gives them. Explicit ID sets are how a consumer passes the result of its own
+  filters, such as SCALE's value and unit semantics. `edge_var` names a step's edge.
+- **Optional steps.** An optional step that finds no hop binds null, and the row stays. A step from a variable an
+  optional step binds must itself be optional, so an unmatched optional part never removes a row.
+- **Rows.** A row binds every variable (`nodes`), every edge variable (`edges`), and one link per step (`links`;
+  null for an unbound optional step). Variables may bind the same node. Parallel edges give distinct rows. A
+  self-loop in a scope of both directions gives one row, not two.
+- **Order.** Rows come in canonical order: matched nodes by ascending ID, then each step's hops in the order every
+  operation uses.
+
+Evaluation never meets a dead end; this is Yannakakis' semi-join reduction, over the region the match reaches.
+
+1. Discovery goes downward. It is the only pass that expands states: each candidate's hops are scanned once per step.
+2. Pruning goes upward: a required step keeps only the parents with a hop into its child's remaining candidates.
+3. Pruning goes downward again: each step keeps only the hops between its remaining parents and children.
+
+Every remaining value then completes to a match, so the rows are enumerated from the kept hops in time proportional
+to the input scanned plus the rows returned. Their number, `total`, is computed exactly by multiplying and summing
+along the kept hops, without listing them.
+
+- `answer: count` and `answer: exists` return `total` and `exists` and list no rows.
+- `answer: rows` lists up to `max_results` rows. More than that is an `output_limit` interruption, but its `total` is
+  still the exact count.
+- `coverage` gives each variable's candidates and the number it kept, and each step's kept hops.
+- An expansion budget, a deadline or a cancellation that stops discovery leaves `exists` and `total` null: unknown,
+  never false.
+
+Answer: `{"exists", "total", "rows": [{"nodes", "edges", "links"}], "count", "coverage"}`.
+
 ## 5. Results
 
 | Field | Meaning |
@@ -191,7 +227,8 @@ gave its edge. Answer: `{"found", "optimal", "cost", ["cost_exact"], "witness"}`
   the literature or the physical world.
 - **Interrupted.** What the answer lists is valid, each item with its witness, and listed depths are least depths.
   Nothing is certified absent: `found` is `null` (unknown), or `true` when a witness was already found.
-  `result.reachable(x)` and `result.affected(x)` give `False` only for a complete answer, and `None` when the
+  `result.reachable(x)`, `result.affected(x)`, `result.found` and `result.exists` (patterns) give `False` only for a
+  complete answer, and `None` when the
   answer cannot say.
 - **Interrupted shortest path.** A tentative witness has `optimal: false`. `lower_bound` (with `lower_bound_exact`
   in rational mode) brackets the minimum: if a target is reachable at all, the minimum cost lies in

@@ -12,7 +12,7 @@ from graph_runtime import (CONTRACT, CandidateError, HypothesisCandidate, Projec
 from graph_runtime._canonical import digest
 from graph_runtime._validation import shape_problems
 from graph_runtime.conformance import check_case, load_cases, run_conformance
-from oracle import closed_nodes, expand_scope, least_cost, least_depths, typed_ends
+from oracle import closed_nodes, expand_scope, least_cost, least_depths, pattern_rows, typed_ends
 from test_hypotheses import TESTS
 
 
@@ -261,6 +261,14 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
         elif op == 'typed_path':
             want = bool(typed_ends(g['nodes'], g['edges'], r['sources'], r['pattern'], r.get('targets')))
             assert exp['found'] is want, case['name']
+        elif op == 'pattern':
+            raw = case['request']             # the brute force expands the hierarchies itself
+            rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],
+                                raw.get('steps', []), suite['graphs'][case['graph']].get('type_parents'), rp,
+                                relations)
+            assert exp['total'] == len(rows), case['name']
+            if exp.get('rows') and raw.get('answer', 'rows') == 'rows':
+                assert exp['rows'] == [[b, links] for b, links in rows], case['name']
         else:
             cost = least_cost(g['nodes'], g['edges'], r['sources'], r['targets'], r['scope'], r['costs'])
             if 'found' in exp:

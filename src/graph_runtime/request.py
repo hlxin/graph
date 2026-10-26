@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import math
 import numbers
+import re
 import sys
 from collections.abc import Mapping
 from typing import Any
@@ -32,7 +33,8 @@ from ._canonical import canonical_json, canonical_object, freeze, is_digest, sha
 from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
-OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact")
+OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern")
+PATTERN_ANSWERS = ("rows", "count", "exists")
 MODES = ("exact",)
 FAILED, UNSUPPORTED = "failed", "unsupported"
 REQUEST_KIND = "graph_runtime.request"
@@ -41,11 +43,13 @@ DEFAULT_LIMITS = {"max_expansions": 1_000_000, "max_results": 100_000}
 _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "dependency_impact": ("max_expansions", "max_results"),
            "typed_path": ("max_expansions",),
-           "shortest_path": ("max_expansions",)}
+           "shortest_path": ("max_expansions",),
+           "pattern": ("max_expansions", "max_results")}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets",)),
-           "shortest_path": (("sources", "targets", "scope", "costs"), ())}
+           "shortest_path": (("sources", "targets", "scope", "costs"), ()),
+           "pattern": (("match",), ("steps", "answer"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -164,6 +168,11 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["sources"] = _ids(raw["sources"], "sources")
         data["targets"] = None if raw.get("targets") is None else _ids(raw["targets"], "targets")
         data["pattern"] = _pattern(raw["pattern"])
+    elif op == "pattern":
+        data["match"], data["steps"] = _graph_pattern(raw["match"], raw.get("steps") or [])
+        data["answer"] = raw.get("answer", "rows")
+        if data["answer"] not in PATTERN_ANSWERS:
+            raise _fail("invalid_request", f"answer is one of {list(PATTERN_ANSWERS)}, not {data['answer']!r}")
     else:
         data["sources"] = _ids(raw["sources"], "sources")
         data["targets"] = _ids(raw["targets"], "targets")
@@ -297,3 +306,79 @@ def _cost(x: Any, kind: str, key: str) -> int | float:
         raise RequestError(UNSUPPORTED, "negative_cost", f"{where} is {x!r}; {CONTRACT} supports non-negative "
                            "additive costs only", {"where": where})
     return x
+
+
+_VAR = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _var(value: Any, where: str, taken: set) -> str:
+    if not isinstance(value, str) or not _VAR.match(value):
+        raise _fail("invalid_request", f"{where} is a variable name (a letter or _, then letters, digits or _), "
+                    f"not {value!r}")
+    if value in taken:
+        raise _fail("invalid_request", f"{where}: the variable {value!r} is already bound")
+    taken.add(value)
+    return value
+
+
+def _node_constraint(raw: Mapping, where: str) -> dict:
+    out = {}
+    for field in ("node_types", "nodes"):
+        v = raw.get(field)
+        if v is not None:
+            if isinstance(v, (str, bytes)) or not isinstance(v, (list, tuple)) or not v:
+                raise _fail("invalid_request", f"{where}.{field} is a non-empty list, or null")
+            if not all(isinstance(x, str) and x for x in v):
+                raise _fail("invalid_request", f"{where}.{field} holds a value that is not a non-empty string")
+            v = sorted(set(v))
+        out[field] = v
+    return out
+
+
+def _graph_pattern(match: Any, steps: Any) -> tuple[dict, list[dict]]:
+    """A tree pattern: a matched variable, then steps, each from a variable bound before it to a new one. A step from
+    a variable an optional step binds is optional too, so that an unmatched optional part never removes a row."""
+    if not isinstance(match, Mapping):
+        raise _fail("invalid_request", "match is {var, node_types, nodes}")
+    stray = sorted(str(k) for k in match if k not in ("var", "node_types", "nodes"))
+    if stray:
+        raise _fail("invalid_request", f"match takes var, node_types and nodes, not {stray}")
+    taken: set[str] = set()
+    m = {"var": _var(match.get("var"), "match.var", taken), **_node_constraint(match, "match")}
+    if m["node_types"] is None and m["nodes"] is None:
+        raise _fail("invalid_request", "match names node_types or nodes: a pattern starts from chosen records")
+    if isinstance(steps, (str, bytes, Mapping)) or not isinstance(steps, (list, tuple)):
+        raise _fail("invalid_request", "steps is a list of steps")
+    optional_vars: set[str] = set()
+    out = []
+    for i, st in enumerate(steps):
+        where = f"steps[{i}]"
+        if not isinstance(st, Mapping):
+            raise _fail("invalid_request", f"{where} is a mapping")
+        stray = sorted(str(k) for k in st if k not in ("from", "var", "scope", "node_types", "nodes", "edges",
+                                                         "edge_var", "optional"))
+        if stray:
+            raise _fail("invalid_request", f"{where} takes from, var, scope, node_types, nodes, edges, edge_var and "
+                        f"optional, not {stray}")
+        src = st.get("from")
+        if src not in taken or src in {x.get("edge_var") for x in out}:
+            raise _fail("invalid_request", f"{where}.from names {src!r}, which no earlier step or match binds to a node")
+        optional = st.get("optional", False)
+        if not isinstance(optional, bool):
+            raise _fail("invalid_request", f"{where}.optional is true or false")
+        if src in optional_vars and not optional:
+            raise _fail("invalid_request", f"{where} starts from {src!r}, which an optional step binds: it is optional "
+                        "too (an unmatched optional part never removes a row)")
+        if st.get("scope") is None:
+            raise _fail("invalid_request", f"{where} needs a scope")
+        step = {"from": src, "var": None, "scope": _scope(st["scope"], f"{where}.scope"),
+                **_node_constraint(st, where), "edges": None, "edge_var": None, "optional": optional}
+        step["var"] = _var(st.get("var"), f"{where}.var", taken)
+        if st.get("edges") is not None:
+            step["edges"] = _ids(st["edges"], f"{where}.edges")
+        if st.get("edge_var") is not None:
+            step["edge_var"] = _var(st["edge_var"], f"{where}.edge_var", taken)
+        if optional:
+            optional_vars.add(step["var"])
+        out.append(step)
+    return m, out

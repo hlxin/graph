@@ -146,3 +146,48 @@ def closed_nodes(nodes, type_parents):
         types = set() if isinstance(n, str) else set(n.get("types") or [])
         out.append({"id": node_id(n), "types": sorted(types.union(*(up.get(t, ()) for t in types)))})
     return out
+
+
+def pattern_rows(nodes, edges, match, steps, type_parents=None, relation_parents=None, relations=RELATIONS):
+    """Every row of a tree pattern, in canonical order, by plain nested loops over the edges and no pruning: roots by
+    ascending ID, then per step its forward hops by edge ID, then its reverse hops, one per (edge, node)."""
+    types = {n["id"]: set(n["types"]) for n in closed_nodes(nodes, type_parents)}
+    edges = sorted(edges, key=lambda e: e["id"])
+    names = set(relations) | {e["relation"] for e in edges}
+
+    def admits(spec, v):
+        return (spec.get("node_types") is None or bool(types[v] & set(spec["node_types"]))) and \
+            (spec.get("nodes") is None or v in set(spec["nodes"]))
+
+    def hops(step, u):
+        scope = expand_scope(step["scope"], relation_parents or {}, names)
+        fwd = {x["relation"] for x in scope if x["direction"] == "forward"}
+        rev = {x["relation"] for x in scope if x["direction"] == "reverse"}
+        out = [(e["id"], e["target"]) for e in edges if e["source"] == u and e["relation"] in fwd]
+        out += [(e["id"], e["source"]) for e in edges if e["target"] == u and e["relation"] in rev]
+        kept = []
+        for eid, w in out:
+            if admits(step, w) and (step.get("edges") is None or eid in set(step["edges"])) and (eid, w) not in kept:
+                kept.append((eid, w))
+        return kept
+
+    rows = []
+
+    def extend(i, bind, links):
+        if i == len(steps):
+            rows.append(({**bind}, list(links)))
+            return
+        s = steps[i]
+        u = bind[s["from"]]
+        hs = [] if u is None else hops(s, u)
+        if not hs:
+            if s.get("optional"):
+                extend(i + 1, {**bind, s["var"]: None}, links + [None])
+            return
+        for eid, w in hs:
+            extend(i + 1, {**bind, s["var"]: w}, links + [eid])
+
+    for root in sorted(types):
+        if admits(match, root):
+            extend(0, {match["var"]: root}, [])
+    return rows

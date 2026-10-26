@@ -321,6 +321,53 @@
               }
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "match",
+            "steps",
+            "answer"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "pattern"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_pattern"
+            },
+            "match": {
+              "$ref": "#/$defs/pattern_match"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/pattern_step"
+              }
+            },
+            "answer": {
+              "enum": [
+                "rows",
+                "count",
+                "exists"
+              ]
+            }
+          }
         }
       ]
     },
@@ -1215,6 +1262,55 @@
           "if": {
             "properties": {
               "status": {
+                "const": "completed"
+              },
+              "operation": {
+                "const": "pattern"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "properties": {
+                  "exists": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "interrupted"
+              },
+              "operation": {
+                "const": "pattern"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "properties": {
+                  "exists": {
+                    "enum": [
+                      true,
+                      null
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
                 "enum": [
                   "completed",
                   "interrupted"
@@ -1241,7 +1337,8 @@
                   "reachability",
                   "dependency_impact",
                   "typed_path",
-                  "shortest_path"
+                  "shortest_path",
+                  "pattern"
                 ]
               }
             }
@@ -1577,6 +1674,28 @@
             "properties": {
               "request": {
                 "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "pattern"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/pattern_answer"
               }
             }
           }
@@ -2254,6 +2373,279 @@
         }
       },
       "description": "A projection snapshot (Projection.to_dict); its identity is recomputed from the records on reading."
+    },
+    "var": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "limits_pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_expansions",
+        "max_results"
+      ],
+      "properties": {
+        "max_expansions": {
+          "$ref": "#/$defs/count"
+        },
+        "max_results": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "pattern_match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "var",
+        "node_types",
+        "nodes"
+      ],
+      "properties": {
+        "var": {
+          "$ref": "#/$defs/var"
+        },
+        "node_types": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ids"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nodes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ids"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "node_types": {
+              "$ref": "#/$defs/ids"
+            }
+          }
+        },
+        {
+          "properties": {
+            "nodes": {
+              "$ref": "#/$defs/ids"
+            }
+          }
+        }
+      ]
+    },
+    "pattern_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "var",
+        "scope",
+        "node_types",
+        "nodes",
+        "edges",
+        "edge_var",
+        "optional"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/var"
+        },
+        "var": {
+          "$ref": "#/$defs/var"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "node_types": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ids"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nodes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ids"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edges": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ids"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edge_var": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/var"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "optional": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pattern_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "edges",
+        "links"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "edges": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "pattern_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exists",
+        "total",
+        "rows",
+        "count",
+        "coverage"
+      ],
+      "properties": {
+        "exists": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "total": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pattern_row"
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "coverage": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "vars",
+                "steps"
+              ],
+              "properties": {
+                "vars": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "var",
+                      "candidates",
+                      "kept"
+                    ],
+                    "properties": {
+                      "var": {
+                        "$ref": "#/$defs/var"
+                      },
+                      "candidates": {
+                        "$ref": "#/$defs/count"
+                      },
+                      "kept": {
+                        "$ref": "#/$defs/count"
+                      }
+                    }
+                  }
+                },
+                "steps": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "exists and total are null only when the search was interrupted before it knew them; total counts every row even when an output limit lists fewer."
     }
   }
 }

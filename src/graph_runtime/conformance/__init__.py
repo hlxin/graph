@@ -127,6 +127,15 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             problems.append(f"cost {got!r}, expected {want!r}")
         if not done and answer.get("found") and not (_cost(answer, "lower_bound") <= want <= got):
             problems.append(f"an interrupted answer's bounds [{answer.get('lower_bound')}, {got}] miss the cost {want}")
+    if "total" in exp and answer.get("total") != exp["total"]:
+        problems.append(f"total {answer.get('total')!r}, expected {exp['total']}")
+    if "exists" in exp and answer.get("exists") is not exp["exists"]:
+        problems.append(f"exists {answer.get('exists')!r}, expected {exp['exists']!r}")
+    if "rows" in exp:                                       # the canonical rows; an interrupted answer lists a prefix
+        got_rows = [[row["nodes"], row["links"]] for row in answer.get("rows") or []]
+        want_rows = exp["rows"] if done else exp["rows"][:len(got_rows)]
+        if got_rows != want_rows:
+            problems.append(f"rows {got_rows}, expected {want_rows}")
     if "witness_edges" in exp and done:
         got_edges = [h["edge"] for h in (answer.get("witness") or {}).get("hops") or []]
         if got_edges != exp["witness_edges"]:

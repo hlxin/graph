@@ -2097,6 +2097,475 @@
     "status": "failed",
     "error_code": "missing_cost"
    }
+  },
+  {
+   "name": "pattern-chain-pruned",
+   "covers": [
+    "pattern",
+    "no dead ends"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "node_types": [
+      "Sample"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ],
+      "node_types": [
+       "Species"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "exists": true,
+    "total": 2,
+    "rows": [
+     [
+      {
+       "x": "b",
+       "y": "c",
+       "z": "d"
+      },
+      [
+       "e2",
+       "e4"
+      ]
+     ],
+     [
+      {
+       "x": "b",
+       "y": "c",
+       "z": "d"
+      },
+      [
+       "e2",
+       "e5"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-branches",
+   "covers": [
+    "pattern",
+    "branching"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "a"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "x",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 1,
+    "rows": [
+     [
+      {
+       "x": "a",
+       "y": "b",
+       "z": "c"
+      },
+      [
+       "e1",
+       "e3"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-optional",
+   "covers": [
+    "pattern",
+    "optional steps"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "node_types": [
+      "Catalyst"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ],
+      "optional": true,
+      "edge_var": "link"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 3,
+    "rows": [
+     [
+      {
+       "x": "c",
+       "y": "d"
+      },
+      [
+       "e4"
+      ]
+     ],
+     [
+      {
+       "x": "c",
+       "y": "d"
+      },
+      [
+       "e5"
+      ]
+     ],
+     [
+      {
+       "x": "d",
+       "y": null
+      },
+      [
+       null
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-count",
+   "covers": [
+    "pattern",
+    "counting without listing",
+    "parallel edges"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "c"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "x",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ],
+    "answer": "count"
+   },
+   "expect": {
+    "status": "completed",
+    "total": 4,
+    "exists": true,
+    "rows": []
+   }
+  },
+  {
+   "name": "pattern-output-limit",
+   "covers": [
+    "pattern",
+    "no certified negative under an output limit"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "c"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "x",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ],
+    "limits": {
+     "max_results": 3
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "total": 4,
+    "exists": true,
+    "count": 3,
+    "rows": [
+     [
+      {
+       "x": "c",
+       "y": "d",
+       "z": "d"
+      },
+      [
+       "e4",
+       "e4"
+      ]
+     ],
+     [
+      {
+       "x": "c",
+       "y": "d",
+       "z": "d"
+      },
+      [
+       "e4",
+       "e5"
+      ]
+     ],
+     [
+      {
+       "x": "c",
+       "y": "d",
+       "z": "d"
+      },
+      [
+       "e5",
+       "e4"
+      ]
+     ],
+     [
+      {
+       "x": "c",
+       "y": "d",
+       "z": "d"
+      },
+      [
+       "e5",
+       "e5"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-empty",
+   "covers": [
+    "pattern",
+    "complete negative"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "e"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "exists": false,
+    "total": 0,
+    "rows": []
+   }
+  },
+  {
+   "name": "pattern-hierarchy",
+   "covers": [
+    "pattern",
+    "relation hierarchy",
+    "type hierarchy"
+   ],
+   "graph": "G4",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "r",
+     "nodes": [
+      "run"
+     ]
+    },
+    "steps": [
+     {
+      "from": "r",
+      "var": "ctl",
+      "scope": [
+       {
+        "relation": "CONTROL_FOR",
+        "direction": "reverse"
+       }
+      ],
+      "node_types": [
+       "Experiment"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 2,
+    "rows": [
+     [
+      {
+       "r": "run",
+       "ctl": "dark"
+      },
+      [
+       "c1"
+      ]
+     ],
+     [
+      {
+       "r": "run",
+       "ctl": "plain"
+      },
+      [
+       "c2"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-required-under-optional",
+   "covers": [
+    "pattern",
+    "optional steps"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "a"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ],
+      "optional": true
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "invalid_request"
+   }
   }
  ]
 }
