@@ -18,7 +18,7 @@ const meta = {
   date: "October 2026",
   version: "0.1.0.dev0",
   contract: "graph-runtime/v0.2",
-  operations: 15, // the request operations (src/graph_runtime/request.py, OPERATIONS)
+  operations: 16, // the request operations (src/graph_runtime/request.py, OPERATIONS)
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -240,6 +240,25 @@ const families = [
       },
     ],
   },
+  {
+    key: "dominators",
+    family: "Structure and flows",
+    slideTitle: "Dominators: what every route passes through",
+    lede: "The intermediate every route from a feedstock to a product forms; the evidence every derivation of a claim rests on.",
+    icon: "LuMilestone",
+    source: "docs/API_CONTRACT.md §4: Dominators; git log 1e8678d",
+    aside: "dominatorSchematic",
+    ops: [
+      {
+        name: "dominators",
+        title: "Unavoidable intermediates, single points of failure",
+        theory: "Node d dominates v when every walk from the sources to v passes through d (Prosser, 1959; Lowry and Medlock, 1969). The immediate dominators form a tree: the whole tree, or each target's chain.",
+        algorithm: "A depth-first search from the sources, then Lengauer and Tarjan's algorithm (1979), the simple version with path compression. Dominance is a claim about every walk, so an interrupted search claims nothing.",
+        proofLabel: "Certificate proves",
+        proof: "A low-high order of the tree (Georgiadis and Tarjan, 2016), checked arc by arc in linear time, without computing dominators again. It is built from two independent spanning trees (their Algorithms 8, 7 and 5).",
+      },
+    ],
+  },
 ];
 
 // The overview grid (one card per family, in this order).
@@ -249,7 +268,7 @@ const overview = [
   { family: "Patterns", icon: "LuNetwork", ops: ["pattern"], answers: "Multi-step questions: trees counted exactly, cycles by a worst-case optimal join." },
   { family: "Ranking", icon: "LuBarChart3", ops: ["personalized_pagerank"], answers: "Relevance around chosen nodes, as proven intervals." },
   { family: "Periodic", icon: "LuAtom", ops: ["periodicity"], answers: "Periodic projections: crystals, slabs and polymers searched from one cell." },
-  { family: "Structure and flows", icon: "LuSplit", ops: ["components", "biconnectivity", "max_flow", "matching"], answers: "Pieces, single points of failure, throughput and distinct pairings." },
+  { family: "Structure and flows", icon: "LuSplit", ops: ["components", "biconnectivity", "max_flow", "matching", "dominators"], answers: "Pieces, weak points, throughput, pairings and unavoidable nodes." },
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -272,13 +291,14 @@ const statesChart = {
 
 // GRAPH against networkx (pure Python too), seconds. Components, articulation points (GRAPH: biconnectivity, which
 // also finds bridges) and max flow (5 sources, 5 targets, integer capacities) on 100k nodes / 500k edges (about 250k
-// in scope for the structure runs); matching on 50k + 50k nodes with 250k candidate edges.
+// in scope for the structure runs); matching on 50k + 50k nodes with 250k candidate edges; dominators on 100k nodes /
+// 300k edges, 94k of them reached (networkx immediate_dominators).
 const networkxChart = {
-  labels: ["Strong components", "Articulation points", "Max flow", "Matching"],
-  graph: [0.38, 0.57, 4.5, 2.5],
-  networkx: [0.34, 0.36, 6.4, 2.1],
-  caption: "100k nodes, 500k edges (matching: 50k + 50k nodes, 250k edges). Also: weak components 0.45 s; max flow with unit capacities 3.8 s.",
-  source: "Structure benchmark (99fb868 increment) and git log 573ce2b; max flow and matching measured on the owner's machine",
+  labels: ["Strong components", "Articulation points", "Max flow", "Matching", "Dominators"],
+  graph: [0.38, 0.57, 4.5, 2.5, 0.65],
+  networkx: [0.34, 0.36, 6.4, 2.1, 0.93],
+  caption: "100k nodes, 500k edges; matching 50k + 50k nodes, 250k edges; dominators 94k reached of 100k nodes, 300k edges (1.37 s with the certificate). Also: weak components 0.45 s; unit-capacity max flow 3.8 s.",
+  source: "Structure benchmark (99fb868 increment), git log 573ce2b and 1e8678d; flows, matching and dominators measured on the owner's machine",
 };
 
 // Revalidation (git log e365fdc; README).
@@ -292,22 +312,22 @@ const revalidation = {
 
 // Verification counts at the time of the build. Update with every increment.
 const verification = [
-  { big: "514", label: "runtime tests pass" },
-  { big: "143", label: "hand-worked conformance cases" },
+  { big: "521", label: "runtime tests pass" },
+  { big: "148", label: "conformance cases" },
   { big: "16", label: "SCALE parity tests" },
   { big: "6", label: "STATES parity tests" },
-  { big: "73 / 73", label: "real consumer requests agree" },
+  { big: "73 / 73", label: "real requests agree" },
 ];
 
-// How increments are reviewed (git log 99fb868, 573ce2b). Shown under the checks on the verification slide.
+// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d). Shown under the checks on the verification slide.
 const reviews = [
-  "Also: an independent review that fuzzed the runtime (about 50,000 cases), a Codex review of the contract (v0.1), and a golden test of 1,200 pinned result_ids.",
-  "Each increment now gets a Codex adversarial review before it is committed: it caught a request_id collision and two certificate holes (structure) and an unverified interrupted upper bound (flows), all fixed with regression tests.",
+  "Also: an independent fuzzing review (about 50,000 cases), a Codex review of the contract (v0.1), and a golden test of 1,200 pinned result_ids.",
+  "Each increment now gets a Codex adversarial review before commit. It caught a request_id collision and two certificate holes (structure), an unverified interrupted upper bound (flows), and, finding no wrong answer in dominators, a quadratic cycle check in result reading (9 s on a 20,000-node chain, now 0.28 s); all fixed with regressions.",
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
 // Development timeline (git log). `when` is local time, -0400.
-const timelineLede = "Twenty-three commits on 25–26 October 2026: from four operations to fifteen.";
+const timelineLede = "Twenty-five commits on 25–26 October 2026: from four operations to sixteen.";
 const timeline = [
   { day: "25 Oct 2026" },
   { when: "17:17", what: "v0: projections, 4 operations, results; SCALE parity" },
@@ -319,26 +339,26 @@ const timeline = [
   { when: "00:14", what: "Certificates, revalidation; JSON tools, CLI, MCP" },
   { when: "00:27", what: "`bottleneck_path`" },
   { when: "04:25", what: "Compiled hop lists · `regular_path` · `derivation`" },
-  { when: "05:12", what: "Periodic projections · `periodicity`" },
-  { when: "05:19", what: "Certified PageRank · cyclic patterns" },
+  { when: "05:12", what: "`periodicity` · certified PageRank · cyclic patterns" },
   { when: "10:09", what: "`components` · `biconnectivity`" },
-  { when: "10:15", what: "These slides" },
-  { when: "10:29", what: "`max_flow` · `matching`", latest: true },
+  { when: "10:15", what: "These slides (updated with each increment)" },
+  { when: "10:29", what: "`max_flow` · `matching`" },
+  { when: "10:43", what: "`dominators`", latest: true },
 ];
 
 // Hand-worked conformance cases after each increment (commit messages; cases.json now).
 const growth = {
-  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows"],
-  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143],
-  operations: "4 → 15",
-  tests: "178 → 514",
+  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators"],
+  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148],
+  operations: "4 → 16",
+  tests: "178 → 521",
 };
 
 // ---------------------------------------------------------------------------------------------------------------
 // Roadmap: the next increments (plan.md after the two Codex surveys, codex_literature.md and codex_domains.md).
-const roadmapLede = "From two literature surveys run with Codex. Structure and flows, which both recommend, are done; these come next.";
+const roadmapLede = "From two Codex literature surveys. Structure, flows and dominators are done; revalidating them comes first.";
 const roadmap = [
-  { name: "Dominators", icon: "LuMilestone", answers: "The nodes every route from a source must pass through.", cert: "A dominator tree with a low-high order, checked against the edges.", ref: "Lengauer–Tarjan 1979; Georgiadis–Tarjan 2015" },
+  { name: "Revalidation for the new operations", icon: "LuRotateCw", answers: "Whether cached structure, flow and dominator answers still hold after an edit.", cert: "Their own certificates, rechecked against the edited projection.", ref: "In progress" },
   { name: "Exact incidence algebra", icon: "LuSigma", answers: "Exact rank and kernels: conservation laws for RATES, Petri nets.", cert: "Elimination identities, kernel equations; Farkas for infeasibility.", ref: "Feinberg 1987 (deficiency, in adapters)" },
   { name: "Support certificates", icon: "LuShieldCheck", answers: "Support answers checked and revalidated without recomputing.", cert: "Derivation ranks and closure under every rule prove the least fixpoint.", ref: "Dowling–Gallier 1984; McConnell et al. 2011" },
   { name: "k-best paths", icon: "LuListOrdered", answers: "Alternative routes and explanations, not only one optimum.", cert: "Path witnesses; a deviation partition with potentials proves the first k.", ref: "Yen 1971 (k shortest simple paths)" },

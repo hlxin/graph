@@ -605,6 +605,44 @@ const ASIDES = {
     ], { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.2 });
     check("ranking schematic note", ny - y + height("The lowest lower bound of v1–v3 exceeds every other upper bound, so they are proven to be the top three as a set. v4 and v5 overlap: their order is not claimed.", w - 0.6, 14), h - 0.2);
   },
+  // Schematic flow graph and its dominator tree: every walk from s to d or e passes through c.
+  dominatorSchematic(s, x, y, w, h) {
+    card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "dominator schematic" });
+    text(s, [
+      { text: "SCHEMATIC", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1, breakLine: true } },
+      { text: "Every route from s to e passes through c", options: { fontSize: 16, bold: true, color: C.text1 } },
+    ], { x: x + 0.3, y: y + 0.25, w: w - 0.6, h: 0.65 });
+    const r = 0.21;
+    const node = (name, cx, cy, hot) => {
+      s.addText(name, {
+        shape: pres.shapes.OVAL, x: cx - r, y: cy - r, w: 2 * r, h: 2 * r, fill: { color: hot ? C.accent2 : C.accent1 },
+        line: { type: "none" }, color: C.background1, fontFace: MONO, fontSize: 14, bold: true, align: "center", valign: "middle",
+        margin: 0, objectName: `node ${name}`,
+      });
+    };
+    const arc = ([x1, y1], [x2, y2], arrow) => {
+      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+      line(s, x1 + ux * r, y1 + uy * r, x2 - ux * (r + 0.02), y2 - uy * (r + 0.02), { color: C.accent6, width: 1.5, ...(arrow ? { endArrowType: "triangle" } : {}) });
+    };
+    // The flow graph.
+    const gx = x + 0.55, gw = w - 1.1, gy = y + 1.15, gh = 1.15;
+    const G = { s: [0, 0.5], a: [0.27, 0.05], b: [0.27, 0.95], c: [0.52, 0.5], d: [0.77, 0.05], e: [1, 0.5] };
+    const at = (k) => [gx + G[k][0] * gw, gy + G[k][1] * gh];
+    for (const [u, v] of [["s", "a"], ["s", "b"], ["a", "c"], ["b", "c"], ["c", "d"], ["d", "e"], ["c", "e"]]) arc(at(u), at(v), true);
+    for (const k of Object.keys(G)) node(k, ...at(k), k === "c");
+    // Its dominator tree.
+    const ty = gy + gh + 0.35;
+    text(s, [{ text: "DOMINATOR TREE", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: x + 0.3, y: ty, w: w - 0.6, h: 0.25 });
+    const T = { s: [0.5, 0], a: [0.15, 0.5], b: [0.4, 0.5], c: [0.7, 0.5], d: [0.55, 1], e: [0.85, 1] };
+    const tx = x + 0.6, tw = w - 1.2, tt = ty + 0.45, th = 0.85;
+    const tat = (k) => [tx + T[k][0] * tw, tt + T[k][1] * th];
+    for (const [u, v] of [["s", "a"], ["s", "b"], ["s", "c"], ["c", "d"], ["c", "e"]]) arc(tat(u), tat(v), false);
+    for (const k of Object.keys(T)) node(k, ...tat(k), k === "c");
+    const ny = tt + th + 0.3;
+    const note = "c dominates d and e: remove it and neither can be reached from s.";
+    check("dominator schematic note", ny - y + height(note, w - 0.6, 14), h - 0.1);
+    text(s, note, { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.1, fontSize: 14, color: C.text1 });
+  },
 };
 
 const FOOTERS = {
@@ -673,7 +711,7 @@ async function revalidationSlide() {
 async function verificationSlide() {
   const s = contentSlide("Trust and results", "How we know the answers are right",
     "Four independent checks, none of which trusts the engine's own output.");
-  const n = K.verification.length, gap = 0.25, tw = (CW - gap * (n - 1)) / n, th = 1.15;
+  const n = K.verification.length, gap = 0.25, tw = (CW - gap * (n - 1)) / n, th = 1.1;
   K.verification.forEach((v, i) => {
     const x = MX + i * (tw + gap);
     card(s, x, TOP, tw, th, { fill: C.text2, name: `count ${v.label}` });
@@ -689,7 +727,7 @@ async function verificationSlide() {
     ["LuGitCompare", "Consumer parity", "SCALE: 18,951 records on injected retractions, 1,654 generated chains. STATES: 760 contexts, 38,033 atom images."],
   ];
   const reviewW = CW, reviewH = K.reviews.reduce((a, t) => a + height(t, reviewW, 12, 1.2, { bold: false }), 0) + 0.08;
-  const my = TOP + th + 0.25, mh = BOTTOM - my - reviewH - 0.2, mw = (CW - 3 * 0.3) / 4;
+  const my = TOP + th + 0.22, mh = BOTTOM - my - reviewH - 0.17, mw = (CW - 3 * 0.3) / 4;
   for (let i = 0; i < methods.length; i++) {
     const [ic, head, body] = methods[i];
     const x = MX + i * (mw + 0.3);
@@ -724,7 +762,10 @@ async function speedSlide() {
 async function headToHeadSlide() {
   const s = contentSlide("Trust and results", "Head to head: STATES's code and networkx",
     "The same answers as the applications' own code; GRAPH's carry witnesses and certificates.");
-  const w = (CW - 0.4) / 2, ch = BOTTOM - TOP - 0.75;
+  const w = (CW - 0.4) / 2;
+  const left = "Identical answers on all 760 parity contexts. The largest context: 3.9 s through a lifted box, 29 ms on the periodic cell.";
+  const capH = Math.max(height(left, w, 13), height(K.networkxChart.caption, w, 13)) + 0.05;
+  const ch = BOTTOM - TOP - capH - 0.1;
   const S1 = K.statesChart;
   s.addChart(pres.charts.BAR, [{ name: "ms per context", labels: S1.labels, values: S1.values }], {
     x: MX, y: TOP, w, h: ch, barDir: "bar", catAxisOrientation: "maxMin", valAxisHidden: true,
@@ -733,7 +774,7 @@ async function headToHeadSlide() {
     ...chartStyle({ title: "STATES contexts: mean ms per context (42 contexts)" }),
     objectName: "STATES chart",
   });
-  text(s, "Identical answers on all 760 parity contexts. The largest context: 3.9 s through a lifted box, 29 ms on the periodic cell.", { x: MX, y: TOP + ch + 0.1, w, h: 0.6, fontSize: 13, color: C.text1 });
+  text(s, left, { x: MX, y: TOP + ch + 0.1, w, h: capH, fontSize: 13, color: C.text1 });
   const N = K.networkxChart;
   const x2 = MX + w + 0.4;
   s.addChart(pres.charts.BAR, [
@@ -746,9 +787,8 @@ async function headToHeadSlide() {
     ...chartStyle({ title: "Seconds, against networkx (pure Python too)", showLegend: true, legendPos: "b", legendFontFace: CHART_FONT, legendFontSize: 12, legendColor: HEX.dk1 }),
     objectName: "networkx chart",
   });
-  text(s, N.caption, { x: x2, y: TOP + ch + 0.1, w, h: 0.6, fontSize: 13, color: C.text1 });
-  check("networkx caption", height(N.caption, w, 13), 0.6);
-  s.addNotes(`Left: ${S1.source}. Mean of 42 contexts: STATES's extract_context 58.5 ms; GRAPH through a lift 305 ms (222 ms lift + 0.34 ms query); GRAPH on the cell 17.1 ms (10.6 ms projection + 0.76 ms query). The cell's projection depends only on the record, so it can be built once and reused. Heavily loaded machine: compare ratios. Right: ${N.source}. Articulation points: GRAPH's biconnectivity (which also finds bridges) against networkx's articulation_points; max flow: 5 sources, 5 targets, integer capacities, against networkx maximum_flow_value; matching: against networkx hopcroft_karp_matching. GRAPH's answers come with certificates.`);
+  text(s, N.caption, { x: x2, y: TOP + ch + 0.1, w, h: capH, fontSize: 13, color: C.text1 });
+  s.addNotes(`Left: ${S1.source}. Mean of 42 contexts: STATES's extract_context 58.5 ms; GRAPH through a lift 305 ms (222 ms lift + 0.34 ms query); GRAPH on the cell 17.1 ms (10.6 ms projection + 0.76 ms query). The cell's projection depends only on the record, so it can be built once and reused. Heavily loaded machine: compare ratios. Right: ${N.source}. Articulation points: GRAPH's biconnectivity (which also finds bridges) against networkx's articulation_points; max flow: 5 sources, 5 targets, integer capacities, against networkx maximum_flow_value; matching: against networkx hopcroft_karp_matching; dominators: against networkx immediate_dominators (GRAPH 0.65 s, 1.37 s with the low-high certificate). GRAPH's answers come with certificates.`);
 }
 
 async function timelineSlide() {
