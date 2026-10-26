@@ -46,6 +46,8 @@ Operations (docs/API_CONTRACT.md):
   ``certificate``; limit ``max_expansions``.
 * ``matching``: ``left`` (``{node_types, nodes}``: the nodes to pair), ``scope`` (from a left node to its candidate
   partners), ``certificate``; limit ``max_expansions``.
+* ``dominators``: ``sources``, ``scope``, ``targets`` (null: every node reached, with its immediate dominator; else
+  each target's dominators), ``certificate``; limit ``max_expansions``.
 
 No operation takes a field named ``kind``: a request's identity digests its fields with ``kind`` naming the record
 kind (``graph_runtime.request``).
@@ -70,7 +72,7 @@ from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
-              "biconnectivity", "max_flow", "matching")
+              "biconnectivity", "max_flow", "matching", "dominators")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
@@ -95,7 +97,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "components": ("max_expansions", "max_results"),
            "biconnectivity": ("max_expansions",),
            "max_flow": ("max_expansions",),
-           "matching": ("max_expansions",)}
+           "matching": ("max_expansions",),
+           "dominators": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -110,7 +113,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "components": (("scope",), ("connectivity", "nodes", "min_size", "certificate")),
            "biconnectivity": (("scope",), ("nodes", "blocks", "certificate")),
            "max_flow": (("sources", "targets", "scope"), ("capacities", "node_capacity", "certificate")),
-           "matching": (("left", "scope"), ("certificate",))}
+           "matching": (("left", "scope"), ("certificate",)),
+           "dominators": (("sources", "scope"), ("targets", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -316,6 +320,11 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         if data["left"]["node_types"] is None and data["left"]["nodes"] is None:
             raise _fail("invalid_request", "left names node_types or nodes")
         data["scope"] = _scope(raw["scope"], "scope")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "dominators":
+        data["sources"] = _ids(raw["sources"], "sources")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["targets"] = None if raw.get("targets") is None else _ids(raw["targets"], "targets")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "periodicity":
         data["nodes"] = _ids(raw["nodes"], "nodes")

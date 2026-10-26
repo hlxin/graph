@@ -43,6 +43,8 @@ states consistently, and required costs only for edges actually in scope. Revisi
   with unit capacities), certified by the cut's source side (section 4)
 - the `matching` operation: a maximum matching of a left set to partners outside it, certified by König's vertex
   cover (section 4)
+- the `dominators` operation: the nodes every walk from the sources to a node passes through (its dominator tree, or
+  each target's chain), certified by a low-high order of the tree, checked arc by arc (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -152,6 +154,7 @@ no wildcard: a scope lists what it follows.
 | `biconnectivity` | `scope` (each edge in it, in either direction, a link between its ends), `nodes` (only the components holding these; null: all), `blocks` (list the blocks too; default false), `certificate` (default false) | `max_expansions` |
 | `max_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as costs, non-negative; null: every edge 1), `node_capacity` (what each node other than the sources and targets passes; null: no limit), `certificate` (default false) | `max_expansions` |
 | `matching` | `left` (`{"node_types", "nodes"}`, at least one: the nodes to pair), `scope` (from a left node to its candidate partners), `certificate` (default false) | `max_expansions` |
+| `dominators` | `sources`, `scope`, `targets` (null: every node reached, with its immediate dominator; else each target's dominators), `certificate` (default false) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
@@ -563,6 +566,31 @@ not candidates.
 Answer: `{"pairs": [{"left", "right", "edge", "relation", "direction"}], "size", "left_count", "optimal",
 "deficiency", "certificate"}`.
 
+**Dominators.** The nodes every walk of hops in scope from the sources to a node passes through (Prosser, 1959; Lowry
+and Medlock, 1969): the intermediate every route from a feedstock to a product forms, the evidence every derivation of
+a claim rests on, a single point of failure on every route. A node d dominates v when every walk from a source to v
+passes through d; v's immediate dominator is its nearest one, and they form a tree whose ancestors of v are v's
+dominators. With several sources, a start joined to each of them stands for "some source": a source, and any node no
+single node dominates, has none (null).
+
+- **Search.** An iterative depth-first search from the sources in ascending order (each node reached is one
+  expansion), then Lengauer and Tarjan's algorithm (1979, the simple version with path compression).
+- **Answer.** `reached`: how many nodes the sources reach. Without targets, `tree`: each reached node with its
+  immediate dominator, by node ID. With targets, `chains`: for each target, in the request's order, whether it is
+  reached and its dominators from the sources toward it (the target excluded).
+- **Certificate.** With `certificate: true`, `{"kind": "low_high", "order": [{"node", "idom"}]}`: every reached node
+  with its immediate dominator, in a low-high order of the tree (Georgiadis and Tarjan, 2016): a preorder in which
+  every node has a hop from its dominator, or a hop from a node before it and one from a node after it that is not its
+  descendant (the start counts as before everything and has a hop to each source). A checker confirms that the order
+  is a preorder of the tree, that every hop in scope from a listed node leads to a listed node whose dominator is an
+  ancestor of the hop's tail (the parent property), and the low-high condition; then the tree is the dominator tree,
+  with no dominator computed again. The order is built from two independent spanning trees that the semi-dominator
+  computation gives (their Algorithms 8, 7 and 5).
+- **Limits.** Dominance is a claim about every walk, so an interrupted search claims nothing: every field is null.
+
+Answer: `{"reached", "tree": [{"node", "idom"}] or null, "chains": [{"target", "reachable", "dominators"}] or null,
+"certificate"}`.
+
 **Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
 SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for
 example from a claim to its evidence items, or from an item to the source it cites.
@@ -671,6 +699,9 @@ The result contract reports how an execution ended. It carries no scientific ans
     the cut recomputed from the records from its source side
   - for a matching, every pair a hop in scope from a left node to a node outside the left set, no node twice,
     `left_count` the left set's size, and a cover as large as the matching touching every candidate hop
+  - for dominators, from a certificate: the order a preorder of the tree, every hop in scope from a listed node
+    landing on a listed node whose dominator is an ancestor of the hop's tail, and every node low-high; the tree or
+    chains read from it
   - for periodicity, against the cell's records: the tree's hops, every hop from a listed node's image leading to a
     listed node by a lattice vector, and the cycles being exactly the edges with a nonzero net, with those nets
   - for a regular path, every hop of a witness or of the tree against the path's automaton, which it builds itself
@@ -680,7 +711,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 133 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 148 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -719,7 +750,7 @@ The verdict is one of three:
 | --- | --- | --- |
 | `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
 | `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `rule_changed` (a derivation's ground is no longer one, or an `all_of` node's inputs changed), `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
-| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support, components, biconnectivity, max_flow, matching), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
+| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support, components, biconnectivity, max_flow, matching, dominators), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
 
 Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",
 "operation", "result_id", "request_id", "from_projection", "to_projection", "verdict", "reasons", "reason_count",

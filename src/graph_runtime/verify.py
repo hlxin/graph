@@ -23,7 +23,7 @@ from collections.abc import Iterable, Mapping
 from fractions import Fraction
 from typing import Any
 
-from .result import COMPLETED, INTERRUPTED, Result, contract_problems
+from .result import COMPLETED, INTERRUPTED, Result, _acyclic, contract_problems
 
 
 def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iterable[Mapping],
@@ -89,6 +89,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.max_flow(request, answer, status)
         elif op == "matching":
             check.matching(request, answer, status)
+        elif op == "dominators":
+            check.dominators(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -1032,13 +1034,8 @@ class _Checker:
                     parent[node] = h[end]
                 if set(parent) != member - {root}:
                     self.bad(f"{where} does not span the component")
-                for k in parent:                            # every chain ends at the root: the tree has no cycle
-                    at, steps = k, 0
-                    while at in parent and steps <= len(parent):
-                        at, steps = parent[at], steps + 1
-                    if at != root:
-                        self.bad(f"{where} is circular or detached")
-                        break
+                if not _acyclic(parent):                    # every chain ends at the root: the tree has no cycle
+                    self.bad(f"{where} is circular or detached")
 
     def biconnectivity(self, request: Mapping, answer: Mapping, status: str) -> None:
         """Biconnectivity against the records: bridges name their edges' records, links of the scope; and, from the
@@ -1298,6 +1295,94 @@ class _Checker:
                 if v not in left and v not in cover:
                     self.bad(f"certificate: the candidate hop {eid} from {u!r} to {v!r} touches no node of the cover")
                     return
+
+
+    def dominators(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """Dominators against the records. Without a certificate, only that the answer names input nodes. With the
+        low-high certificate, Georgiadis and Tarjan's check, arc by arc and without computing dominators: the listed
+        parents form a tree whose preorder the list is (a start before everything, joined to each source); every hop
+        in scope from a listed node leads to a listed node (the region is closed) whose parent is an ancestor of the
+        hop's tail (the parent property); and every listed node has a hop from its parent, or hops from a node before
+        it and from a node after it that is not its descendant (the order is low-high). Then the tree is the dominator
+        tree, and the answer's tree or chains must be read from it."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        sources = set(request["sources"])
+        for e in answer.get("tree") or []:
+            if e["node"] not in self.types_of:
+                self.bad(f"{e['node']!r} is not an input node")
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+        order = [e["node"] for e in cert["order"]]
+        parent = {e["node"]: e["idom"] for e in cert["order"]}
+        if len(parent) != len(order) or any(n not in self.types_of for n in order):
+            self.bad("certificate: its nodes are input nodes, each listed once")
+            return
+        pos = {n: i + 1 for i, n in enumerate(order)}           # the start is 0
+        start = object()
+        kids: dict = {start: []}
+        for n in order:
+            kids[n] = []
+        for n in order:
+            d = parent[n]
+            if d is not None and (d not in pos or pos[d] >= pos[n]):
+                self.bad(f"certificate: {n!r}'s dominator {d!r} is not listed before it")
+                return
+            kids[start if d is None else d].append(n)
+        walk, seen = [start], []
+        while walk:
+            x = walk.pop()
+            seen.append(x)
+            walk.extend(reversed(kids[x]))
+        if seen[1:] != order:
+            self.bad("certificate: the order is not a preorder of the tree")
+            return
+        size = {n: 1 for n in order}
+        for n in reversed(order):
+            if parent[n] is not None:
+                size[parent[n]] += size[n]
+
+        def above(a: Any, d: Any) -> bool:                       # a is d or an ancestor of d (None: the start)
+            return a is None or pos[a] <= pos[d] < pos[a] + size[a]
+        into: dict = {n: [] for n in order}
+        for s in sources:
+            if s not in pos or parent[s] is not None:
+                self.bad(f"certificate: the source {s!r} is not listed, or is given a dominator")
+                return
+            into[s].append(None)
+        for u in order:
+            for eid, v, _ in self.hops_from(u, allowed):
+                if v == u:
+                    continue
+                if v not in pos:
+                    self.bad(f"certificate: hop {eid} leads from {u!r} to {v!r}, outside the listed region")
+                    return
+                if not above(parent[v], u):
+                    self.bad(f"certificate: hop {eid} from {u!r} reaches {v!r} around its dominator {parent[v]!r}")
+                    return
+                into[v].append(u)
+        for v in order:
+            tails = into[v]
+            if parent[v] in tails:
+                continue
+            low = any(u is None or pos[u] < pos[v] for u in tails)
+            high = any(u is not None and pos[u] > pos[v] and not above(v, u) for u in tails)
+            if not (low and high):
+                self.bad(f"certificate: {v!r} has neither a hop from its dominator nor hops from before and after it")
+                return
+        if answer.get("reached") != len(order):
+            self.bad(f"reached is {answer.get('reached')}, but the certificate lists {len(order)} nodes")
+        if answer.get("tree") is not None:
+            if sorted((e["node"], e["idom"]) for e in answer["tree"]) != sorted(parent.items(), key=lambda x: x[0]):
+                self.bad("the tree is not the certificate's")
+        for c in answer.get("chains") or []:
+            t = c["target"]
+            chain, k = [], parent.get(t)
+            while k is not None:
+                chain.append(k)
+                k = parent[k]
+            if c["reachable"] is not (t in pos) or list(c["dominators"]) != chain[::-1]:
+                self.bad(f"the chain of {t!r} is not the certificate's")
 
 
 class _PeriodicChecker(_Checker):
