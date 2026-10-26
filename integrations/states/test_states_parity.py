@@ -172,3 +172,43 @@ def test_a_changed_record_makes_its_lift_stale(states_repo):
     assert execute(p, req, current_bindings=adapter.bindings_of(state, lift["box"])).status == COMPLETED
     res = execute(p, req, current_bindings=adapter.bindings_of(edited, lift["box"]))
     assert (res.status, res.error["code"]) == ("stale_snapshot", "bindings_changed")
+
+
+def test_the_periodic_cell_answers_every_context_as_the_lift_does(states_repo):
+    """The same contexts on the record's cell, never lifted (a periodic projection): the same atom images at the same
+    shells, the same witnesses, relations and ports, and the same interruption, for every root set and shell count of
+    every committed record and built structure."""
+    from states.io import load_state
+    paths = sorted((states_repo / "examples" / "data").glob("*.states")) + \
+        sorted((states_repo / "examples" / "demo_output").glob("*.states"))
+    states = [load_state(path) for path in paths] + [state for _, state in built_structures()]
+    tally: Counter = Counter()
+    for state in states:
+        for roots in root_sets(state):
+            for shells in SHELLS:
+                lifted = adapter.context(state, roots=roots, shells=shells, max_atoms=10**6)
+                cell = adapter.context(state, roots=roots, shells=shells, max_atoms=10**6, periodic=True)
+                assert cell["status"] == COMPLETED and cell["box"] is None
+                assert graph_view(cell) == graph_view(lifted)
+                assert cell["nodes"] == lifted["nodes"]                      # shells and witnesses, one for one
+                n = len(cell["nodes"])
+                if n > 1:
+                    cut = adapter.context(state, roots=roots, shells=shells, max_atoms=n - 1, periodic=True)
+                    assert cut["status"] == INTERRUPTED and cut["nodes"] == adapter.context(
+                        state, roots=roots, shells=shells, max_atoms=n - 1)["nodes"]
+                tally["contexts"] += 1
+                tally["atom_images"] += n
+    print(dict(tally))
+    assert tally["contexts"] >= 700
+
+
+def test_periodic_witnesses_check_against_the_cell(states_repo):
+    from states.io import load_state
+    state = load_state(states_repo / "examples" / "data" / "c7h8_on_pt_alloy.states")
+    refs, _ = adapter.roots_of(state)
+    pp = adapter.periodic_projection(state)
+    res = execute(pp, pp.request("reachability", sources=[adapter.image_id(a, img) for a, img in refs],
+                                 scope=adapter.SCOPE, max_depth=3))
+    assert res.complete and res.answer["count"] > 50
+    cell = pp.to_dict()
+    assert verify_result(res, nodes=cell["nodes"], edges=cell["edges"]) == []

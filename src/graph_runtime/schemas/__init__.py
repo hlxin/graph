@@ -6,7 +6,7 @@ import json
 from importlib import resources
 
 FILE = "graph-runtime-v0.schema.json"
-ENTRIES = ("request", "result", "hypothesis_candidate", "projection")
+ENTRIES = ("request", "result", "hypothesis_candidate", "projection", "periodic_projection")
 
 
 def json_schema(entry: str | None = None) -> dict:

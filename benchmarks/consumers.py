@@ -62,13 +62,21 @@ def states_rows() -> list[dict]:
             whole_s, got = best(lambda: adapter.context(state, shells=shells))
             reused_s, again = best(lambda: execute(widest, widest.request(
                 "reachability", sources=sources, scope=adapter.SCOPE, max_depth=shells, limits={"max_results": 1000})))
+            cell_s, cell = best(lambda: adapter.periodic_projection(state))
+            cell_query_s, by_cell = best(lambda: execute(cell, cell.request(
+                "reachability", sources=sources, scope=adapter.SCOPE, max_depth=shells, limits={"max_results": 1000})))
+            cell_whole_s, periodic = best(lambda: adapter.context(state, shells=shells, periodic=True))
             wanted = {(n["source_atom"], tuple(n["image"])): n["shell"] for n in want["nodes"]}
             same = wanted == {(n["atom"], tuple(n["image"])): n["shell"] for n in got["nodes"]} == \
-                {adapter.parse_image_id(e["node"]): e["depth"] for e in again.answer["reached"]}
+                {adapter.parse_image_id(e["node"]): e["depth"] for e in again.answer["reached"]} == \
+                {(n["atom"], tuple(n["image"])): n["shell"] for n in periodic["nodes"]} == \
+                {adapter.parse_image_id(e["node"]): e["depth"] for e in by_cell.answer["reached"]}
             rows.append({"record": path.name, "shells": shells, "atom_images": len(want["nodes"]),
                          "lifted_nodes": p.node_count, "lifted_edges": p.edge_count, "native_s": native_s,
                          "graph_projection_s": lift_s, "graph_query_s": query_s, "graph_whole_s": whole_s,
-                         "graph_query_on_reused_projection_s": reused_s, "same_answer": same})
+                         "graph_query_on_reused_projection_s": reused_s, "graph_periodic_projection_s": cell_s,
+                         "graph_periodic_query_s": cell_query_s, "graph_periodic_whole_s": cell_whole_s,
+                         "same_answer": same})
     return rows
 
 

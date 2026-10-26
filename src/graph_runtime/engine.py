@@ -112,8 +112,9 @@ def execute(projection: Projection, request: Mapping | Request, *, timeout: floa
     ``threading.Event`` or a callable) may interrupt the search. ``current_bindings``: what the consumer's source,
     schema and policy are now; when they differ from the projection's bindings the result is ``stale_snapshot``."""
     started = time.perf_counter()
-    if not isinstance(projection, Projection):
-        raise TypeError(f"execute runs on a Projection, not {type(projection).__name__}")
+    from .periodic import PeriodicProjection
+    if not isinstance(projection, (Projection, PeriodicProjection)):
+        raise TypeError(f"execute runs on a Projection or a PeriodicProjection, not {type(projection).__name__}")
     if timeout is not None and deadline is not None:
         raise TypeError("give a timeout or a deadline, not both")
     if type(check_interval) is not int or check_interval < 1:
@@ -153,15 +154,20 @@ def _execute(projection: Projection, request: Any, deadline: float | None, clock
             return _no_answer(STALE, "bindings_changed", f"the bindings {list(changed)} no longer match what the "
                               "projection was built from; build a new projection", {"bindings": list(changed)},
                               request=req, projection=projection.identity, started=started)
+    periodic = not isinstance(projection, Projection)
     try:
-        plan = _bind(projection, req)
+        if periodic:
+            from . import periodic as lazy
+            plan, operations = lazy._bind(projection, req), lazy._OPERATIONS
+        else:
+            plan, operations = _bind(projection, req), _OPERATIONS
     except RequestError as e:
         return _no_answer(e.status, e.code, e.message, e.detail, request=req, projection=projection.identity,
                           started=started)
 
     bound = time.perf_counter()
     ctl = _Control(req.limits["max_expansions"], deadline, clock, cancelled, check_interval)
-    search, build = _OPERATIONS[req.operation]
+    search, build = operations[req.operation]
     try:
         state = search(projection, plan, ctl)
         searched = time.perf_counter()
@@ -265,6 +271,10 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.cost = (None if req["costs"] is None
                      else _costs(p, req["costs"], plan.fwd, plan.rev, scaled=req["objective"] == "min_sum"))
         plan.rational = plan.cost is not None and plan.cost.rational
+    elif op == "periodicity":
+        raise RequestError("unsupported", "unsupported_operation", "periodicity runs on a periodic projection: the "
+                           "translation lattice of a component of an infinite periodic graph",
+                           {"operation": op, "projection": "plain"})
     elif op == "support":
         plan.failed = _nodes(p, req["failed"], "failed")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
@@ -1376,11 +1386,11 @@ class _Objective:
     combination is at least as bad as each of its parts, so the best values can be settled in order).
 
     ``min_sum``: a derivation's value is the sum of its hops' costs, every use counted (a tree, not a DAG); lower is
-    better; a given node is worth 0. ``min_max``: the highest cost of its hops; lower is better. ``max_min``: the lowest;
-    higher is better. For the last two a given node is worth ``IDENTITY`` (no hop: written null), better than any
-    number. ``hop(c, v)`` is the value of using an input worth v through a hop of cost c; ``fold(a, b)`` combines the
-    inputs of an all_of node, in the order its uses are listed (on a tie, the earlier one is kept, so a reported value
-    is reproducible from the listed uses alone)."""
+    better; a given node is worth 0. ``min_max``: the highest cost of its hops; lower is better. ``max_min``: the
+    lowest; higher is better. For the last two a given node is worth ``IDENTITY`` (no hop: written null), better than
+    any number. ``hop(c, v)`` is the value of using an input worth v through a hop of cost c; ``fold(a, b)`` combines
+    the inputs of an all_of node, in the order its uses are listed (on a tie, the earlier one is kept, so a reported
+    value is reproducible from the listed uses alone)."""
 
     IDENTITY = None
 

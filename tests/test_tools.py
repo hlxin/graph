@@ -25,7 +25,7 @@ def kit():
 
 def test_every_tool_is_described_by_json_schema():
     import jsonschema
-    assert len(TOOL_NAMES) == len(set(TOOL_NAMES)) == 8
+    assert len(TOOL_NAMES) == len(set(TOOL_NAMES)) == 10
     for t in TOOLS:
         jsonschema.Draft202012Validator.check_schema(t["input_schema"])
         assert t["name"].startswith("graph_") and len(t["description"]) > 40
@@ -34,7 +34,8 @@ def test_every_tool_is_described_by_json_schema():
 def test_status_and_describe(kit):
     st = kit.call("graph_status")
     assert st["contract"] == CONTRACT and st["operations"] == list(OPERATIONS) and st["projections"] == []
-    assert set(kit.call("graph_describe")["kinds"]) == {"request", "result", "projection", "hypothesis_candidate"}
+    assert set(kit.call("graph_describe")["kinds"]) == {"request", "result", "projection", "periodic_projection",
+                                                        "hypothesis_candidate"}
     assert kit.call("graph_describe", {"name": "result"})["schema"]["$ref"] == "#/$defs/result"
     assert kit.call("graph_describe", {"name": "nothing"})["error"]["code"] == "unknown_kind"
 
@@ -161,5 +162,68 @@ def test_the_command_line(capsys, tmp_path):
     assert "error" in json.loads(capsys.readouterr().out)
     assert main(["call", "graph_execute", "{not json"]) == 2
     assert "cannot read the arguments" in capsys.readouterr().err
-    assert main(["tools"]) == 0 and len(json.loads(capsys.readouterr().out)) == 8
+    assert main(["tools"]) == 0 and len(json.loads(capsys.readouterr().out)) == 10
     assert main([]) == 2 and main(["what"]) == 2
+
+
+def test_a_periodic_cell_is_a_projection_too(kit):
+    cell = {"nodes": [{"id": "A", "types": ["Pt"]}],
+            "edges": [{"id": "x", "source": "A", "target": "A", "relation": "neighbor", "shift": [1, 0]},
+                      {"id": "y", "source": "A", "target": "A", "relation": "neighbor", "shift": [0, 1]}]}
+    built = kit.call("graph_projection", cell)
+    assert built["dimensions"] == 2 and built["periodic"] == [True, True] and built["nodes"] == 1
+    res = kit.call("graph_execute", {"request": {"operation": "reachability", "sources": ["A@0,0"], "max_depth": 2,
+                                                 "scope": [["neighbor", "forward"], ["neighbor", "reverse"]]},
+                                     "projection": {"identity": built["identity"]}})
+    assert res["status"] == "completed" and res["answer"]["count"] == 13
+    assert kit.call("graph_verify", {"result": res})["problems"] == []
+
+
+CHAIN = {"nodes": [f"n{i:02d}" for i in range(40)],
+         "edges": [{"id": f"e{i:02d}", "source": f"n{i:02d}", "target": f"n{i + 1:02d}", "relation": "R"}
+                   for i in range(39)]}
+
+
+def test_a_summary_is_small_and_the_session_keeps_the_whole(kit):
+    p = kit.call("graph_projection", CHAIN)["identity"]
+    req = {"operation": "reachability", "sources": ["n05"], "scope": [["R", "forward"], ["R", "reverse"]]}
+    small = kit.call("graph_execute", {"request": req, "projection": {"identity": p}, "view": "summary", "limit": 3})
+    assert small["summary"]["count"] == 40 and small["cached"] is False
+    assert small["summary"]["items"] == [{"node": "n05", "depth": 0}, {"node": "n04", "depth": 1},
+                                         {"node": "n06", "depth": 1}] and small["summary"]["more"]
+    assert small["summary"]["by_depth"] == [[0, 1], [1, 2], [2, 2]]
+    assert len(json.dumps(small)) < len(json.dumps(kit.call("graph_result", {"result_id": small["result_id"]}))) / 5
+    again = kit.call("graph_execute", {"request": req, "projection": {"identity": p}, "view": "summary"})
+    assert again["cached"] is True and again["result_id"] == small["result_id"]
+    whole = kit.call("graph_result", {"result_id": small["result_id"]})
+    assert whole["answer"]["count"] == 40 and whole["result_id"] == small["result_id"]
+    page = kit.call("graph_result", {"result_id": small["result_id"], "field": "reached", "offset": 38, "limit": 5})
+    assert page["total"] == 40 and [e["node"] for e in page["items"]] == ["n38", "n39"]
+    path = kit.call("graph_result", {"result_id": small["result_id"], "path_to": "n08"})
+    assert [h["edge"] for h in path["hops"]] == ["e05", "e06", "e07"]
+    assert kit.call("graph_result", {"result_id": "sha256:" + "0" * 64})["error"]["code"] == "unknown_result"
+    assert kit.call("graph_result", {"result_id": small["result_id"], "field": "nope"})["error"]["code"] \
+        == "invalid_arguments"
+    assert kit.call("graph_result", {"result_id": small["result_id"], "path_to": "zz"})["error"]["code"] \
+        == "unknown_node"
+
+
+def test_a_batch_answers_each_request_in_order(kit):
+    p = {"identity": kit.call("graph_projection", CHAIN)["identity"]}
+    out = kit.call("graph_batch", {"projection": p, "requests": [
+        {"operation": "regular_path", "sources": ["n00"], "path": "R{2}/R*", "targets": ["n10"]},
+        {"operation": "shortest_path", "sources": ["n00"], "targets": ["n04"], "scope": [["R", "forward"]],
+         "costs": {"by_relation": {"R": 0.5}}},
+        {"operation": "derivation", "targets": ["n00", "n39"], "scope": [["R", "forward"]]},
+        {"operation": "pagerank"},
+        "not a request"]})
+    assert out["count"] == 5
+    walk, cost, derivation, unsupported, bad = out["results"]
+    assert walk["summary"]["found"] is True and walk["summary"]["length"] == 10
+    assert cost["summary"]["cost_exact"] == "2" and cost["summary"]["length"] == 4
+    assert derivation["summary"]["derived"] == [{"node": "n00", "value": 39}, {"node": "n39", "value": 0}]
+    assert unsupported["status"] == "unsupported"
+    assert bad["error"]["code"] == "invalid_arguments"
+    full = kit.call("graph_batch", {"projection": p, "view": "full", "requests": [
+        {"operation": "reachability", "sources": ["n00"], "scope": [["R", "forward"]], "max_depth": 1}]})
+    assert full["results"][0]["answer"]["count"] == 2

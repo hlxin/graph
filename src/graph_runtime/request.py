@@ -26,6 +26,8 @@ Operations (docs/API_CONTRACT.md):
 * ``regular_path``: ``sources``, ``path`` (a regular path expression: text, a list or a tree, see
   :mod:`graph_runtime.paths`), ``targets`` (null: any node), ``answer`` (``witness``: one walk with the fewest hops;
   ``reached``: every node a matching walk reaches), ``certificate``; limits ``max_expansions``, ``max_results``.
+* ``periodicity`` (periodic projections only): ``nodes`` (images), ``scope`` (followed both ways); limit
+  ``max_expansions``.
 * ``derivation``: ``targets``, ``scope`` (from a node to what it needs), ``all_of`` (node types that need every input;
   null: every node needs one), ``grounds`` (nodes given; null: every node with no input), ``costs`` (as a shortest
   path's; null: every hop costs 1), ``objective`` (``min_sum``: the least total cost; ``min_max``: the least highest
@@ -50,7 +52,7 @@ from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
-              "bottleneck_path", "regular_path", "derivation")
+              "bottleneck_path", "regular_path", "derivation", "periodicity")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
@@ -68,7 +70,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "support": ("max_expansions", "max_results"),
            "bottleneck_path": ("max_expansions",),
            "regular_path": ("max_expansions", "max_results"),
-           "derivation": ("max_expansions",)}
+           "derivation": ("max_expansions",),
+           "periodicity": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -77,7 +80,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "support": (("failed", "scope"), ("all_of",)),
            "bottleneck_path": (("sources", "targets", "scope", "weights"), ("objective", "certificate")),
            "regular_path": (("sources", "path"), ("targets", "answer", "certificate")),
-           "derivation": (("targets", "scope"), ("all_of", "grounds", "costs", "objective", "certificate"))}
+           "derivation": (("targets", "scope"), ("all_of", "grounds", "costs", "objective", "certificate")),
+           "periodicity": (("nodes", "scope"), ())}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -235,6 +239,9 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["costs"] = (None if costs is None else _costs(costs) if data["objective"] == "min_sum"
                          else _weights(costs, "costs"))
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "periodicity":
+        data["nodes"] = _ids(raw["nodes"], "nodes")
+        data["scope"] = _scope(raw["scope"], "scope")
     elif op == "support":
         data["failed"] = _ids(raw["failed"], "failed")
         data["scope"] = _scope(raw["scope"], "scope")

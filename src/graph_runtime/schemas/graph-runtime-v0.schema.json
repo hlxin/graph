@@ -658,6 +658,43 @@
             }
           },
           "description": "derivation: costs are non-negative for min_sum (as a shortest path's), any finite number otherwise; null: every hop costs 1."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "nodes",
+            "scope"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "periodicity"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "nodes": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            }
+          },
+          "description": "periodicity (periodic projections only): nodes are images; the scope is followed both ways."
         }
       ]
     },
@@ -1642,7 +1679,8 @@
                   "support",
                   "bottleneck_path",
                   "regular_path",
-                  "derivation"
+                  "derivation",
+                  "periodicity"
                 ]
               }
             }
@@ -2290,6 +2328,49 @@
             "properties": {
               "operation": {
                 "const": "derivation"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "periodicity"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/periodicity_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "periodicity"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "periodicity"
               }
             }
           }
@@ -4212,6 +4293,281 @@
         }
       },
       "description": "derived: each derived target with its best value; underived (complete only): targets with no derivation; bound (interrupted only): no unsettled target has a better derivation (null: nothing known); derivation: every node the derived targets' derivations use, given (a ground), all (every input) or one (one input), with its value and the hops it uses. A value is a number, exact as value_exact in rational mode; for min_max and max_min, null is a given node's (no hop). The values certificate: values no derivation beats, the bound for every node it leaves unlisted (null: no derivation at all)."
+    },
+    "periodic_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contract",
+        "identity",
+        "bindings",
+        "relations",
+        "node_types",
+        "nodes",
+        "edges",
+        "type_parents",
+        "relation_parents",
+        "dimensions",
+        "periodic"
+      ],
+      "properties": {
+        "kind": {
+          "const": "graph_runtime.periodic_projection"
+        },
+        "contract": {
+          "const": "graph-runtime/v0.2"
+        },
+        "identity": {
+          "$ref": "#/$defs/digest"
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/id"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "node_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "types"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "types": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/id"
+                }
+              }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "source",
+              "target",
+              "relation",
+              "shift"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "source": {
+                "$ref": "#/$defs/id"
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              },
+              "relation": {
+                "$ref": "#/$defs/id"
+              },
+              "shift": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "type_parents": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
+        },
+        "relation_parents": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
+        },
+        "dimensions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "periodic": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "boolean"
+          }
+        }
+      },
+      "description": "A periodic projection snapshot (PeriodicProjection.to_dict): a cell's records, each edge with its image shift; its identity is recomputed from the records on reading."
+    },
+    "periodicity_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "components",
+        "count"
+      ],
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "seeds",
+              "nodes",
+              "rank",
+              "basis",
+              "copies",
+              "cycles",
+              "witnesses"
+            ],
+            "properties": {
+              "seeds": {
+                "$ref": "#/$defs/ids"
+              },
+              "nodes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "node",
+                    "image",
+                    "via"
+                  ],
+                  "properties": {
+                    "node": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "image": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "via": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/via"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "rank": {
+                "$ref": "#/$defs/count"
+              },
+              "basis": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "cycles": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "edge",
+                    "net"
+                  ],
+                  "properties": {
+                    "edge": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "net": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              },
+              "witnesses": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "edge",
+                      "times"
+                    ],
+                    "properties": {
+                      "edge": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "times": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              },
+              "copies": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      },
+      "description": "periodicity: for each component of the requested images (in the infinite graph), the cell's nodes it meets, each with the image a spanning tree reaches and the hop it follows; the cycles that edges outside the tree close and their net shifts; the translation lattice they generate, as its Hermite normal form (basis) and rank (0 finite, 1 a chain, 2 a layer, 3 a framework); copies, the lattice's index in the integer vectors of its span (how many translated copies of the component run through the same space: a framework's degree of interpenetration); and each basis row written as a combination of the cycles (witnesses)."
     }
   }
 }

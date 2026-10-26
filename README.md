@@ -23,7 +23,7 @@ availability (the bare PyPI name `graph` belongs to another project).
 
 | Part | What it provides |
 | --- | --- |
-| Projection | An immutable, read-only graph view of the consumer's records: original node and edge IDs kept, parallel edges kept as distinct records, integer remapping inside, optional type and relation hierarchies (a type matches its subtypes' nodes, a relation covers its specializations), and an identity digest bound to the consumer's source, schema and policy |
+| Projection | An immutable, read-only graph view of the consumer's records: original node and edge IDs kept, parallel edges kept as distinct records, integer remapping inside, optional type and relation hierarchies (a type matches its subtypes' nodes, a relation covers its specializations), and an identity digest bound to the consumer's source, schema and policy. A **periodic projection** holds one cell of an infinite periodic graph (a crystal, a slab), its edges with image shifts; reachability and impact search its images (`atom@i,j,k`) without lifting a box of them, and **periodicity** gives each component's translation lattice: rank 0 (molecule) to 3 (framework), a canonical basis with witnesses, and its degree of interpenetration |
 | Operations | Exact **reachability**, **typed path** (a finite relation sequence, with optional node types per position), **shortest path** (explicit, finite, non-negative costs, with exact integer and rational arithmetic), **dependency impact**, **pattern** (tree patterns of variables and steps, optional steps included: rows without dead ends, counted exactly without listing them), **support** (what loses all or some of its support when nodes fail, under AND/OR rules, as a least fixpoint), **bottleneck path** (the path whose weakest edge is strongest, or whose highest edge is lowest: a reaction pathway's fastest rate-limiting step, or its lowest highest barrier) **regular path** (walks whose hops match a regular expression of steps, such as `DERIVED_FROM*/SUPPORTED_BY[Measurement]/IN`: one with the fewest hops, or every node reached) and **derivation** (the best derivation of each target in an AND/OR graph, where a reaction needs all its reactants and a species any reaction that makes it: the cheapest route from given feedstocks, the one whose highest barrier is lowest, or whose slowest step is fastest), each with structural witnesses |
 | Limits | Expansion budget and output limit (part of the request), deadline and cancellation (execution controls). A limit that prevents completion makes the result `interrupted`; a full answer that fits can complete. An interrupted result never certifies a negative |
 | Results | One contract: `completed`, `interrupted`, `unsupported`, `failed` or `stale_snapshot`, with the normalized request, the projection identity, the answer, statistics, limitations and a reproducible `result_id` |
@@ -59,14 +59,18 @@ impact and a hypothesis candidate about it.
 
 The same tools are reachable as Python (`graph_runtime.tools.GraphToolkit().call(name, arguments)`), on the command
 line and over the Model Context Protocol. Each tool is plain JSON Schema, takes JSON and returns JSON, reports a
-problem as data, and writes nothing.
+problem as data, and writes nothing. A session keeps what it built and what it answered: a request run again on the
+same projection is answered from the session (results are reproducible), and an agent can read a summary first and
+fetch the rest of a result only when it needs it, so large answers do not fill its context.
 
 | Tool | What it does |
 | --- | --- |
 | `graph_status` | versions, operations, whether text search is available, what the session holds |
 | `graph_describe` | the contract's JSON Schema for requests, results, projections and candidates |
 | `graph_projection` | build a projection from records (inline or a file) and keep it under its identity |
-| `graph_execute` | run a request on a projection the session holds, or one given inline |
+| `graph_execute` | run a request on a projection the session holds, or one given inline; `view: summary` returns its status, counts and nearest items instead of the whole answer |
+| `graph_result` | a result the session holds, by `result_id`: whole, summarized, a slice of one of its lists, or one node's witness |
+| `graph_batch` | several requests on one projection in one call, each summarized (or whole) |
 | `graph_verify` | check a result against a projection's records |
 | `graph_revalidate` | which cached results still hold after the records changed |
 | `graph_search` | exact text search over items that name records, with the nodes they name (needs numpy) |

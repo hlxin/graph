@@ -428,6 +428,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_regular_problems(request, answer, status, data.get("interruption")))
     elif op == "derivation":
         out.extend(_derivation_problems(request, answer, status))
+    elif op == "periodicity":
+        out.extend(_periodicity_problems(request, answer, status))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -551,6 +553,89 @@ def _regular_problems(request: dict, answer: dict, status: str, interruption: di
             out.append("certificate states start with every source at the start state, with no hop")
         if cert["bound"] is not None and any(st["length"] >= cert["bound"] for st in cert["states"]):
             out.append("certificate states have fewer hops than its bound")
+    return out
+
+
+def _periodicity_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A periodicity answer's own consistency, read without the records: every requested image placed once (all of
+    them when complete), components in order of their first seed; per component one tree over its listed nodes, rooted
+    where no hop leads, each hop from a listed node's image; a basis in Hermite normal form whose rank and copies it
+    states; cycles whose nets the basis generates, and witnesses that write each basis row as a combination of them;
+    each seed an image of a listed node offset by a lattice vector; and components over the same nodes that differ by
+    a vector outside the lattice. Whether hops, cycles and nets match the records is checked against them
+    (:func:`graph_runtime.verify_result`)."""
+    from .lattice import coefficients, copies, hermite
+    out = []
+    comps = answer["components"]
+    if answer["count"] != len(comps):
+        out.append("count must equal the number of components")
+    placed = [s for c in comps for s in c["seeds"]]
+    if len(placed) != len(set(placed)) or not set(placed) <= set(request["nodes"]):
+        out.append("each requested image is placed in one component at most, and only requested images are")
+    if status == COMPLETED and set(placed) != set(request["nodes"]):
+        out.append("a complete answer places every requested image")
+    if [c["seeds"][0] for c in comps] != sorted(c["seeds"][0] for c in comps):
+        out.append("components are in order of their first seed")
+    seen: dict = {}
+    for n, c in enumerate(comps):
+        where = f"component {n}"
+        nodes = [x["node"] for x in c["nodes"]]
+        if nodes != sorted(set(nodes)) or c["seeds"] != sorted(set(c["seeds"])):
+            out.append(f"{where}: nodes and seeds are unique, in ascending ID order")
+            continue
+        images = {x["node"]: tuple(x["image"]) for x in c["nodes"]}
+        dims = len(next(iter(images.values())))
+        if any(len(v) != dims for v in images.values()) or any(len(r) != dims for r in c["basis"]):
+            out.append(f"{where}: every image and basis row has {dims} components")
+            continue
+        names = {f"{k}@{','.join(map(str, v))}": k for k, v in images.items()}
+        parent = {}
+        for x in c["nodes"]:
+            if x["via"] is not None:
+                parent[x["node"]] = names.get(x["via"]["from"])
+        if sum(1 for x in c["nodes"] if x["via"] is None) != 1 or None in parent.values():
+            out.append(f"{where}: one listed node is the tree's root, and every hop comes from a listed node's image")
+            continue
+        for k in parent:                                    # the tree has no cycle: every chain ends at the root
+            at, steps = k, 0
+            while at in parent and steps <= len(parent):
+                at, steps = parent[at], steps + 1
+            if at in parent:
+                out.append(f"{where}: the tree of hops is circular")
+                break
+        basis = [tuple(r) for r in c["basis"]]
+        if hermite(basis, dims) != basis or c["rank"] != len(basis) or c["copies"] != copies(basis):
+            out.append(f"{where}: the basis is in Hermite normal form, with the rank and copies it states")
+            continue
+        net = {}
+        for cyc in c["cycles"]:
+            if cyc["edge"] in net or len(cyc["net"]) != dims or not any(cyc["net"]) \
+                    or coefficients(basis, cyc["net"]) is None:
+                out.append(f"{where}: cycle {cyc['edge']!r} is listed once, with a nonzero net in the lattice")
+            net[cyc["edge"]] = tuple(cyc["net"])
+        if len(c["witnesses"]) != len(basis):
+            out.append(f"{where}: one witness per basis row")
+        for row, uses in zip(basis, c["witnesses"]):
+            total = [0] * dims
+            for u in uses:
+                if u["edge"] not in net or not u["times"]:
+                    out.append(f"{where}: a witness uses listed cycles, each a nonzero number of times")
+                    break
+                total = [t + u["times"] * x for t, x in zip(total, net[u["edge"]])]
+            if tuple(total) != row:
+                out.append(f"{where}: the witness of basis row {list(row)} does not add up to it")
+        for seed in c["seeds"]:
+            node, _, text = seed.rpartition("@")
+            parts = text.split(",")
+            ok = node in images and len(parts) == dims and all(p.lstrip("-").isdigit() for p in parts)
+            if not ok or coefficients(basis, [int(p) - q for p, q in zip(parts, images[node])]) is None:
+                out.append(f"{where}: {seed!r} is no image of a listed node by a lattice vector")
+        key = tuple(nodes)
+        for other in seen.get(key, ()):
+            if other[0] == basis and coefficients(basis, [a - b for a, b in zip(images[nodes[0]], other[1])]) \
+                    is not None:
+                out.append(f"{where}: it is the same component as an earlier one")
+        seen.setdefault(key, []).append((basis, images[nodes[0]]))
     return out
 
 
