@@ -7,7 +7,7 @@ witnesses, for scientific applications (SCALE first). Start with the developer n
 ## Commands
 
 ```bash
-python3 -m pytest                                    # runtime tests (needs pytest; networkx and jsonschema too)
+python3 -m pytest                                    # runtime tests (needs pytest; networkx, jsonschema, numpy too)
 PYTHONPATH=src python3 examples/synthetic_revision/run.py --check
 python3 benchmarks/bench.py --sizes small,medium     # raw results go to benchmarks/runs/ (ignored)
 PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale -p no:cacheprovider   # SCALE parity
@@ -17,9 +17,10 @@ PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python benchmarks/consumers.py sta
 
 ## Layout
 
-- `src/graph_runtime/`: the runtime. `projection` (immutable views, identity), `request` (normalization),
-  `engine` (the four operations, limits), `result` (the result contract), `verify` (independent witness checks),
-  `hypotheses` (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend cases).
+- `src/graph_runtime/`: the runtime. `projection` (immutable views, hierarchies, identity), `request`
+  (normalization), `engine` (the five operations, limits), `result` (the result contract), `verify` (independent
+  witness checks), `hypotheses` (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend
+  cases), `retrieval` (optional text search, needs numpy).
 - `tests/`: `oracle.py` holds the independent oracles and the random graph generator.
 - `integrations/scale/`, `integrations/states/`: the SCALE and STATES adapters (application-owned, staged here) and
   their parity tests.
@@ -27,7 +28,8 @@ PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python benchmarks/consumers.py sta
 ## Invariants
 
 - The runtime is standard library only and never imports an application's vocabulary (SCALE, STATES, RATES,
-  Cathanor). Application knowledge lives in that application's adapter.
+  Cathanor). Application knowledge lives in that application's adapter. The one exception to standard library
+  only is `retrieval`, which imports numpy inside its functions; nothing else imports `retrieval`.
 - Exact only. An interrupted result never certifies a negative: `found: false`, `complete: true` and
   `reachable(x) is False` happen only when the search finished.
 - Answers name original IDs. Parallel edges stay distinct. Order is canonical (ascending IDs), so the same

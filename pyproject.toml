@@ -10,15 +10,17 @@ version = "0.1.0.dev0"
 description = "GRAPH (Graph Runtime for Analysis, Provenance, Hypotheses): reusable graph algorithms for scientific software."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []                    # the runtime is the standard library only
+dependencies = []                    # the runtime is the standard library only (retrieval: an extra)
 classifiers = [
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering",
 ]
 
 [project.optional-dependencies]
+# retrieval: graph_runtime.retrieval alone needs numpy; nothing else imports it
+retrieval = ["numpy>=1.22"]
 # networkx: an independent oracle in the tests, never a runtime dependency; jsonschema: the contract schemas' tests
-dev = ["pytest>=7", "networkx>=3.0", "jsonschema>=4.18"]
+dev = ["pytest>=7", "networkx>=3.0", "jsonschema>=4.18", "numpy>=1.22"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -23,12 +23,13 @@ availability (the bare PyPI name `graph` belongs to another project).
 
 | Part | What it provides |
 | --- | --- |
-| Projection | An immutable, read-only graph view of the consumer's records: original node and edge IDs kept, parallel edges kept as distinct records, integer remapping inside, and an identity digest bound to the consumer's source, schema and policy |
-| Operations | Exact **reachability**, **typed path** (a finite relation sequence, with optional node types per position), **shortest path** (explicit, finite, non-negative costs, with exact integer and rational arithmetic) and **dependency impact**, each with structural witnesses |
+| Projection | An immutable, read-only graph view of the consumer's records: original node and edge IDs kept, parallel edges kept as distinct records, integer remapping inside, optional type and relation hierarchies (a type matches its subtypes' nodes, a relation covers its specializations), and an identity digest bound to the consumer's source, schema and policy |
+| Operations | Exact **reachability**, **typed path** (a finite relation sequence, with optional node types per position), **shortest path** (explicit, finite, non-negative costs, with exact integer and rational arithmetic), **dependency impact** and **pattern** (tree patterns of variables and steps, optional steps included: rows without dead ends, counted exactly without listing them), each with structural witnesses |
 | Limits | Expansion budget and output limit (part of the request), deadline and cancellation (execution controls). A limit that prevents completion makes the result `interrupted`; a full answer that fits can complete. An interrupted result never certifies a negative |
 | Results | One contract: `completed`, `interrupted`, `unsupported`, `failed` or `stale_snapshot`, with the normalized request, the projection identity, the answer, statistics, limitations and a reproducible `result_id` |
 | Hypotheses | Candidate records that are always `unverified`, with discriminating proposed tests, calibrated or ordering-only scores, append-only lifecycle and assessment history, and staleness through dependency impact. They are never traversed |
 | Checks | `verify_result` re-checks every witness against the input records; JSON Schemas describe every record; a language-neutral conformance suite any backend must pass |
+| Retrieval (optional, numpy) | `graph_runtime.retrieval`: exact keyword (BM25), hashed-vector, hybrid and rank-fusion search over text items that name records, so a search can choose where a traversal starts and a traversal can restrict a search; indexes with identities, saved with digests ([docs/RETRIEVAL.md](docs/RETRIEVAL.md)) |
 
 ## Quick start
 
@@ -55,7 +56,7 @@ impact and a hypothesis candidate about it.
 ## Development
 
 ```bash
-python3 -m pytest                      # the runtime's tests (pytest; networkx and jsonschema for the oracles and schemas)
+python3 -m pytest                      # the runtime's tests (pytest; networkx, jsonschema and numpy for the oracles, schemas and retrieval)
 uv run --extra dev pytest              # the same, in an isolated environment
 python examples/synthetic_revision/run.py --check
 ```
@@ -81,7 +82,7 @@ SCALE and STATES requests with both engines, in each application's environment.
 
 | Path | What it holds |
 | --- | --- |
-| `src/graph_runtime/` | The runtime (standard library only): `projection`, `request`, `engine`, `result`, `verify`, `hypotheses`, `schemas/`, `conformance/` |
+| `src/graph_runtime/` | The runtime (standard library only): `projection`, `request`, `engine`, `result`, `verify`, `hypotheses`, `schemas/`, `conformance/`; and `retrieval`, which alone needs numpy |
 | `tests/` | Unit, scenario, oracle-parity (independent oracle and NetworkX), limit, schema and conformance tests |
 | `integrations/scale/` | SCALE's adapter (application-owned, staged here) and its parity tests against SCALE's own engine |
 | `integrations/states/` | STATES's adapter (application-owned, staged here) and its parity tests against STATES's own context extraction |
@@ -92,9 +93,10 @@ SCALE and STATES requests with both engines, in each application's environment.
 
 - [docs/GRAPH_Developer_Note_for_Claude.md](docs/GRAPH_Developer_Note_for_Claude.md): the decision, the boundary and
   the requirements.
-- [docs/API_CONTRACT.md](docs/API_CONTRACT.md): the v0 contract as implemented.
+- [docs/API_CONTRACT.md](docs/API_CONTRACT.md): the contract as implemented.
 - [docs/HYPOTHESES_AND_PROVENANCE.md](docs/HYPOTHESES_AND_PROVENANCE.md): hypothesis candidates.
 - [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md): the six work items, their status and the evidence for
   each acceptance requirement.
+- [docs/RETRIEVAL.md](docs/RETRIEVAL.md): search, then traverse.
 - [docs/SCALE_INTEGRATION.md](docs/SCALE_INTEGRATION.md): the SCALE baseline, the adapter and its parity results.
 - [docs/STATES_INTEGRATION.md](docs/STATES_INTEGRATION.md): the STATES baseline, the adapter and its parity results.

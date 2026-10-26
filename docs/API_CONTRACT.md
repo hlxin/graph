@@ -268,7 +268,7 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that shortest-path costs are the exact sum of the hop costs
 
   It does not check completeness or minimality; the oracle tests do.
-- `graph_runtime.conformance.run_conformance(execute)` runs 49 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 62 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -284,6 +284,11 @@ These are later extensions:
 - property filters on values
 - traversal of candidate relations: a combined view needs its own contract, one that keeps candidate identity in
   every edge and witness
+
+Text retrieval is outside this contract. The optional `graph_runtime.retrieval` module ([RETRIEVAL.md](RETRIEVAL.md))
+ranks text items that name records. A consumer passes the nodes its hits name to a request as ordinary node IDs, and
+can bind the index's `index_id` into the projection, so that results name the index and go stale with it. Its hits
+are not results of this contract and carry no `result_id`.
 
 Reaction-specific feasibility, kinetics and every other scientific interpretation remain with the applications. A
 path through a species-connectivity graph does not certify that the reactants, quantities, sites or kinetic

@@ -2,22 +2,22 @@
 
 The developer note's work sequence ([GRAPH_Developer_Note_for_Claude.md](GRAPH_Developer_Note_for_Claude.md), section
 5) has six work items. This file records where each stands, and the evidence for each acceptance requirement of
-section 6. Status as of 25 October 2026, contract `graph-runtime/v0.1`, runtime `0.1.0.dev0`.
+section 6. Status as of 25 October 2026, contract `graph-runtime/v0.2`, runtime `0.1.0.dev0`.
 
 ## Work items
 
 | # | Work item | Status | What exists |
 | --- | --- | --- | --- |
 | 1 | Record the baseline and agree on the small contract | Done; **the contract awaits review** | [API_CONTRACT.md](API_CONTRACT.md) and the JSON Schema; the SCALE baseline in [SCALE_INTEGRATION.md](SCALE_INTEGRATION.md) |
-| 2 | The immutable view and four exact operations with structural witnesses | Done | `projection.py`, `request.py`, `engine.py`, `result.py`, `verify.py`; unit, scenario, oracle and limit tests; 49 conformance cases |
+| 2 | The immutable view and four exact operations with structural witnesses | Done, and extended from SCALE (below) | `projection.py`, `request.py`, `engine.py`, `result.py`, `verify.py`; unit, scenario, oracle and limit tests; 62 conformance cases. Contract v0.2 adds type and relation hierarchies and a fifth operation, `pattern` |
 | 3 | Candidate-hypothesis validation and transport, without source mutation | Done | `hypotheses.py`, [HYPOTHESES_AND_PROVENANCE.md](HYPOTHESES_AND_PROVENANCE.md), the synthetic example |
 | 4 | The first real consumer adapter and scientific parity fixtures | First cut | SCALE's adapter, staged in `integrations/scale/`, with two read-only workflows and parity against SCALE's own engine; it still has to go to SCALE as a pull request |
 | 5 | Measure the whole request; evaluate one alternative backend only if needed | Measured and optimized | every result's `timing` (bind, search, witness, result) and `benchmarks/bench.py` (build, serialization, reading back, verifying, workload identity, versions, raw results, parity); the hot spots found are fixed (see Measurements); no alternative backend is needed at the sizes measured |
 | 6 | Prepare the extraction path; exercise a real second consumer | Second consumer exercised | STATES's adapter, staged in `integrations/states/`: context extraction as bounded reachability over the lifted periodic substrate, with parity against STATES's own `extract_context` ([STATES_INTEGRATION.md](STATES_INTEGRATION.md)); the private repository `hlxin/graph` holds the runtime; no release yet |
 
 The note's criterion for a separately versioned package is a real second workflow that validates the same
-interface. STATES now provides one. Its context extraction runs on the unchanged v0.1 interface, with no new
-operation and no STATES vocabulary in the runtime:
+interface. STATES now provides one. Its context extraction uses only what v0.1 already had, unchanged in v0.2, with
+no new operation and no STATES vocabulary in the runtime:
 
 - a projection of its lifted substrate graph
 - reachability with `max_depth` and `max_results`
@@ -26,13 +26,27 @@ operation and no STATES vocabulary in the runtime:
 
 On 70 records and 760 contexts it matches STATES's own code. What remains for a release is the other half of the
 criterion: a reason for independent releases. Both adapters are still staged here, and nothing is published. The
-runtime keeps its boundary so that it can stay small: standard library only, and no application vocabulary.
+runtime keeps its boundary so that it can stay small: standard library only (the optional retrieval module aside),
+and no application vocabulary.
+
+## From SCALE
+
+SCALE is to use GRAPH, and so are other applications. What SCALE's own engines do that is not catalysis is moved
+into GRAPH in generic form, and each move is checked against SCALE's engine on SCALE's records:
+
+| SCALE | GRAPH | Evidence |
+| --- | --- | --- |
+| Label ancestors and edge-type specializations (`pgraph_query`) | Type and relation hierarchies in projections (`type_parents`, `relation_parents`), contract v0.2 | 5 conformance cases; an independent expansion of the hierarchies on 250 random graphs; SCALE's chains and plans |
+| Plans of edge steps: chains, trees, optional steps (`pgraph_query`) | The `pattern` operation: semi-join reduction with no dead ends, rows in canonical order, exact totals without listing rows | 8 conformance cases; a brute-force enumerator on 400 random patterns; 39 SCALE question–document pairs, row for row (203 rows) |
+| Evidence search: BM25, hashed int8 vectors, hybrid and rank fusion (`passages`) | `graph_runtime.retrieval` (optional, numpy), with tokenizer settings, index identities and a `records` filter | 50 tests against the plain definitions; 1,980 SCALE searches (130,173 hits) hit for hit; SCALE's text stages; [RETRIEVAL.md](RETRIEVAL.md) |
+| What rests on a retraction, all or in part (`lifecycle`) | Dependency impact (done); the "all or some" support analysis is next | 18,951 records on injected retractions |
+| The tool surface (`api`, `mcp_server`) | Next: a command line and an MCP server for GRAPH's operations | |
 
 ## Acceptance evidence
 
 | Requirement (note, section 6) | Evidence | Where |
 | --- | --- | --- |
-| Exact results agree with independent small-graph checks and the consumer's reference behaviour | Every operation is checked on random graphs against an independent oracle (about 4,700 executions, with and without random limits), against NetworkX (reachability and integer-cost shortest paths), and against 49 hand-written conformance cases. SCALE parity covers 14 competency questions, 1,654 generated chains on 31 documents, and 18,951 records resting on injected retractions in 134 documents. STATES parity covers 760 contexts (38,033 atom images, 243,869 relations and ports, 679 limit checks) on 70 records | `tests/test_oracle.py`, `tests/test_conformance.py`, `integrations/scale/`, `integrations/states/` |
+| Exact results agree with independent small-graph checks and the consumer's reference behaviour | Every operation is checked on random graphs against an independent oracle (about 4,700 executions, with and without random limits, and 400 random patterns against a brute-force enumerator), against NetworkX (reachability and integer-cost shortest paths), and against 62 hand-written conformance cases. SCALE parity covers 14 competency questions, 1,654 generated chains on 31 documents, 39 plans of any shape row for row, 18,951 records resting on injected retractions in 134 documents, and 1,980 evidence searches hit for hit. STATES parity covers 760 contexts (38,033 atom images, 243,869 relations and ports, 679 limit checks) on 70 records | `tests/test_oracle.py`, `tests/test_conformance.py`, `integrations/scale/`, `integrations/states/` |
 | Witnesses survive parallel edges, cycles, reverse traversal and repeated nodes in typed patterns | Named scenarios for each (`e4`/`e5` twins, the `a-b-c-d-a` cycle, reverse hops, a witness `e1, e1, e1` that revisits nodes). Random graphs include parallel edges and self-loops, and `verify_result` re-checks every witness against the records | `tests/test_operations.py`, `tests/test_oracle.py` |
 | Large integer costs keep their order; missing, negative and non-finite costs are refused | Costs of `2**64 + 1` versus `2**64 + 2`, which a float sum cannot tell apart; floats added as exact rationals; each refusal code tested (`missing_cost`, `negative_cost` as unsupported, `non_finite_cost`, `invalid_cost`) | `tests/test_operations.py`, `tests/test_requests.py` |
 | Output limits, cancellation, deadlines and exhausted budgets cannot certify a negative | Each limit, with exact-fit and one-short cases. Random limits on every operation: an interrupted answer only lists what the full answer holds, and never says `found: false`. The JSON Schema and the conformance suite refuse a result that claims otherwise | `tests/test_limits.py`, `tests/test_oracle.py`, `tests/test_schemas.py`, `tests/test_conformance.py` |
@@ -124,7 +138,10 @@ contract, so it waits for a decision.
 ## Next
 
 1. Review the contract (work item 1) and settle anything it should change before a consumer depends on it.
-2. Propose the SCALE adapter to SCALE as a pull request, under SCALE's process.
-3. Propose the STATES adapter to STATES, under its own process.
-4. Decide on the periodic projection proposed under Real consumer requests.
-5. A third workflow, RATES (its site graphs), when one needs an operation GRAPH has.
+2. Take the rest of SCALE's generic machinery: the "all or some" support analysis, and a command line and MCP server.
+3. Certificates: answers that carry a proof of a negative or of optimality, checked without rerunning the search,
+   and cached answers revalidated on an edited projection instead of recomputed.
+4. Propose the SCALE adapter to SCALE as a pull request, under SCALE's process.
+5. Propose the STATES adapter to STATES, under its own process.
+6. Decide on the periodic projection proposed under Real consumer requests.
+7. A third workflow, RATES (its site graphs), when one needs an operation GRAPH has.
