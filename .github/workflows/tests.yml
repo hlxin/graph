@@ -1,12 +1,17 @@
 # The runtime's tests, the example's committed outputs and the conformance suite of an installed wheel, on the oldest,
 # a middle and the newest supported Python. The SCALE and STATES parity tests need those checkouts and run locally
 # (docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md).
+#
+# Manual for now: GitHub did not start the first runs ("recent account payments have failed or your spending limit
+# needs to be increased", 25 October 2026). Once the account's Actions billing works, run on every change again:
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
 name: tests
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
