@@ -618,6 +618,293 @@
       "type": "integer",
       "minimum": 0
     },
+    "critical_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acyclic",
+        "cycle",
+        "cost",
+        "path",
+        "schedule",
+        "certificate"
+      ],
+      "properties": {
+        "acyclic": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cycle": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "hops",
+                "reach"
+              ],
+              "properties": {
+                "hops": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "edge",
+                      "relation",
+                      "direction",
+                      "from",
+                      "to"
+                    ],
+                    "properties": {
+                      "edge": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "relation": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "direction": {
+                        "$ref": "#/$defs/direction"
+                      },
+                      "from": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "to": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "cost": {
+                        "$ref": "#/$defs/cost"
+                      }
+                    }
+                  }
+                },
+                "reach": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "edge",
+                          "relation",
+                          "direction",
+                          "from",
+                          "to"
+                        ],
+                        "properties": {
+                          "edge": {
+                            "$ref": "#/$defs/id"
+                          },
+                          "relation": {
+                            "$ref": "#/$defs/id"
+                          },
+                          "direction": {
+                            "$ref": "#/$defs/direction"
+                          },
+                          "from": {
+                            "$ref": "#/$defs/id"
+                          },
+                          "to": {
+                            "$ref": "#/$defs/id"
+                          },
+                          "cost": {
+                            "$ref": "#/$defs/cost"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost": {
+          "type": [
+            "number",
+            "integer",
+            "null"
+          ]
+        },
+        "cost_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "path": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "target",
+                "length",
+                "hops"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/id"
+                },
+                "target": {
+                  "$ref": "#/$defs/id"
+                },
+                "length": {
+                  "$ref": "#/$defs/count"
+                },
+                "hops": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "edge",
+                      "relation",
+                      "direction",
+                      "from",
+                      "to"
+                    ],
+                    "properties": {
+                      "edge": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "relation": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "direction": {
+                        "$ref": "#/$defs/direction"
+                      },
+                      "from": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "to": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "cost": {
+                        "$ref": "#/$defs/cost"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schedule": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "earliest",
+                  "latest",
+                  "slack"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "earliest": {
+                    "type": [
+                      "number",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "earliest_exact": {
+                    "$ref": "#/$defs/exact"
+                  },
+                  "latest": {
+                    "type": [
+                      "number",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "latest_exact": {
+                    "$ref": "#/$defs/exact"
+                  },
+                  "slack": {
+                    "type": [
+                      "number",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "slack_exact": {
+                    "$ref": "#/$defs/exact"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "order"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "topological"
+                },
+                "order": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "earliest"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "earliest": {
+                        "type": [
+                          "number",
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "earliest_exact": {
+                        "$ref": "#/$defs/exact"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "critical_path: whether the scheduled graph is acyclic; if not, a cycle (with sources, the hops that reach it); if so, the makespan (cost), a critical path, with answer schedule every node's earliest and latest time and slack, and on request the topological order with earliest times. An interrupted answer claims nothing."
+    },
     "derivation_answer": {
       "type": "object",
       "additionalProperties": false,
@@ -4291,6 +4578,95 @@
             }
           },
           "description": "incidence: the matrix of the coefficients of the edges in scope joining row nodes and column nodes (disjoint sets); kernels: which kernels to list (left: vectors over the rows, right: over the columns)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "scope",
+            "sources",
+            "costs",
+            "answer",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "critical_path"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "sources": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "costs": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "properties": {
+                    "by_relation": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/cost"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    },
+                    "by_edge": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/cost"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "answer": {
+              "enum": [
+                "path",
+                "schedule"
+              ]
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "critical_path: a hop from u to v means u comes first; sources (null: every node) limit the schedule to what they reach; costs as a shortest path's (null: every hop 1)."
         }
       ]
     },
@@ -4841,7 +5217,8 @@
                   "max_flow",
                   "matching",
                   "dominators",
-                  "incidence"
+                  "incidence",
+                  "critical_path"
                 ]
               }
             }
@@ -5833,6 +6210,49 @@
             "properties": {
               "operation": {
                 "const": "incidence"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "critical_path"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/critical_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "critical_path"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "critical_path"
               }
             }
           }

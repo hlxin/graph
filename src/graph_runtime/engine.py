@@ -26,7 +26,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import algebra, dominators, flows, paths, ranking, structure
+from . import algebra, dominators, flows, paths, ranking, schedule, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -306,6 +306,17 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = None if req["targets"] is None else _nodes(p, req["targets"], "targets")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "critical_path":
+        plan.certificate, plan.schedule, plan.costs = req["certificate"], req["answer"] == "schedule", req["costs"]
+        plan.sources = None if req["sources"] is None else _nodes(p, req["sources"], "sources")
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        if plan.costs is None:
+            plan.rational, plan.cost_of, plan.given, plan.exact = False, (lambda ei: 1), (lambda ei: 1), (lambda x: x)
+        else:
+            table = _costs(p, req["costs"], plan.fwd, plan.rev)
+            edge, rel_cost, edge_rel = table.edge, table.rel, p._edge_rel
+            plan.rational, plan.given, plan.exact = table.rational, table.given, table.exact
+            plan.cost_of = ((lambda ei: edge[ei]) if edge is not None else (lambda ei: rel_cost[edge_rel[ei]]))
     elif op == "incidence":
         plan.certificate, plan.left, plan.right = req["certificate"], "left" in req["kernels"], "right" in req["kernels"]
         masks = p._node_mask
@@ -1854,4 +1865,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "dominators": (lambda p, plan, ctl: dominators.search(p, plan, ctl),
                               lambda p, plan, st: dominators.answer(p, plan, st)),
                "incidence": (lambda p, plan, ctl: algebra.search(p, plan, ctl),
-                             lambda p, plan, st: algebra.answer(p, plan, st))}
+                             lambda p, plan, st: algebra.answer(p, plan, st)),
+               "critical_path": (lambda p, plan, ctl: schedule.search(p, plan, ctl),
+                                 lambda p, plan, st: schedule.answer(p, plan, st))}

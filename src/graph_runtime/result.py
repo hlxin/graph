@@ -444,6 +444,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_dominator_problems(request, answer, status))
     elif op == "incidence":
         out.extend(_incidence_problems(request, answer, status))
+    elif op == "critical_path":
+        out.extend(_critical_problems(request, answer, status))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -817,6 +819,85 @@ def _incidence_problems(request: dict, answer: dict, status: str) -> list[str]:
         elif cert["kernel"] is not None:
             side = cert["kernel"]["side"]
             vectors("certificate kernel", (m if side == "left" else n) - rank, cert["kernel"]["vectors"])
+    return out
+
+
+def _critical_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A critical path answer's own consistency, read without the records: nothing claimed when interrupted; a cyclic
+    answer gives a closed chain of hops (and, with sources, hops from one to it) and nothing else; an acyclic one a
+    makespan, a critical path whose hops chain and add up to it, with schedule every node by ID with its earliest and
+    latest time and their difference as slack, none negative, and on request the order, every scheduled node once
+    with its earliest time. Numbers are integers, or nearest floats with exact p/q beside them when a cost is a float.
+    Whether the order and times hold is checked against the records (:func:`graph_runtime.verify_result`)."""
+    out = []
+    costs = request["costs"]
+    rational = costs is not None and any(isinstance(x, float) for x in next(iter(costs.values())).values())
+
+    def read(entry: Mapping, field: str) -> Fraction:
+        if rational:
+            exact = entry[f"{field}_exact"]
+            x = Fraction(exact)
+            if str(x) != exact or entry[field] != _nearest(x):
+                raise ValueError(f"{field}_exact is a rational in lowest terms, {field} its nearest float")
+            return x
+        if type(entry[field]) is not int or f"{field}_exact" in entry:
+            raise ValueError(f"{field} is an integer, with no {field}_exact, when every cost is one")
+        return Fraction(entry[field])
+    if status != COMPLETED:
+        if any(answer[k] is not None for k in ("acyclic", "cycle", "cost", "path", "schedule", "certificate")):
+            out.append("an interrupted critical path answer claims nothing")
+        return out
+    if answer["acyclic"] is False:
+        cyc = answer["cycle"]
+        hops = cyc["hops"] if cyc else []
+        if not hops or any(a["to"] != b["from"] for a, b in zip(hops, hops[1:])) or hops[-1]["to"] != hops[0]["from"]:
+            out.append("a cyclic answer gives a closed chain of hops")
+        if cyc and (cyc["reach"] is None) != (request["sources"] is None):
+            out.append("a cycle comes with the hops that reach it from a source exactly when sources are named")
+        if any(answer[k] is not None for k in ("cost", "path", "schedule", "certificate")):
+            out.append("a cyclic answer has no makespan, path, schedule or order")
+        return out
+    if answer["acyclic"] is not True or answer["cycle"] is not None:
+        return ["a complete answer says whether the graph is acyclic, with a cycle only when it is not"]
+    try:
+        cost = read(answer, "cost")
+        path = answer["path"]
+        if path is not None:
+            hops = path["hops"]
+            total = sum((Fraction(h["cost"]) if request["costs"] is not None else Fraction(1) for h in hops),
+                        Fraction(0))
+            at = path["source"]
+            for h in hops:
+                if h["from"] != at:
+                    out.append("the critical path's hops chain")
+                    break
+                at = h["to"]
+            if at != path["target"] or path["length"] != len(hops) or total != cost:
+                out.append("the critical path ends at its target, its length its hops, its cost the makespan")
+        sched = answer["schedule"]
+        if (sched is not None) != (request["answer"] == "schedule"):
+            out.append("a schedule comes exactly when asked for")
+        elif sched is not None:
+            names = [e["node"] for e in sched]
+            if names != sorted(set(names)):
+                out.append("the schedule lists every node once, by node ID")
+            for e in sched:
+                a, b, s = read(e, "earliest"), read(e, "latest"), read(e, "slack")
+                if s != b - a or s < 0 or a < 0 or b > cost:
+                    out.append(f"{e['node']!r}: slack is latest less earliest, never negative, within the makespan")
+                    break
+        cert = answer["certificate"]
+        if (cert is not None) != bool(request["certificate"]):
+            out.append("a certificate comes exactly when asked for")
+        elif cert is not None:
+            order = [e["node"] for e in cert["order"]]
+            values = [read(e, "earliest") for e in cert["order"]]
+            if len(set(order)) != len(order) or (values and max(values) != cost):
+                out.append("the order lists every scheduled node once, the largest earliest time the makespan")
+            if sched is not None and sorted(order) != [e["node"] for e in sched]:
+                out.append("the order and the schedule list the same nodes")
+    except (ValueError, KeyError, TypeError, ZeroDivisionError) as exc:
+        return [f"critical path: {exc}"]
     return out
 
 

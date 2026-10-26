@@ -95,7 +95,7 @@ TOOLS: list[dict] = [
         "name": "graph_execute",
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
-                       "biconnectivity, max_flow, matching, dominators, incidence, or on a periodic "
+                       "biconnectivity, max_flow, matching, dominators, incidence, critical_path, or on a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
                        "regular_path takes a path expression "
@@ -487,6 +487,16 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
             summary.update(head([e for e in a["tree"] if e["idom"] is not None], ("node", "idom")))
         if a["chains"] is not None:
             summary["chains"] = a["chains"][:limit]
+    elif op == "critical_path":
+        summary = {k: a[k] for k in ("acyclic", "cost", "cost_exact") if k in a}
+        if a["path"] is not None:
+            summary.update(length=a["path"]["length"], hops=hops(a["path"]))
+        if a["cycle"] is not None:
+            summary["cycle"] = [h["edge"] for h in a["cycle"]["hops"][:limit]]
+        if a["schedule"] is not None:
+            critical = [e["node"] for e in a["schedule"] if e["slack"] == 0]
+            summary["critical_nodes"] = {"items": critical[:limit], "more": len(critical) > limit}
+        summary["certificate"] = kind(a["certificate"])
     elif op == "incidence":
         summary = {k: a[k] for k in ("rows", "columns", "rank")}
         for key in ("left_kernel", "right_kernel"):

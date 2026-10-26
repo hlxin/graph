@@ -195,6 +195,21 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     for key, field in (("matching_size", "size"), ("left_count", "left_count"), ("deficiency", "deficiency")):
         if key in exp and done and answer.get(field) != exp[key]:
             problems.append(f"{field} {answer.get(field)!r}, expected {exp[key]}")
+    if "acyclic" in exp and done and answer.get("acyclic") is not exp["acyclic"]:     # critical path
+        problems.append(f"acyclic {answer.get('acyclic')!r}, expected {exp['acyclic']!r}")
+    if "makespan" in exp and done:
+        got = _cost(answer, "cost")
+        if got is None or Fraction(got) != Fraction(exp["makespan"]):
+            problems.append(f"makespan {got}, expected {exp['makespan']}")
+    if "critical_edges" in exp and done:
+        got = [h["edge"] for h in (answer.get("path") or {}).get("hops") or []]
+        if got != exp["critical_edges"]:
+            problems.append(f"critical path {got}, expected the canonical {exp['critical_edges']}")
+    if "schedule_times" in exp and done:
+        got = {e["node"]: [_cost(e, "earliest"), _cost(e, "latest"), _cost(e, "slack")]
+               for e in answer.get("schedule") or []}
+        if got != exp["schedule_times"]:
+            problems.append(f"schedule {got}, expected {exp['schedule_times']}")
     if "rank" in exp and answer.get("rank") != exp["rank"]:  # incidence: exact, null when interrupted
         problems.append(f"rank {answer.get('rank')!r}, expected {exp['rank']!r}")
     for key in ("left_kernel", "right_kernel"):

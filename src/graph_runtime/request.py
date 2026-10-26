@@ -48,6 +48,10 @@ Operations (docs/API_CONTRACT.md):
   partners), ``certificate``; limit ``max_expansions``.
 * ``dominators``: ``sources``, ``scope``, ``targets`` (null: every node reached, with its immediate dominator; else
   each target's dominators), ``certificate``; limit ``max_expansions``.
+* ``critical_path``: ``scope`` (a hop from u to v: u comes first), ``sources`` (only what they reach; null: every
+  node), ``costs`` (as a shortest path's; null: every hop takes 1), ``answer`` (``path``: the makespan and a critical
+  path; ``schedule``: every node's earliest and latest time and slack too), ``certificate``; limit
+  ``max_expansions``.
 * ``incidence``: ``rows``, ``columns`` (``{node_types, nodes}`` each, disjoint), ``scope``, ``coefficients`` (as
   weights: any finite numbers, by relation or by edge), ``kernels`` (a subset of ``left`` and ``right``; default
   none), ``certificate``; limit ``max_expansions``.
@@ -75,7 +79,7 @@ from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
-              "biconnectivity", "max_flow", "matching", "dominators", "incidence")
+              "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
@@ -102,7 +106,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "max_flow": ("max_expansions",),
            "matching": ("max_expansions",),
            "dominators": ("max_expansions",),
-           "incidence": ("max_expansions",)}
+           "incidence": ("max_expansions",),
+           "critical_path": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -119,7 +124,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "max_flow": (("sources", "targets", "scope"), ("capacities", "node_capacity", "certificate")),
            "matching": (("left", "scope"), ("certificate",)),
            "dominators": (("sources", "scope"), ("targets", "certificate")),
-           "incidence": (("rows", "columns", "scope", "coefficients"), ("kernels", "certificate"))}
+           "incidence": (("rows", "columns", "scope", "coefficients"), ("kernels", "certificate")),
+           "critical_path": (("scope",), ("sources", "costs", "answer", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -330,6 +336,14 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["sources"] = _ids(raw["sources"], "sources")
         data["scope"] = _scope(raw["scope"], "scope")
         data["targets"] = None if raw.get("targets") is None else _ids(raw["targets"], "targets")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "critical_path":
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["sources"] = None if raw.get("sources") is None else _ids(raw["sources"], "sources")
+        data["costs"] = None if raw.get("costs") is None else _costs(raw["costs"])
+        data["answer"] = raw.get("answer", "path")
+        if data["answer"] not in ("path", "schedule"):
+            raise _fail("invalid_request", f"answer is path or schedule, not {data['answer']!r}")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "incidence":
         for field in ("rows", "columns"):

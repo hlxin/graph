@@ -103,6 +103,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.dominators(request, answer, status)
         elif op == "incidence":
             check.incidence(request, answer, status)
+        elif op == "critical_path":
+            check.critical_path(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -1437,6 +1439,97 @@ class _Checker:
             if c["reachable"] is not (t in pos) or list(c["dominators"]) != chain[::-1]:
                 self.bad(f"the chain of {t!r} is not the certificate's")
 
+
+    def critical_path(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """A critical path answer against the records. A cycle: its hops, in scope, closing on themselves (and, with
+        sources, hops from one to it). An acyclic answer, from its certificate: the order covers what is scheduled
+        (every node, or what the sources reach: it holds them, no hop leaves it, and every other node in it has a hop
+        from a node before it), every hop between its nodes goes forward in it, and the earliest times satisfy the
+        longest-path recurrence exactly (0 with no hop in, else the most over the hops in of the tail's time plus the
+        hop's cost), which proves the makespan; the critical path's hops and costs add up to it, and a schedule's
+        latest times satisfy the backward recurrence (the makespan with no hop out, else the least over the hops out
+        of the head's time less the cost)."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        table = request["costs"]
+        kind, values = next(iter(table.items())) if table is not None else (None, None)
+
+        def cost(eid: str) -> Fraction:
+            if values is None:
+                return Fraction(1)
+            x = values.get(self.edge_of[eid][2] if kind == "by_relation" else eid)
+            return Fraction(x) if x is not None else Fraction(-1)
+
+        def read(entry: Mapping, field: str) -> Fraction:
+            exact = entry.get(f"{field}_exact")
+            return Fraction(exact) if exact is not None else Fraction(entry[field])
+        if status != COMPLETED:
+            return
+        if answer["acyclic"] is False:
+            cyc = answer["cycle"]
+            self.chain("cycle", {"source": cyc["hops"][0]["from"], "target": cyc["hops"][0]["from"],
+                                 "length": len(cyc["hops"]), "hops": cyc["hops"]}, {cyc["hops"][0]["from"]}, None,
+                       [allowed])
+            if cyc["reach"] is not None:
+                start = cyc["hops"][0]["from"]
+                src = cyc["reach"][0]["from"] if cyc["reach"] else start
+                self.chain("reach", {"source": src, "target": start, "length": len(cyc["reach"]),
+                                     "hops": cyc["reach"]}, set(request["sources"]), {start}, [allowed])
+            return
+        for h in (answer.get("path") or {}).get("hops", []):
+            self.hop("critical path", h["from"], h["to"], h["edge"], h["relation"], h["direction"], allowed)
+            if table is not None and Fraction(h["cost"]) != cost(h["edge"]):
+                self.bad(f"critical path: hop {h['edge']!r} costs {cost(h['edge'])}, not {h['cost']}")
+        cert = self.proof(answer)
+        if cert is None:
+            return
+        order = [e["node"] for e in cert["order"]]
+        pos = {n: i for i, n in enumerate(order)}
+        early = {e["node"]: read(e, "earliest") for e in cert["order"]}
+        sources = request["sources"]
+        if any(n not in self.types_of for n in order) or (sources is None and set(order) != set(self.types_of)) or (
+                sources is not None and not set(sources) <= set(pos)):
+            self.bad("certificate: the order covers what is scheduled: every node, or the sources and what they reach")
+            return
+        into: dict = {n: [] for n in order}
+        for u in order:
+            for eid, v, _ in self.hops_from(u, allowed):
+                if v not in pos:
+                    self.bad(f"certificate: hop {eid} leads from {u!r} out of the scheduled nodes")
+                    return
+                if pos[v] <= pos[u]:
+                    self.bad(f"certificate: hop {eid} from {u!r} to {v!r} goes back in the order (or is a loop)")
+                    return
+                into[v].append((u, eid))
+        for v in order:
+            if sources is not None and v not in sources and not into[v]:
+                self.bad(f"certificate: {v!r} is no source and nothing scheduled leads to it")
+                return
+            want = max((early[u] + cost(eid) for u, eid in into[v]), default=Fraction(0))
+            if early[v] != want:
+                self.bad(f"certificate: {v!r}'s earliest time is {want}, not {early[v]}")
+                return
+        span = max(early.values(), default=Fraction(0))
+        if read(answer, "cost") != span:
+            self.bad(f"the makespan is {span}, not {read(answer, 'cost')}")
+        path = answer.get("path")
+        if path is not None and (early.get(path["target"]) != span or path["source"] not in pos or any(
+                h["from"] not in pos or h["to"] not in pos for h in path["hops"])):
+            self.bad("the critical path does not stay among the scheduled nodes and end at one whose earliest time is "
+                     "the makespan")
+        sched = answer.get("schedule")
+        if sched is not None:
+            late: dict = {}
+            outs: dict = {n: [] for n in order}
+            for v in order:
+                for u, eid in into[v]:
+                    outs[u].append((v, eid))
+            for v in reversed(order):
+                late[v] = min((late[w] - cost(eid) for w, eid in outs[v]), default=span)
+            for e in sched:
+                n = e["node"]
+                if n not in early or read(e, "earliest") != early[n] or read(e, "latest") != late[n]:
+                    self.bad(f"schedule: {n!r} has earliest {early.get(n)} and latest {late.get(n)}")
+                    return
 
     def chosen(self, spec: Mapping) -> set:
         """The input nodes a ``{node_types, nodes}`` constraint admits (a type through the hierarchy)."""
