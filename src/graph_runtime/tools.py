@@ -79,10 +79,10 @@ TOOLS: list[dict] = [
     },
     {
         "name": "graph_execute",
-        "description": "Run a request (reachability, typed_path, shortest_path, dependency_impact, pattern or support) "
-                       "on a projection: by default the one this session holds under the request's projection "
-                       "identity. Returns the result: status, answer with witnesses (and certificates when asked), "
-                       "limitations, result_id. An interrupted answer never certifies a negative.",
+        "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, dependency_impact, "
+                       "pattern or support) on a projection: by default the one this session holds under the request's "
+                       "projection identity. Returns the result: status, answer with witnesses (and certificates when "
+                       "asked), limitations, result_id. An interrupted answer never certifies a negative.",
         "input_schema": {"type": "object", "required": ["request"], "properties": {
             "request": {"type": "object", "description": "{operation, ...parameters, limits}; projection defaults to "
                                                          "the projection given here."},

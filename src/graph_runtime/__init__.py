@@ -2,14 +2,14 @@
 
 GRAPH executes graph operations for scientific applications and keeps the computational contract the same across them:
 explicit inputs (an immutable :class:`Projection`, with optional type and relation hierarchies, and a normalized
-:class:`Request`), six exact operations (reachability, typed path, shortest path, dependency impact, tree patterns and
-support under failure) with structural witnesses, bounded work, reproducible results, and witnesses that can be
-checked against the input records (:func:`verify_result`); certificates prove negatives and optima, and a cached
-result is revalidated on an edited projection without a new search (:func:`revalidate`). It transports hypothesis
-candidates (:class:`HypothesisCandidate`) without ever turning them into assertions. The optional
-:mod:`graph_runtime.retrieval` (numpy) ranks text items that name a projection's records, so a search can choose where
-a traversal starts. Scientific meaning stays with the applications that own it; GRAPH imports none of their
-vocabularies.
+:class:`Request`), seven exact operations (reachability, typed path, shortest path, bottleneck path, dependency
+impact, tree patterns and support under failure) with structural witnesses, bounded work, reproducible results, and
+witnesses that can be checked against the input records (:func:`verify_result`); certificates prove negatives and
+optima, and a cached result is revalidated on an edited projection without a new search (:func:`revalidate`). It
+transports hypothesis candidates (:class:`HypothesisCandidate`) without ever turning them into assertions. The
+optional :mod:`graph_runtime.retrieval` (numpy) ranks text items that name a projection's records, so a search can
+choose where a traversal starts. Scientific meaning stays with the applications that own it; GRAPH imports none of
+their vocabularies.
 
 >>> p = Projection.build(nodes=["a", "b"], edges=[{"id": "e1", "source": "a", "target": "b", "relation": "R"}])
 >>> r = execute(p, p.request("reachability", sources=["a"], scope=[("R", "forward")]))

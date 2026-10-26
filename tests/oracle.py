@@ -260,3 +260,28 @@ def support_answer(nodes, edges, failed, scope, all_of=None, type_parents=None, 
     return {"lost": lost, "weakened": weakened,
             "counts": {"lost": len(lost), "weakened": len(weakened),
                        "ungrounded": sum(1 for u in region if u not in before and u not in failed)}}
+
+
+def bottleneck(nodes, edges, sources, targets, scope, weights, objective="max_min"):
+    """(the best bottleneck value, the fewest hops among the paths that reach it), or None when no path exists, by a
+    sweep over thresholds, best first: the best value is the first threshold whose hops at least as good connect a
+    source to a target, and the fewest hops are a breadth-first distance at that threshold. A source that is a
+    target gives (None, 0). No priority queue, no search order."""
+    (kind, table), = weights.items()
+    relation = {e["id"]: e["relation"] for e in edges}
+    hops = [(u, v, table[relation[eid]] if kind == "by_relation" else table[eid])
+            for u, v, eid in hops_of(edges, scope)]
+    sources, targets = set(sources), set(targets)
+    if sources & targets:
+        return None, 0
+    max_min = objective == "max_min"
+    for t in sorted({w for _, _, w in hops}, reverse=max_min):
+        good = [(u, v) for u, v, w in hops if (w >= t if max_min else w <= t)]
+        seen, layer, depth = set(sources), set(sources), 0
+        while layer:
+            depth += 1
+            layer = {v for u, v in good if u in layer and v not in seen}
+            if layer & targets:
+                return t, depth
+            seen |= layer
+    return None

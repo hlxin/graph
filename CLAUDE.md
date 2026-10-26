@@ -20,7 +20,7 @@ PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python benchmarks/consumers.py sta
 ## Layout
 
 - `src/graph_runtime/`: the runtime. `projection` (immutable views, hierarchies, identity), `request`
-  (normalization), `engine` (the six operations, limits), `result` (the result contract), `verify` (independent
+  (normalization), `engine` (the seven operations, limits), `result` (the result contract), `verify` (independent
   witness, closure and certificate checks), `revalidate` (cached results on edited projections), `hypotheses`
   (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend cases), `tools` / `mcp` / `cli`
   (the JSON tool surface, its MCP server and command line), `retrieval` (optional text search, needs numpy).

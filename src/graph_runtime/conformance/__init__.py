@@ -148,6 +148,9 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             want = exp[key] if done else {n: exp[key][n] for n in sorted(exp[key])[:len(got)]}
             if got != want:
                 problems.append(f"{key} {got}, expected {want}")
+    for key in ("value", "bound"):                          # a bottleneck's value, an interrupted one's bound
+        if key in exp and (answer.get(key) != exp[key] or type(answer.get(key)) is not type(exp[key])):
+            problems.append(f"{key} {answer.get(key)!r}, expected {exp[key]!r}")
     if "certificate" in exp and answer.get("certificate") != exp["certificate"]:
         problems.append(f"certificate {answer.get('certificate')!r}, expected {exp['certificate']!r}")
     if "witness_edges" in exp and done:

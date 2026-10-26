@@ -56,6 +56,8 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.typed(request, answer)
         elif op == "shortest_path":
             check.shortest(request, answer, status)
+        elif op == "bottleneck_path":
+            check.bottleneck(request, answer, status)
         elif op == "pattern":
             check.pattern(request, answer)
         elif op == "support":
@@ -382,6 +384,48 @@ class _Checker:
                 if value.get(v, bound) > value[u] + (Fraction(c) if rational else c):
                     self.bad(f"certificate: the hop {eid} from {u!r} ({value[u]}) costs {c} but leads to {v!r} at "
                              f"{value.get(v, bound)}")
+
+    def bottleneck(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """The witness's hops, each weighing what the request gives its edge, and its value; the certificate: what it
+        lists is closed under the hops strictly better than its threshold (all hops for a closure), with every
+        source and no target."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        (kind, table), = request["weights"].items()
+        max_min = request["objective"] == "max_min"
+        if answer.get("found") is True:
+            hops = self.chain("witness", answer.get("witness"), set(request["sources"]), set(request["targets"]),
+                              [allowed])
+            weights = []
+            for i, h in enumerate(hops):
+                rec = self.edge_of.get(h.get("edge")) if isinstance(h, Mapping) else None
+                if rec is None:
+                    continue
+                want = table.get(rec[2] if kind == "by_relation" else h.get("edge"))
+                if h.get("weight") != want:
+                    self.bad(f"hop {i}: weight {h.get('weight')!r}, but the request gives {want!r}")
+                weights.append(want)
+            value = (min if max_min else max)(weights) if weights else None
+            if answer.get("value") != value:
+                self.bad(f"the hops' bottleneck is {value!r}, but the answer says {answer.get('value')!r}")
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+        threshold = cert.get("threshold")
+        reached = set(cert["reached"])
+        for u in sorted(reached, key=str):
+            for eid, v, rel in self.hops_from(u, allowed):
+                w = table.get(rel if kind == "by_relation" else eid)
+                if w is None:
+                    self.bad(f"certificate: the hop {eid} in scope has no weight in the request")
+                    continue
+                strictly_better = threshold is None or (w > threshold if max_min else w < threshold)
+                if strictly_better and v not in reached:
+                    self.bad(f"certificate: the hop {eid} (weight {w}) leads from {u!r} to {v!r}, which it does not "
+                             "list")
+        for t in sorted(set(request["targets"]) & reached, key=str):
+            self.bad(f"certificate: the target {t!r} is reached")
+        for src in sorted(set(request["sources"]) - reached, key=str):
+            self.bad(f"certificate: the source {src!r} is not listed")
 
     def support(self, request: Mapping, answer: Mapping, status: str, edges: list[Mapping]) -> None:
         """Recompute, from the records alone, what stands before and after the failure, and compare the answer with

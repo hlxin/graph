@@ -556,6 +556,60 @@
    "bindings": {
     "source": "conformance-g6@1"
    }
+  },
+  "G7": {
+   "nodes": [
+    "A",
+    "I1",
+    "I2",
+    "I3",
+    "P",
+    "X"
+   ],
+   "edges": [
+    {
+     "id": "r1",
+     "source": "A",
+     "target": "I1",
+     "relation": "STEP"
+    },
+    {
+     "id": "r2",
+     "source": "I1",
+     "target": "P",
+     "relation": "STEP"
+    },
+    {
+     "id": "r3",
+     "source": "A",
+     "target": "I2",
+     "relation": "STEP"
+    },
+    {
+     "id": "r4",
+     "source": "I2",
+     "target": "I3",
+     "relation": "STEP"
+    },
+    {
+     "id": "r5",
+     "source": "I3",
+     "target": "P",
+     "relation": "STEP"
+    },
+    {
+     "id": "r6",
+     "source": "A",
+     "target": "X",
+     "relation": "STEP"
+    }
+   ],
+   "relations": [
+    "STEP"
+   ],
+   "bindings": {
+    "source": "conformance-g7@1"
+   }
   }
  },
  "cases": [
@@ -3700,6 +3754,211 @@
        "node": "b",
        "value": 2
       }
+     ]
+    }
+   }
+  },
+  {
+   "name": "bottleneck-fastest-slowest-step",
+   "covers": [
+    "bottleneck_path",
+    "max_min",
+    "certificate"
+   ],
+   "graph": "G7",
+   "request": {
+    "operation": "bottleneck_path",
+    "sources": [
+     "A"
+    ],
+    "targets": [
+     "P"
+    ],
+    "scope": [
+     {
+      "relation": "STEP",
+      "direction": "forward"
+     }
+    ],
+    "weights": {
+     "by_edge": {
+      "r1": 10,
+      "r2": 2,
+      "r3": 5,
+      "r4": 3,
+      "r5": 8,
+      "r6": 100
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "value": 3,
+    "witness_edges": [
+     "r3",
+     "r4",
+     "r5"
+    ],
+    "certificate": {
+     "kind": "threshold",
+     "threshold": 3,
+     "reached": [
+      "A",
+      "I1",
+      "I2",
+      "X"
+     ]
+    }
+   }
+  },
+  {
+   "name": "bottleneck-lowest-highest-barrier",
+   "covers": [
+    "bottleneck_path",
+    "min_max",
+    "certificate"
+   ],
+   "graph": "G7",
+   "request": {
+    "operation": "bottleneck_path",
+    "sources": [
+     "A"
+    ],
+    "targets": [
+     "P"
+    ],
+    "scope": [
+     {
+      "relation": "STEP",
+      "direction": "forward"
+     }
+    ],
+    "weights": {
+     "by_edge": {
+      "r1": 10,
+      "r2": 2,
+      "r3": 5,
+      "r4": 3,
+      "r5": 8,
+      "r6": 100
+     }
+    },
+    "objective": "min_max",
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "value": 8,
+    "witness_edges": [
+     "r3",
+     "r4",
+     "r5"
+    ],
+    "certificate": {
+     "kind": "threshold",
+     "threshold": 8,
+     "reached": [
+      "A",
+      "I2",
+      "I3"
+     ]
+    }
+   }
+  },
+  {
+   "name": "bottleneck-negative-closure",
+   "covers": [
+    "bottleneck_path",
+    "certificate"
+   ],
+   "graph": "G7",
+   "request": {
+    "operation": "bottleneck_path",
+    "sources": [
+     "P"
+    ],
+    "targets": [
+     "A"
+    ],
+    "scope": [
+     {
+      "relation": "STEP",
+      "direction": "forward"
+     }
+    ],
+    "weights": {
+     "by_edge": {
+      "r1": 10,
+      "r2": 2,
+      "r3": 5,
+      "r4": 3,
+      "r5": 8,
+      "r6": 100
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": false,
+    "certificate": {
+     "kind": "closure",
+     "reached": [
+      "P"
+     ]
+    }
+   }
+  },
+  {
+   "name": "bottleneck-interrupted-bound",
+   "covers": [
+    "bottleneck_path",
+    "budget",
+    "certificate"
+   ],
+   "graph": "G7",
+   "request": {
+    "operation": "bottleneck_path",
+    "sources": [
+     "A"
+    ],
+    "targets": [
+     "P"
+    ],
+    "scope": [
+     {
+      "relation": "STEP",
+      "direction": "forward"
+     }
+    ],
+    "weights": {
+     "by_edge": {
+      "r1": 10,
+      "r2": 2,
+      "r3": 5,
+      "r4": 3,
+      "r5": 8,
+      "r6": 100
+     }
+    },
+    "certificate": true,
+    "limits": {
+     "max_expansions": 2
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "bound": 10,
+    "certificate": {
+     "kind": "threshold",
+     "threshold": 10,
+     "reached": [
+      "A",
+      "X"
      ]
     }
    }
