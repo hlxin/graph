@@ -40,14 +40,14 @@ def test_reachability_respects_scope_depth_and_cycles(small):
 
 def test_reverse_traversal_follows_edges_backwards(small):
     res = run(small, "reachability", sources=["d"], scope=[USES_R])
-    assert depths(res) == [("d", 0, None), ("c", 1, "e4"), ("b", 2, "e2"), ("a", 3, "e1")]
+    assert depths(res) == [("a", 3, "e1"), ("b", 2, "e2"), ("c", 1, "e4"), ("d", 0, None)]
     hop = res.path_to("c")[0]
     assert hop == {"edge": "e4", "relation": "USES", "direction": "reverse", "from": "d", "to": "c"}
 
 
 def test_reachability_from_several_sources_and_isolated_nodes(small):
     res = run(small, "reachability", sources=["c", "a"], scope=[USES_F])
-    assert depths(res) == [("a", 0, None), ("c", 0, None), ("b", 1, "e1"), ("d", 1, "e4")]
+    assert depths(res) == [("a", 0, None), ("b", 1, "e1"), ("c", 0, None), ("d", 1, "e4")]
     res = run(small, "reachability", sources=["e"], scope=[USES_F, USES_R, CITES_F, CITES_R])
     assert depths(res) == [("e", 0, None)] and res.complete
 
@@ -77,13 +77,13 @@ def test_dependency_impact_lists_what_depends_on_the_changes():
               scope=[("DEPENDS_ON", "reverse")])
     assert list(res.answer["changed"]) == ["s1", "s2"]
     # s2 is changed and also depends on s1: it is affected; r3 is reached from s2, which ends its witness
-    assert depths(res, "affected") == [("r1", 1, "d1"), ("s2", 1, "d5"), ("r3", 1, "d4"), ("r2", 2, "d2")]
+    assert depths(res, "affected") == [("r1", 1, "d1"), ("r2", 2, "d2"), ("r3", 1, "d4"), ("s2", 1, "d5")]
     assert [h["edge"] for h in res.path_to("r3")] == ["d4"]
     assert [h["edge"] for h in res.path_to("r2")] == ["d1", "d2"]
     assert res.affected("r4") is False and res.affected("s1") is False
     res = run(p, "dependency_impact", IMPACT_NODES, IMPACT_EDGES, changed=["s1", "s2"],
               scope=[("DEPENDS_ON", "reverse")], max_depth=1)
-    assert [e["node"] for e in res.answer["affected"]] == ["r1", "s2", "r3"]
+    assert [e["node"] for e in res.answer["affected"]] == ["r1", "r3", "s2"]
 
 
 def test_dependency_impact_through_a_cycle_reaches_the_change_itself():
@@ -92,7 +92,7 @@ def test_dependency_impact_through_a_cycle_reaches_the_change_itself():
              {"id": "k2", "source": "x", "target": "y", "relation": "DEPENDS_ON"}]
     p = Projection.build(nodes=nodes, edges=edges)
     res = run(p, "dependency_impact", nodes, edges, changed=["x"], scope=[("DEPENDS_ON", "reverse")])
-    assert depths(res, "affected") == [("y", 1, "k1"), ("x", 2, "k2")]
+    assert depths(res, "affected") == [("x", 2, "k2"), ("y", 1, "k1")]
     assert [(h["from"], h["to"]) for h in res.path_to("x")] == [("x", "y"), ("y", "x")]
 
 

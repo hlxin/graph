@@ -27,9 +27,11 @@ import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timedelta, timezone
+from fractions import Fraction
 from typing import Any
 
 from ._canonical import canonical_json, digest, freeze, is_digest, thaw
+from ._validation import json_problem
 from .errors import CandidateError
 from .projection import CONTRACT, Projection
 from .result import COMPLETED, Result
@@ -56,13 +58,16 @@ STALE_NOTE = ("stale true: re-examine the candidate (that does not make it false
 ORDER_NOTE = ("An ordering score orders candidates within one method, version and candidate set only; it is a "
               "probability only with interpretation probability and a calibration reference, which the consuming "
               "application must assess.")
-_TIME = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}:\d{2})?)?$")
+_TIME = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2})(?:T([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]+))?)?(Z|[+-][0-9]{2}:[0-9]{2})?)?")
 
 
 # ---------------------------------------------------------------------------------------------- validation
 def validate_candidate(record: Any) -> list[dict]:
     """Every problem of a candidate record, as ``{"path", "code", "message"}``; empty when it is valid."""
-    return _validate(record, sealed=True)
+    try:
+        return _validate(record, sealed=True)
+    except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+        return [{"path": "", "code": "invalid_candidate", "message": f"malformed candidate: {exc}"}]
 
 
 def _validate(record: Any, *, sealed: bool) -> list[dict]:
@@ -129,6 +134,10 @@ def _validate(record: Any, *, sealed: bool) -> list[dict]:
         return out
     try:
         body = thaw({k: v for k, v in record.items() if k != "record_digest"})
+        problem = json_problem(body)
+        if problem:
+            bad("", "not_json", problem)
+            return out
         want = digest(body)
         core_id = _core_id({k: body[k] for k in CORE_FIELDS})
     except (TypeError, ValueError) as exc:
@@ -180,10 +189,10 @@ def _keys(value: Any, path: str, required: Sequence[str], optional: Sequence[str
     return ok
 
 
-def _moment(value: Any) -> tuple[date, datetime | None] | None:
-    """(the date, the date-time or None) of an ISO 8601 date or date-time that names a real day and time; None when
+def _moment(value: Any) -> tuple[date, tuple[datetime, Fraction] | None] | None:
+    """(the date, (whole-second date-time, exact fraction) or None) of a real ISO 8601 date or date-time; None when
     ``value`` is not one."""
-    m = _TIME.match(value) if isinstance(value, str) else None
+    m = _TIME.fullmatch(value) if isinstance(value, str) else None
     if not m:
         return None
     try:
@@ -194,23 +203,30 @@ def _moment(value: Any) -> tuple[date, datetime | None] | None:
         if m[6] == "Z":
             tz = timezone.utc
         elif m[6]:
+            if int(m[6][1:3]) > 23 or int(m[6][4:6]) > 59:
+                return None
             sign = 1 if m[6][0] == "+" else -1
             tz = timezone(sign * timedelta(hours=int(m[6][1:3]), minutes=int(m[6][4:6])))
-        frac = int((m[5] or "0")[:6].ljust(6, "0"))
-        return day, datetime(day.year, day.month, day.day, int(m[2]), int(m[3]), int(m[4] or 0), frac, tzinfo=tz)
+        fraction = Fraction("0." + m[5]) if m[5] else Fraction(0)
+        moment = datetime(day.year, day.month, day.day, int(m[2]), int(m[3]), int(m[4] or 0), tzinfo=tz)
+        return day, (moment, fraction)
     except ValueError:
         return None
 
 
 def _before(later: tuple, earlier: tuple) -> bool:
-    """Whether a moment is earlier than another: by the instant when both are date-times with offsets, else by the
-    day (in UTC for a date-time with an offset)."""
+    """Compare full date-times when both have offsets or both lack them; otherwise compare days (UTC for an offset)."""
     (ld, lt), (ed, et) = later, earlier
-    if lt is not None and et is not None and lt.tzinfo is not None and et.tzinfo is not None:
-        return lt < et
+    def seconds(t):
+        moment, fraction = t
+        offset = moment.utcoffset()
+        return (moment.toordinal() * 86400 + moment.hour * 3600 + moment.minute * 60 + moment.second
+                - (int(offset.total_seconds()) if offset is not None else 0) + fraction)
+    if lt is not None and et is not None and (lt[0].tzinfo is None) == (et[0].tzinfo is None):
+        return seconds(lt) < seconds(et)
 
-    def day(d: date, t: datetime | None) -> date:
-        return t.astimezone(timezone.utc).date() if t is not None and t.tzinfo is not None else d
+    def day(d, t):
+        return seconds(t) // 86400 if t is not None and t[0].tzinfo is not None else d.toordinal()
     return day(ld, lt) < day(ed, et)
 
 
@@ -267,7 +283,8 @@ def _tests(value: Any, bad) -> None:
                 observed.add(key)
             if o["bearing"] not in BEARINGS:
                 bad(f"{ow}.bearing", "invalid_bearing", f"an outcome's bearing is one of {list(BEARINGS)}")
-            bearings.add(o["bearing"])
+            else:
+                bearings.add(o["bearing"])
         if not {"supports", "opposes"} <= bearings:
             bad(f"{where}.outcomes", "not_discriminating", "a proposed test has an outcome that supports the candidate "
                 "and one that opposes it")
@@ -278,7 +295,7 @@ def _score(s: Any, where: str, bad) -> None:
                              "calibration"), (), bad):
         return
     v = s["value"]
-    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or (isinstance(v, float) and not math.isfinite(v)):
         bad(f"{where}.value", "invalid_score", "a score's value is a finite number")
         v = None
     for k in ("method", "method_version", "candidate_set"):
@@ -358,8 +375,19 @@ def _plain(value: Any, what: str) -> Any:
     """A JSON copy that shares nothing with the caller's objects (tuples become lists). NaN and infinities pass
     here, so that validation can say where they are."""
     try:
+        # JSON's encoder otherwise coerces integer keys, potentially overwriting a distinct string key.
+        def check_keys(item):
+            if isinstance(item, Mapping):
+                if any(not isinstance(k, str) for k in item):
+                    raise ValueError("JSON object keys must be strings")
+                for v in item.values():
+                    check_keys(v)
+            elif isinstance(item, (list, tuple)):
+                for v in item:
+                    check_keys(v)
+        check_keys(value)
         return json.loads(json.dumps(value, ensure_ascii=False))
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         raise CandidateError([{"path": what, "code": "not_json", "message": f"{what} is plain JSON: {exc}"}]) from None
 
 
@@ -448,7 +476,11 @@ class HypothesisCandidate:
 
     @classmethod
     def from_json(cls, text: str) -> "HypothesisCandidate":
-        return cls.from_dict(json.loads(text))
+        try:
+            data = json.loads(text)
+        except (TypeError, ValueError) as exc:
+            raise CandidateError([{"path": "candidate", "code": "not_json", "message": str(exc)}]) from None
+        return cls.from_dict(data)
 
     def to_dict(self) -> dict:
         return thaw(self._data)
@@ -551,7 +583,14 @@ class HypothesisCandidate:
             {"name": None, "version": None, **_plain(dict(assessor), "assessor")}
         item = {"stance": stance, "evidence": _plain([_ref(r) for r in evidence], "evidence"),
                 "conditions": conditions, "assessor": who, "at": at, "note": note}
-        item = {"id": assessment_id or "as:" + digest({"candidate": self.id, **item}), **item}
+        if assessment_id is None:
+            problems = []
+            _assessments([{"id": "as:pending", **item}],
+                         lambda path, code, message: problems.append({"path": path, "code": code, "message": message}))
+            if problems:
+                raise CandidateError(problems)
+            assessment_id = "as:" + digest({"candidate": self.id, **item})
+        item = {"id": assessment_id, **item}
         return self._revise("assessments", item)
 
     def add_score(self, *, value: float, method: str, method_version: str, candidate_set: str, direction: str,
@@ -634,6 +673,15 @@ def staleness(candidate: HypothesisCandidate, *, projection: Projection | None =
         if projection.identity != candidate.projection:
             reasons.append({"code": "projection_changed", "message": f"formed on projection {candidate.projection}; "
                             f"the current projection is {projection.identity}"})
+        else:
+            for field, ref in refs:
+                kind, value = ref["type"], ref["ref"]
+                if kind == "external":
+                    continue
+                if kind == "result" or (kind == "node" and not projection.has_node(value)) \
+                        or (kind == "edge" and not projection.has_edge(value)):
+                    undecided.append({"field": field, "type": kind, "ref": value,
+                                      "why": "the projection does not hold this reference; its state is unknown"})
     else:
         if impact.operation != "dependency_impact" or impact.answer is None:
             raise ValueError("impact is a completed or interrupted dependency_impact result")
@@ -712,6 +760,11 @@ def witness_refs(result: Result, node: str | None = None) -> list[dict]:
     else:
         hops = result.witness or []
     refs = [{"type": "result", "ref": result.result_id}]
+    if not hops:
+        endpoint = node if result.operation in ("reachability", "dependency_impact") else \
+            ((result.answer or {}).get("witness") or {}).get("source")
+        if endpoint is not None:
+            refs.append({"type": "node", "ref": endpoint})
     seen = set()
     for h in hops:
         for t, ref in (("node", h["from"]), ("edge", h["edge"]), ("node", h["to"])):

@@ -41,7 +41,7 @@ def test_result_names_runtime_contract_projection_and_request(small):
     req = small.request("reachability", sources=["a"], scope=[USES_F])
     res = execute(small, req)
     d = res.to_dict()
-    assert d["kind"] == "graph_runtime.result" and d["contract"] == "graph-runtime/v0"
+    assert d["kind"] == "graph_runtime.result" and d["contract"] == "graph-runtime/v0.1"
     assert d["runtime"] == {"name": "scale-graph-runtime", "version": graph_runtime.__version__}
     assert (d["projection"], d["request_id"], d["request"]) == (small.identity, req.request_id, req.to_dict())
     assert d["mode"] == "exact" and d["complete"] is True and d["status"] == COMPLETED

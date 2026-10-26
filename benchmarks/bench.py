@@ -75,6 +75,7 @@ def parity(req: dict, res, nodes: list, edges: list, costs: dict) -> dict:
     except ImportError:
         return {"checked": False, "why": "networkx not installed"}
     g = nx.MultiDiGraph()
+    g.add_nodes_from(n["id"] for n in nodes)
     reverse = op == "dependency_impact"
     for e in edges:
         u, v = (e["target"], e["source"]) if reverse else (e["source"], e["target"])
@@ -157,7 +158,7 @@ def main(argv: list[str]) -> int:
                   f"{t['result_s']:8.4f} {r['json_s']:8.4f}  "
                   f"{'ok' if r['parity'].get('agrees') and r['verified'] else r['parity']}")
     print(f"raw results: {path}")
-    return 0 if all(r["verified"] and r["parity"].get("agrees", True) for w in report["workloads"]
+    return 0 if all(r["verified"] and r["parity"].get("checked") and r["parity"].get("agrees") for w in report["workloads"]
                     for r in w["requests"]) else 1
 
 

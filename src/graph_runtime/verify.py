@@ -101,6 +101,8 @@ class _Checker:
             self.bad(f"{where}: the witness starts at {witness.get('source')!r}, not at a requested source")
         if targets is not None and witness.get("target") not in targets:
             self.bad(f"{where}: the witness ends at {witness.get('target')!r}, not at a requested target")
+        if witness.get("source") not in self.types_of or witness.get("target") not in self.types_of:
+            self.bad(f"{where}: witness endpoints must be input nodes, including a zero-hop witness")
         if len(hops) > len(scopes) and len(scopes) > 1:
             self.bad(f"{where}: {len(hops)} hops for {len(scopes)} positions")
             return hops

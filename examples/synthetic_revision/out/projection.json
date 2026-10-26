@@ -3,7 +3,7 @@
     "policy": "public",
     "source": "examples/synthetic_revision/records.json@1"
   },
-  "contract": "graph-runtime/v0",
+  "contract": "graph-runtime/v0.1",
   "edges": [
     {
       "id": "dep:model-input",
@@ -42,7 +42,7 @@
       "target": "ranking:screen-1"
     }
   ],
-  "identity": "sha256:42258cb4cd481477debeb3914a17ca510034bc5607410e04744109376f4b1ab5",
+  "identity": "sha256:cbda37dbb0dfd3ba0082a6f880d1b60744db28a0b64cd6b708590c0c670f33df",
   "kind": "graph_runtime.projection",
   "node_types": [
     "Input",
