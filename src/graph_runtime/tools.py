@@ -95,7 +95,7 @@ TOOLS: list[dict] = [
         "name": "graph_execute",
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
-                       "biconnectivity, or on a periodic "
+                       "biconnectivity, max_flow, matching, or on a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
                        "regular_path takes a path expression "
@@ -473,6 +473,14 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
                    "bridges": len(a["bridges"]), "blocks": None if a["blocks"] is None else len(a["blocks"]),
                    **head(a["articulation_points"], ("node", "splits")),
                    "bridge_edges": [b["edge"] for b in a["bridges"][:limit]], "certificate": kind(a["certificate"])}
+    elif op == "max_flow":
+        summary = {k: a[k] for k in ("value", "value_exact", "optimal", "upper_bound", "upper_bound_exact") if k in a}
+        summary.update(flows=len(a["flows"]), cut=None if a["cut"] is None else [h["edge"] for h in a["cut"][:limit]],
+                       cut_nodes=None if a["cut_nodes"] is None else [x["node"] for x in a["cut_nodes"][:limit]],
+                       certificate=kind(a["certificate"]))
+    elif op == "matching":
+        summary = {k: a[k] for k in ("size", "left_count", "optimal", "deficiency")}
+        summary.update(head(a["pairs"], ("left", "right")), certificate=kind(a["certificate"]))
     elif op == "periodicity":
         summary = {"count": a["count"], "components": [
             {"seeds": c["seeds"][:limit], "rank": c["rank"], "basis": c["basis"], "copies": c["copies"],

@@ -26,7 +26,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import paths, ranking, structure
+from . import flows, paths, ranking, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -287,6 +287,20 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
             plan.connectivity, plan.min_size = req["connectivity"], req["min_size"]
         else:
             plan.blocks = req["blocks"]
+    elif op == "max_flow":
+        plan.certificate = req["certificate"]
+        plan.sources, plan.targets = _nodes(p, req["sources"], "sources"), _nodes(p, req["targets"], "targets")
+        plan.source_set, plan.target_set = set(plan.sources), set(plan.targets)
+        plan.terminal_set = plan.source_set | plan.target_set
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        _flow_capacities(p, plan, req["capacities"], req["node_capacity"])
+    elif op == "matching":
+        plan.certificate = req["certificate"]
+        tmask, nodes = _node_filter(p, req["left"], "left")
+        masks = p._node_mask
+        plan.left = {u for u in (nodes if nodes is not None else range(len(p._node_ids)))
+                     if tmask is None or masks[u] & tmask}
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
     elif op == "periodicity":
         raise RequestError("unsupported", "unsupported_operation", "periodicity runs on a periodic projection: the "
                            "translation lattice of a component of an infinite periodic graph",
@@ -303,6 +317,27 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.cost = _costs(p, req["costs"], plan.fwd, plan.rev)
         plan.rational = plan.cost.rational
     return plan
+
+
+def _flow_capacities(p: Projection, plan: SimpleNamespace, capacities: Any, node_capacity: Any) -> None:
+    """A max-flow request's capacities as integers over one scale: ``plan.capacity(ei)``, ``plan.node_cap`` (None:
+    no node limit), ``plan.scale`` and ``plan.rational``. Integer capacities are used as they are; when any capacity
+    is a float, every capacity is an exact rational over the largest power-of-two denominator among them, and is
+    held as an integer count of 1/scale (as shortest-path costs are)."""
+    table = None if capacities is None else _costs(p, capacities, plan.fwd, plan.rev, "capacities")
+    scale = table.scale if table is not None and table.rational else 1
+    if isinstance(node_capacity, float):
+        scale = max(scale, node_capacity.as_integer_ratio()[1])
+    plan.scale, plan.rational = scale, scale > 1 or isinstance(node_capacity, float) or (
+        table is not None and table.rational)
+    plan.node_cap = None if node_capacity is None else int(Fraction(node_capacity) * scale)
+    if table is None:
+        plan.capacity = lambda ei: scale
+    else:
+        factor = scale // table.scale
+        edge, rel, edge_rel = table.edge, table.rel, p._edge_rel
+        plan.capacity = ((lambda ei: edge[ei] * factor) if edge is not None
+                         else (lambda ei: rel[edge_rel[ei]] * factor))
 
 
 def _path_states(p: Projection, auto: paths.Automaton) -> tuple[list, list]:
@@ -1790,4 +1825,8 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "components": (lambda p, plan, ctl: structure.search_components(p, plan, ctl),
                               lambda p, plan, st: structure.answer_components(p, plan, st)),
                "biconnectivity": (lambda p, plan, ctl: structure.search_biconnectivity(p, plan, ctl),
-                                  lambda p, plan, st: structure.answer_biconnectivity(p, plan, st))}
+                                  lambda p, plan, st: structure.answer_biconnectivity(p, plan, st)),
+               "max_flow": (lambda p, plan, ctl: flows.search_flow(p, plan, ctl),
+                            lambda p, plan, st: flows.answer_flow(p, plan, st)),
+               "matching": (lambda p, plan, ctl: flows.search_matching(p, plan, ctl),
+                            lambda p, plan, st: flows.answer_matching(p, plan, st))}

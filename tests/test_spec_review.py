@@ -372,6 +372,34 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                         if e['source'] != e['target'] and e['source'] in region:
                             blocks.setdefault(owner[frozenset((e['source'], e['target']))], []).append(e['id'])
                     assert exp['block_edges'] == sorted(sorted(b) for b in blocks.values()), case['name']
+        elif op == 'max_flow':
+            import networkx as nx
+            from test_flows import capacity_of, nearest_cut, network
+            raw = case['request']
+            cap = capacity_of({'capacities': raw.get('capacities')})
+            node_cap = raw.get('node_capacity')
+            g2 = network(g['nodes'], g['edges'], raw['scope'], lambda e: int(cap(e) * 4),
+                         None if node_cap is None else int(Fraction(node_cap) * 4), raw['sources'], raw['targets'])
+            value, side = nearest_cut(g2)
+            assert Fraction(exp['flow_value']) == Fraction(value, 4), case['name']
+            if 'cut_node_ids' in exp:
+                assert exp['cut_node_ids'] == sorted(v for k, v in (x for x in side if x not in ('S', 'T'))
+                                                     if k == 'in' and g2.has_node(('out', v)) and ('out', v) not in side)
+        elif op == 'matching':
+            import networkx as nx
+            raw = case['request']
+            types = {node_id(n): set(n.get('types') or ()) if isinstance(n, dict) else set() for n in g['nodes']}
+            left = {n for n in types if (raw['left'].get('nodes') is None or n in raw['left']['nodes']) and
+                    (raw['left'].get('node_types') is None or types[n] & set(raw['left']['node_types']))}
+            pairs = {(s['relation'], s['direction']) for s in r['scope']}
+            b = nx.Graph()
+            b.add_nodes_from(('L', u) for u in left)
+            for e in g['edges']:
+                for d, (u, v) in (('forward', (e['source'], e['target'])), ('reverse', (e['target'], e['source']))):
+                    if (e['relation'], d) in pairs and u in left and v not in left:
+                        b.add_edge(('L', u), ('R', v))
+            size = len(nx.bipartite.maximum_matching(b, top_nodes=[('L', u) for u in left])) // 2
+            assert (exp['matching_size'], exp['left_count'], exp['deficiency']) == (size, len(left), len(left) - size)
         elif op == 'pattern':
             raw = case['request']             # the brute force expands the hierarchies itself
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],

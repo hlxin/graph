@@ -85,6 +85,10 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.components(request, answer, status)
         elif op == "biconnectivity":
             check.biconnectivity(request, answer, status)
+        elif op == "max_flow":
+            check.max_flow(request, answer, status)
+        elif op == "matching":
+            check.matching(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -1167,6 +1171,133 @@ class _Checker:
                 ends.update((self.edge_of.get(eid) or ("?", "?"))[:2])
             if sorted(ends) != list(b["nodes"]):
                 self.bad(f"block from {b['edges'][0]!r}: its nodes are its edges' ends")
+
+
+    def max_flow(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """A flow against the records: every edge's flow a hop in scope, within the edge's capacity; at every node
+        other than the sources and targets as much in as out (and no more than the node capacity); the value what
+        leaves the sources. An interrupted answer's upper bound: the least of the capacities leaving the sources and
+        entering the targets, recomputed. A complete answer's cut: each hop and node it lists with the capacity the request gives,
+        adding up to the value. With the certificate (the cut's source side), the cut is recomputed from the records:
+        every hop in scope from the source side to the rest and every node whose capacity separates them, so the
+        flow and the cut prove each other optimal, without a search."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        sources, targets = set(request["sources"]), set(request["targets"])
+        terminals = sources | targets
+        table = request["capacities"]
+        kind, values = next(iter(table.items())) if table is not None else (None, None)
+
+        def capacity(eid: str) -> Any:
+            if values is None:
+                return Fraction(1)
+            x = values.get(self.edge_of[eid][2] if kind == "by_relation" else eid)
+            return None if x is None else Fraction(x)
+        node_cap = None if request["node_capacity"] is None else Fraction(request["node_capacity"])
+
+        def read(entry: Mapping, field: str) -> Fraction:
+            exact = entry.get(f"{field}_exact")
+            return Fraction(exact) if exact is not None else Fraction(entry[field])
+        balance: dict = {}
+        for i, f in enumerate(answer.get("flows") or []):
+            where = f"flow {i} ({f.get('edge')!r})"
+            self.hop(where, f["from"], f["to"], f["edge"], f["relation"], f["direction"], allowed)
+            rec = self.edge_of.get(f["edge"])
+            if rec is None:
+                continue
+            amount, c = read(f, "flow"), capacity(f["edge"])
+            if amount <= 0 or c is None or amount > c:
+                self.bad(f"{where}: carries {amount}, beyond its capacity {c}")
+            balance[f["from"]] = balance.get(f["from"], Fraction(0)) - amount
+            balance[f["to"]] = balance.get(f["to"], Fraction(0)) + amount
+        for v, b in balance.items():
+            if v not in terminals and b != 0:
+                self.bad(f"flow is not conserved at {v!r}: {b} more in than out")
+        if node_cap is not None:
+            inflow: dict = {}
+            for f in answer.get("flows") or []:
+                inflow[f["to"]] = inflow.get(f["to"], Fraction(0)) + read(f, "flow")
+            over = sorted(v for v, x in inflow.items() if v not in terminals and x > node_cap)
+            if over:
+                self.bad(f"more than the node capacity passes through {over[:5]}")
+        value = read(answer, "value")
+        sent = -sum((balance.get(s, Fraction(0)) for s in sources), Fraction(0))
+        if sent != value:
+            self.bad(f"the sources send {sent}, not the value {value}")
+        if status != COMPLETED:                          # the bound: what the sources can send, or the targets take
+            out_cap = sum((capacity(eid) or 0 for s in sources for eid, v, _ in self.hops_from(s, allowed)
+                           if v not in sources), Fraction(0))
+            in_cap = sum((capacity(eid) or 0 for t in targets for eid, u, _ in self.hops_into(t, allowed)
+                          if u not in targets), Fraction(0))
+            if read(answer, "upper_bound") != min(out_cap, in_cap):
+                self.bad(f"an interrupted flow's upper bound is {min(out_cap, in_cap)} (the least of what the "
+                         f"sources can send and the targets take), not {read(answer, 'upper_bound')}")
+            return
+        listed = set()
+        total = Fraction(0)
+        for h in answer["cut"]:
+            self.hop(f"cut hop {h['edge']!r}", h["from"], h["to"], h["edge"], h["relation"], h["direction"], allowed)
+            if h["edge"] in self.edge_of and read(h, "capacity") != capacity(h["edge"]):
+                self.bad(f"cut hop {h['edge']!r}: capacity {read(h, 'capacity')}, not {capacity(h['edge'])}")
+            listed.add((h["edge"], h["direction"]))
+            total += read(h, "capacity")
+        for x in answer["cut_nodes"]:
+            if node_cap is None or x["node"] in terminals or read(x, "capacity") != node_cap:
+                self.bad(f"cut node {x['node']!r}: no node capacity of {read(x, 'capacity')} applies to it")
+            total += read(x, "capacity")
+        if total != value:
+            self.bad(f"the cut's capacities add up to {total}, not the value {value}")
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+        side = set(cert["source_side"])
+        cut_nodes = {x["node"] for x in answer["cut_nodes"]}
+        if not sources <= side or side & targets or cut_nodes & (side | terminals):
+            self.bad("certificate: the source side holds every source, no target, and no node the cut cuts")
+            return
+
+        def inward(v: Any) -> bool:                      # the node's inward copy is on the source side
+            return v in side or v in cut_nodes
+        crossing = set()
+        for u in side:
+            for eid, v, _ in self.hops_from(u, allowed):
+                if v != u and not inward(v) and capacity(eid):
+                    src, dst, rel = self.edge_of[eid]
+                    crossing.add((eid, "forward" if (src, dst) == (u, v) else "reverse"))
+        if crossing != listed:
+            self.bad(f"certificate: the hops leaving the source side are {sorted(crossing)[:5]}, not the listed cut")
+
+    def matching(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """A matching against the records: every pair a hop in scope from a node of the left set to a node outside
+        it, no node in two pairs; left_count the left set's size. König's cover, when given: every candidate hop
+        (from a left node to a node outside the left set) touches one of its nodes, and it has as many nodes as there
+        are pairs, so no matching has more."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        spec = request["left"]
+        left = {n for n in self.types_of if (spec["nodes"] is None or n in spec["nodes"]) and
+                (spec["node_types"] is None or self.types_of[n] & set(spec["node_types"]))}
+        if answer.get("left_count") != len(left):
+            self.bad(f"the left set has {len(left)} nodes, not {answer.get('left_count')}")
+        lefts, rights = set(), set()
+        for i, x in enumerate(answer.get("pairs") or []):
+            where = f"pair {i} ({x.get('left')!r})"
+            if x["left"] not in left or x["right"] in left or x["left"] in lefts or x["right"] in rights:
+                self.bad(f"{where}: pairs a left node with a node outside the left set, each node once")
+            lefts.add(x["left"])
+            rights.add(x["right"])
+            self.hop(where, x["left"], x["right"], x["edge"], x["relation"], x["direction"], allowed)
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+        cover = set(cert["nodes"])
+        if len(cover) != answer.get("size"):
+            self.bad(f"the cover has {len(cover)} nodes, not as many as the {answer.get('size')} pairs")
+        for u in sorted(left):
+            if u in cover:
+                continue
+            for eid, v, _ in self.hops_from(u, allowed):
+                if v not in left and v not in cover:
+                    self.bad(f"certificate: the candidate hop {eid} from {u!r} to {v!r} touches no node of the cover")
+                    return
 
 
 class _PeriodicChecker(_Checker):

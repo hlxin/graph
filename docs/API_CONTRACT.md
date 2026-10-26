@@ -39,6 +39,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
   by spanning trees and an ordered, closed partition (section 4)
 - the `biconnectivity` operation: articulation points (with the pieces each leaves), bridges and blocks, certified by
   the depth-first forest from which a checker recomputes every low point (section 4)
+- the `max_flow` operation: a maximum flow and a minimum cut that prove each other (edge- and node-disjoint paths
+  with unit capacities), certified by the cut's source side (section 4)
+- the `matching` operation: a maximum matching of a left set to partners outside it, certified by König's vertex
+  cover (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -146,6 +150,8 @@ no wildcard: a scope lists what it follows.
 | `periodicity` | `nodes` (images of a periodic projection's nodes), `scope` (every relation in both directions: it is followed both ways) | `max_expansions` |
 | `components` | `scope`, `connectivity` (`weak`, the default: hops followed either way; `strong`: a walk each way), `nodes` (only the components holding these; null: every component), `min_size` (the fewest nodes a listed component has; default 1), `certificate` (default false) | `max_expansions`, `max_results` (components listed) |
 | `biconnectivity` | `scope` (each edge in it, in either direction, a link between its ends), `nodes` (only the components holding these; null: all), `blocks` (list the blocks too; default false), `certificate` (default false) | `max_expansions` |
+| `max_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as costs, non-negative; null: every edge 1), `node_capacity` (what each node other than the sources and targets passes; null: no limit), `certificate` (default false) | `max_expansions` |
+| `matching` | `left` (`{"node_types", "nodes"}`, at least one: the nodes to pair), `scope` (from a left node to its candidate partners), `certificate` (default false) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
@@ -509,6 +515,54 @@ of them between the same nodes are never bridges; an edge from a node to itself 
 Answer: `{"articulation_points": [{"node", "splits"}], "bridges": [{"edge", "relation", "source", "target"}],
 "blocks": [{"nodes", "edges"}] or null, "components", "certificate"}`.
 
+**Max flow.** As much as the capacities let through from the sources to the targets (Ford and Fulkerson, 1956), and
+what stops more from getting through. Each hop in scope carries at most its edge's capacity; an edge in scope both
+ways carries flow either way, up to its capacity each way, and its net flow is reported. With `node_capacity`, every
+node other than the sources and targets passes at most that much. With the default capacities (every edge 1) the
+value is the number of edge-disjoint paths, and with `node_capacity` 1 the number of internally node-disjoint ones
+(Menger, 1927): how many independent lines join the sources to the targets.
+
+- **Search.** Dinic's algorithm (1970): breadth-first levels in the residual graph, then a blocking flow along them,
+  until no target is reached. A node split by a node capacity is two residual nodes joined by an arc of that
+  capacity. The residual graph is built only where the search reads it. Each node a level search reads, and each
+  advance of the flow search, is one expansion. Arithmetic is exact: integer capacities as they are, and when any
+  capacity is a float, every capacity as an integer count of the largest power-of-two denominator among them.
+- **Answer.** `value` (the flow's size), `optimal` (true exactly when complete), `upper_bound`, `flows`: the net
+  flow on each edge that carries any, by edge ID, with the direction it goes; and, when complete, the minimum cut
+  nearest the sources: `cut`, the hops from its source side to the rest (each with its capacity), and `cut_nodes`,
+  the nodes whose own capacity separates them. They add up to the value. Numbers are integers, or when any capacity
+  is a float the nearest float with the exact value beside it (`value_exact`, as `p/q`).
+- **Certificate.** With `certificate: true`, `{"kind": "cut", "source_side": [node]}`: the nodes whose outward side
+  the final residual graph reaches. A checker confirms the flow (capacities, conservation, node capacities, the
+  value leaving the sources) and recomputes the cut from the records: every hop in scope from the source side to a
+  node whose inward side is outside it, and every cut node. A flow and a cut of the same value are both optimal
+  (max-flow min-cut theorem), so nothing else is searched.
+- **Limits.** An interrupted search keeps the flow found so far, valid and never claimed optimal: `value` is a lower
+  bound, `upper_bound` the least of what the sources can send and the targets receive, and the cut is null.
+
+Answer: `{"value", "optimal", "upper_bound", "flows": [{"edge", "relation", "direction", "from", "to", "flow"}],
+"cut": [{"edge", "relation", "direction", "from", "to", "capacity"}], "cut_nodes": [{"node", "capacity"}],
+"certificate"}`.
+
+**Matching.** As many pairs as possible of a node of the `left` set with a node outside it along a hop in scope, no
+node in two pairs (Hopcroft and Karp, 1973): distinct assignments, such as samples to instruments or claims to
+reviewers. A left node's candidates are its hops in scope to nodes outside the left set; hops between left nodes are
+not candidates.
+
+- **Search.** Phases of a breadth-first search from the unpaired left nodes along alternating paths, then augmentation
+  along the shortest ones; each left node a phase reads is one expansion. A pair uses the first hop, in canonical
+  order, to its partner.
+- **Answer.** `pairs` by left node, each with its partner and the hop that pairs them; `size`; `left_count`, how many
+  left nodes there are; and, when complete, `optimal` and `deficiency`, the left nodes no maximum matching pairs.
+- **Certificate.** With `certificate: true` on a complete answer, `{"kind": "cover", "nodes": [node]}`: König's
+  vertex cover (1931), as many nodes as pairs, touching every candidate hop, so no matching has more pairs. When the
+  deficiency is not zero, the uncovered left nodes S and their candidates N(S), all in the cover, have fewer
+  candidates than nodes: Hall's condition fails, which is why they cannot all be paired.
+- **Limits.** An interrupted search keeps the pairs found so far, a valid matching never claimed maximum.
+
+Answer: `{"pairs": [{"left", "right", "edge", "relation", "direction"}], "size", "left_count", "optimal",
+"deficiency", "certificate"}`.
+
 **Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
 SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for
 example from a claim to its evidence items, or from an item to the source it cites.
@@ -612,6 +666,11 @@ The result contract reports how an execution ended. It carries no scientific ans
   - for biconnectivity, every bridge against its record; and from a certificate, the forest as a depth-first forest of
     the records' links, the low points recomputed from them, and the articulation points (with their splits),
     bridges and blocks exactly those they prove (an interrupted answer: some of them)
+  - for a maximum flow, every flow against its edge's record and capacity, conservation and node capacities at every
+    other node, the value leaving the sources, the cut's capacities adding up to the value, and with a certificate
+    the cut recomputed from the records from its source side
+  - for a matching, every pair a hop in scope from a left node to a node outside the left set, no node twice,
+    `left_count` the left set's size, and a cover as large as the matching touching every candidate hop
   - for periodicity, against the cell's records: the tree's hops, every hop from a listed node's image leading to a
     listed node by a lattice vector, and the cycles being exactly the edges with a nonzero net, with those nets
   - for a regular path, every hop of a witness or of the tree against the path's automaton, which it builds itself
@@ -660,7 +719,7 @@ The verdict is one of three:
 | --- | --- | --- |
 | `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
 | `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `rule_changed` (a derivation's ground is no longer one, or an `all_of` node's inputs changed), `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
-| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support, components, biconnectivity), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
+| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support, components, biconnectivity, max_flow, matching), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
 
 Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",
 "operation", "result_id", "request_id", "from_projection", "to_projection", "verdict", "reasons", "reason_count",

@@ -1383,6 +1383,154 @@
    "bindings": {
     "source": "conformance-g14@1"
    }
+  },
+  "G15": {
+   "nodes": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "s",
+    "t"
+   ],
+   "edges": [
+    {
+     "id": "p1",
+     "source": "s",
+     "target": "a",
+     "relation": "P"
+    },
+    {
+     "id": "p2",
+     "source": "s",
+     "target": "b",
+     "relation": "P"
+    },
+    {
+     "id": "p3",
+     "source": "a",
+     "target": "b",
+     "relation": "P"
+    },
+    {
+     "id": "p4",
+     "source": "a",
+     "target": "c",
+     "relation": "P"
+    },
+    {
+     "id": "p5",
+     "source": "b",
+     "target": "d",
+     "relation": "P"
+    },
+    {
+     "id": "p6",
+     "source": "c",
+     "target": "t",
+     "relation": "P"
+    },
+    {
+     "id": "p7",
+     "source": "d",
+     "target": "t",
+     "relation": "P"
+    },
+    {
+     "id": "p8",
+     "source": "c",
+     "target": "d",
+     "relation": "P"
+    },
+    {
+     "id": "p9",
+     "source": "a",
+     "target": "c",
+     "relation": "P"
+    }
+   ],
+   "relations": [
+    "P"
+   ],
+   "bindings": {
+    "source": "conformance-g15@1"
+   }
+  },
+  "G16": {
+   "nodes": [
+    {
+     "id": "i1",
+     "types": [
+      "Instrument"
+     ]
+    },
+    {
+     "id": "i2",
+     "types": [
+      "Instrument"
+     ]
+    },
+    {
+     "id": "s1",
+     "types": [
+      "Sample"
+     ]
+    },
+    {
+     "id": "s2",
+     "types": [
+      "Sample"
+     ]
+    },
+    {
+     "id": "s3",
+     "types": [
+      "Sample"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "u1",
+     "source": "s1",
+     "target": "i1",
+     "relation": "CAN_USE"
+    },
+    {
+     "id": "u2",
+     "source": "s2",
+     "target": "i1",
+     "relation": "CAN_USE"
+    },
+    {
+     "id": "u3",
+     "source": "s3",
+     "target": "i1",
+     "relation": "CAN_USE"
+    },
+    {
+     "id": "u4",
+     "source": "s3",
+     "target": "i2",
+     "relation": "CAN_USE"
+    },
+    {
+     "id": "u5",
+     "source": "s1",
+     "target": "i1",
+     "relation": "CAN_USE"
+    }
+   ],
+   "relations": [
+    "CAN_USE"
+   ],
+   "node_types": [
+    "Instrument",
+    "Sample"
+   ],
+   "bindings": {
+    "source": "conformance-g16@1"
+   }
   }
  },
  "cases": [
@@ -7278,6 +7426,387 @@
      "e07",
      "e10"
     ]
+   }
+  },
+  {
+   "name": "max-flow-capacities",
+   "covers": [
+    "maximum flow",
+    "minimum cut",
+    "parallel edges add capacity"
+   ],
+   "graph": "G15",
+   "request": {
+    "operation": "max_flow",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "P",
+      "direction": "forward"
+     }
+    ],
+    "capacities": {
+     "by_edge": {
+      "p1": 3,
+      "p2": 2,
+      "p3": 1,
+      "p4": 2,
+      "p5": 3,
+      "p6": 2,
+      "p7": 2,
+      "p8": 1,
+      "p9": 1
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "flow_value": 4,
+    "cut_edges": [
+     [
+      "p6",
+      "forward"
+     ],
+     [
+      "p7",
+      "forward"
+     ]
+    ],
+    "cut_node_ids": []
+   }
+  },
+  {
+   "name": "max-flow-edge-disjoint-paths",
+   "covers": [
+    "unit capacities: edge-disjoint paths",
+    "the cut nearest the sources"
+   ],
+   "graph": "G15",
+   "request": {
+    "operation": "max_flow",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "P",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "flow_value": 2,
+    "cut_edges": [
+     [
+      "p1",
+      "forward"
+     ],
+     [
+      "p2",
+      "forward"
+     ]
+    ],
+    "cut_node_ids": []
+   }
+  },
+  {
+   "name": "max-flow-node-capacity",
+   "covers": [
+    "node capacities",
+    "node-disjoint paths",
+    "a cut of nodes"
+   ],
+   "graph": "G15",
+   "request": {
+    "operation": "max_flow",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "P",
+      "direction": "forward"
+     }
+    ],
+    "capacities": {
+     "by_relation": {
+      "P": 5
+     }
+    },
+    "node_capacity": 1,
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "flow_value": 2,
+    "cut_edges": [],
+    "cut_node_ids": [
+     "a",
+     "b"
+    ]
+   }
+  },
+  {
+   "name": "max-flow-rational",
+   "covers": [
+    "exact rational capacities"
+   ],
+   "graph": "G15",
+   "request": {
+    "operation": "max_flow",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "P",
+      "direction": "forward"
+     }
+    ],
+    "capacities": {
+     "by_relation": {
+      "P": 0.75
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "flow_value": "3/2",
+    "cut_edges": [
+     [
+      "p1",
+      "forward"
+     ],
+     [
+      "p2",
+      "forward"
+     ]
+    ],
+    "cut_node_ids": []
+   }
+  },
+  {
+   "name": "max-flow-reverse-scope",
+   "covers": [
+    "flow along reverse hops"
+   ],
+   "graph": "G15",
+   "request": {
+    "operation": "max_flow",
+    "sources": [
+     "t"
+    ],
+    "targets": [
+     "s"
+    ],
+    "scope": [
+     {
+      "relation": "P",
+      "direction": "reverse"
+     }
+    ],
+    "capacities": {
+     "by_edge": {
+      "p1": 3,
+      "p2": 2,
+      "p3": 1,
+      "p4": 2,
+      "p5": 3,
+      "p6": 2,
+      "p7": 2,
+      "p8": 1,
+      "p9": 1
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "flow_value": 4,
+    "cut_edges": [
+     [
+      "p6",
+      "reverse"
+     ],
+     [
+      "p7",
+      "reverse"
+     ]
+    ],
+    "cut_node_ids": []
+   }
+  },
+  {
+   "name": "max-flow-expansion-budget",
+   "covers": [
+    "an interrupted flow is a lower bound"
+   ],
+   "graph": "G15",
+   "request": {
+    "operation": "max_flow",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "P",
+      "direction": "forward"
+     }
+    ],
+    "capacities": {
+     "by_edge": {
+      "p1": 3,
+      "p2": 2,
+      "p3": 1,
+      "p4": 2,
+      "p5": 3,
+      "p6": 2,
+      "p7": 2,
+      "p8": 1,
+      "p9": 1
+     }
+    },
+    "limits": {
+     "max_expansions": 3
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "flow_value": 4
+   }
+  },
+  {
+   "name": "max-flow-overlapping-terminals",
+   "covers": [
+    "sources and targets are disjoint"
+   ],
+   "graph": "G15",
+   "request": {
+    "operation": "max_flow",
+    "sources": [
+     "s",
+     "t"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "P",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "invalid_request"
+   }
+  },
+  {
+   "name": "matching-samples-to-instruments",
+   "covers": [
+    "maximum matching",
+    "deficiency",
+    "vertex cover"
+   ],
+   "graph": "G16",
+   "request": {
+    "operation": "matching",
+    "left": {
+     "node_types": [
+      "Sample"
+     ]
+    },
+    "scope": [
+     {
+      "relation": "CAN_USE",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "matching_size": 2,
+    "left_count": 3,
+    "deficiency": 1
+   }
+  },
+  {
+   "name": "matching-named-left-nodes",
+   "covers": [
+    "left nodes named"
+   ],
+   "graph": "G16",
+   "request": {
+    "operation": "matching",
+    "left": {
+     "nodes": [
+      "s1",
+      "s2"
+     ]
+    },
+    "scope": [
+     {
+      "relation": "CAN_USE",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "matching_size": 1,
+    "left_count": 2,
+    "deficiency": 1
+   }
+  },
+  {
+   "name": "matching-reverse-scope",
+   "covers": [
+    "candidates along reverse hops"
+   ],
+   "graph": "G16",
+   "request": {
+    "operation": "matching",
+    "left": {
+     "node_types": [
+      "Instrument"
+     ]
+    },
+    "scope": [
+     {
+      "relation": "CAN_USE",
+      "direction": "reverse"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "matching_size": 2,
+    "left_count": 2,
+    "deficiency": 0
    }
   }
  ]
