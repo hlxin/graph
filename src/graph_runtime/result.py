@@ -22,9 +22,10 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 from fractions import Fraction
+from types import MappingProxyType
 from typing import Any
 
-from ._canonical import canonical_json, digest, freeze, thaw
+from ._canonical import canonical_json, canonical_object, digest, encode_text, freeze, sha256_text, thaw
 from ._version import RUNTIME_NAME, __version__
 from ._validation import shape_problems
 from .projection import CONTRACT
@@ -41,9 +42,13 @@ _WITNESS_OPERATIONS = ("typed_path", "shortest_path")
 
 class Result:
     """A read-only result. :meth:`to_dict` gives its JSON form; :meth:`from_dict` reads one back and checks its
-    ``result_id``."""
+    ``result_id``.
 
-    __slots__ = ("_data", "_timing", "_index")
+    Each top-level field is encoded as canonical JSON once, when the result is made: those encodings give the
+    ``result_id`` and :meth:`to_json` without encoding the answer again, and the request's own encoding (made for its
+    ``request_id``) is reused as it is. The read-only views the properties return are made on first use."""
+
+    __slots__ = ("_data", "_parts", "_frozen", "_timing", "_index")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         raise TypeError("results are made by graph_runtime.execute(...) or read with Result.from_dict(...)")
@@ -60,7 +65,8 @@ class Result:
                 stats: Mapping | None = None, limitations: list[str] | tuple[str, ...] = (),
                 timing: Mapping | None = None, started: float | None = None) -> "Result":
         """``timing``: the seconds each phase took; ``started`` (a ``time.perf_counter()`` value): when the execution
-        began, so that ``total_s`` covers making the result too."""
+        began, so that ``total_s`` covers making the result too. The answer and other values are taken over, not
+        copied: the engine hands over values it no longer holds."""
         made = time.perf_counter()
         if status not in STATUSES:
             raise ValueError(f"status {status!r} is not one of {STATUSES}")
@@ -68,13 +74,16 @@ class Result:
                 "runtime": {"name": RUNTIME_NAME, "version": __version__},
                 "status": status, "complete": status == COMPLETED, "operation": operation,
                 "mode": request["mode"] if request is not None else None, "projection": projection,
-                "request": request.to_dict() if request is not None else None,
+                "request": request._data if request is not None else None,
                 "request_id": request.request_id if request is not None else None,
                 "answer": answer, "interruption": interruption, "error": error,
                 "stats": dict(stats or {"expansions": 0, "edges_examined": 0, "discovered": 0}),
                 "limitations": list(limitations)}
-        data["result_id"] = digest(data)
-        r = cls._wrap(data, None)
+        parts = {k: canonical_json(v) for k, v in data.items() if k != "request"}
+        parts["request"] = request._json if request is not None else "null"
+        rid = sha256_text(canonical_object(parts))
+        data["result_id"], parts["result_id"] = rid, encode_text(rid)
+        r = cls._wrap(data, parts, None)
         if timing or started is not None:
             done = time.perf_counter()
             t = {**(timing or {}), "result_s": done - made}
@@ -84,9 +93,11 @@ class Result:
         return r
 
     @classmethod
-    def _wrap(cls, data: dict, timing: Mapping | None) -> "Result":
+    def _wrap(cls, data: dict, parts: dict, timing: Mapping | None) -> "Result":
         r = object.__new__(cls)
-        object.__setattr__(r, "_data", freeze(data))
+        object.__setattr__(r, "_data", data)
+        object.__setattr__(r, "_parts", parts)
+        object.__setattr__(r, "_frozen", {})
         object.__setattr__(r, "_timing", freeze(dict(timing or {})))
         object.__setattr__(r, "_index", None)
         return r
@@ -98,14 +109,31 @@ class Result:
         if not isinstance(data, Mapping) or data.get("kind") != RESULT_KIND:
             raise ValueError(f"a result has kind {RESULT_KIND!r}")
         body = {k: thaw(v) for k, v in data.items() if k not in ("result_id", "timing")}
-        if data.get("result_id") != digest(body):
+        try:
+            parts = {k: canonical_json(v) for k, v in body.items()}
+            matches = data.get("result_id") == sha256_text(canonical_object(parts))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"the result is not plain JSON: {exc}") from None
+        if not matches:
             raise ValueError("the result's content does not match its result_id")
-        problems = contract_problems(thaw(data))
+        problems = _checked({**body, "result_id": data["result_id"], **({"timing": thaw(data["timing"])}
+                                                                          if "timing" in data else {})})
         if problems:
             raise ValueError("the result breaks the contract: " + "; ".join(problems))
-        return cls._wrap({**body, "result_id": data["result_id"]}, data.get("timing"))
+        parts["result_id"] = encode_text(data["result_id"])
+        return cls._wrap({**body, "result_id": data["result_id"]}, parts, data.get("timing"))
 
     # ------------------------------------------------------------------------------------------------ fields
+    def _get(self, field: str) -> Any:
+        """A field as a read-only value, made on first use."""
+        value = self._data[field]
+        if value is None or type(value) in (str, bool, int, MappingProxyType):
+            return value
+        cache = self._frozen
+        if field not in cache:
+            cache[field] = freeze(value)
+        return cache[field]
+
     @property
     def status(self) -> str:
         return self._data["status"]
@@ -124,7 +152,7 @@ class Result:
 
     @property
     def request(self) -> Mapping | None:
-        return self._data["request"]
+        return self._get("request")
 
     @property
     def request_id(self) -> str | None:
@@ -132,23 +160,23 @@ class Result:
 
     @property
     def answer(self) -> Mapping | None:
-        return self._data["answer"]
+        return self._get("answer")
 
     @property
     def interruption(self) -> Mapping | None:
-        return self._data["interruption"]
+        return self._get("interruption")
 
     @property
     def error(self) -> Mapping | None:
-        return self._data["error"]
+        return self._get("error")
 
     @property
     def stats(self) -> Mapping:
-        return self._data["stats"]
+        return self._get("stats")
 
     @property
     def limitations(self) -> tuple[str, ...]:
-        return self._data["limitations"]
+        return self._get("limitations")
 
     @property
     def result_id(self) -> str:
@@ -160,7 +188,7 @@ class Result:
         return self._timing
 
     def to_dict(self, *, timing: bool = True) -> dict:
-        out = thaw(self._data)
+        out = {k: thaw(v) for k, v in self._data.items()}
         if timing:
             out["timing"] = thaw(self._timing)
         return out
@@ -168,7 +196,8 @@ class Result:
     def to_json(self, *, timing: bool = False, indent: int | None = None) -> str:
         """The JSON form; canonical (sorted keys, compact) unless ``indent`` is given."""
         if indent is None:
-            return canonical_json(self.to_dict(timing=timing))
+            parts = self._parts if not timing else {**self._parts, "timing": canonical_json(thaw(self._timing))}
+            return canonical_object(parts)
         import json
         return json.dumps(self.to_dict(timing=timing), indent=indent, sort_keys=True, ensure_ascii=False)
 
@@ -246,8 +275,13 @@ def contract_problems(data: Mapping) -> list[str]:
     them): the status, ``complete`` exactly for ``completed``, an answer exactly when the request ran, an
     interruption exactly when interrupted, an error exactly when not run, and ``found: false`` (or a proven optimum)
     only in a complete answer. :func:`graph_runtime.verify_result` adds the witnesses, checked against the records."""
+    return _checked(thaw(data))
+
+
+def _checked(data: dict) -> list[str]:
+    """:func:`contract_problems` of plain data the caller owns (no copy is made)."""
     try:
-        return _contract_problems(thaw(data))
+        return _contract_problems(data)
     except (TypeError, ValueError, KeyError, OverflowError, RecursionError, RequestError) as exc:
         return [f"malformed result ({type(exc).__name__}: {exc})"]
 

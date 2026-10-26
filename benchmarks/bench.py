@@ -1,6 +1,6 @@
 """Measure whole requests: input preparation (projection build), binding, search, witness reconstruction, result
-making and JSON serialization, on synthetic workloads named by their generator, parameters and seed, with the
-versions that ran them and correctness parity against NetworkX.
+making, JSON serialization and reading the result back (parsing and checking it), on synthetic workloads named by
+their generator, parameters and seed, with the versions that ran them and correctness parity against NetworkX.
 
     python benchmarks/bench.py                      # sizes small and medium
     python benchmarks/bench.py --sizes small,medium,large
@@ -126,13 +126,17 @@ def run(sizes: list[str], seed: int) -> dict:
             t1 = time.perf_counter()
             text = res.to_json()
             json_s = time.perf_counter() - t1
+            t1 = time.perf_counter()
+            back = graph_runtime.Result.from_dict(json.loads(text))      # what a reader of the JSON does
+            read_s = time.perf_counter() - t1
+            assert back.result_id == res.result_id
             t2 = time.perf_counter()
             problems = graph_runtime.verify_result(res, nodes=nodes, edges=edges)
             verify_s = time.perf_counter() - t2
             entry["requests"].append({
                 "operation": raw["operation"], "request_id": res.request_id, "result_id": res.result_id,
                 "status": res.status, "stats": dict(res.stats), "timing": dict(res.timing), "json_s": json_s,
-                "json_bytes": len(text.encode()), "verify_s": verify_s, "verified": not problems,
+                "json_bytes": len(text.encode()), "read_s": read_s, "verify_s": verify_s, "verified": not problems,
                 "parity": parity(raw, res, nodes, edges, costs)})
         out["workloads"].append(entry)
     return out
@@ -149,17 +153,17 @@ def main(argv: list[str]) -> int:
     path = runs / (report["started"].replace(":", "").replace("-", "") + ".json")
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"{'size':7} {'operation':18} {'status':10} {'expansions':>10} {'build':>8} {'bind':>8} {'search':>8} "
-          f"{'witness':>8} {'result':>8} {'json':>8}  parity")
+          f"{'witness':>8} {'result':>8} {'json':>8} {'read':>8} {'verify':>8}  parity")
     for w in report["workloads"]:
         for r in w["requests"]:
             t = r["timing"]
             print(f"{w['size']:7} {r['operation']:18} {r['status']:10} {r['stats']['expansions']:>10} "
                   f"{w['build_s']:8.3f} {t['bind_s']:8.4f} {t['search_s']:8.4f} {t['witness_s']:8.4f} "
-                  f"{t['result_s']:8.4f} {r['json_s']:8.4f}  "
+                  f"{t['result_s']:8.4f} {r['json_s']:8.4f} {r['read_s']:8.4f} {r['verify_s']:8.4f}  "
                   f"{'ok' if r['parity'].get('agrees') and r['verified'] else r['parity']}")
     print(f"raw results: {path}")
-    return 0 if all(r["verified"] and r["parity"].get("checked") and r["parity"].get("agrees") for w in report["workloads"]
-                    for r in w["requests"]) else 1
+    return 0 if all(r["verified"] and r["parity"].get("checked") and r["parity"].get("agrees")
+                    for w in report["workloads"] for r in w["requests"]) else 1
 
 
 if __name__ == "__main__":

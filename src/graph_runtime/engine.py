@@ -231,8 +231,8 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
 def _nodes(p: Projection, ids: Any, field: str) -> list[int]:
     missing = [n for n in ids if n not in p._node_index]
     if missing:
-        raise RequestError(FAILED, "unknown_node", f"{field} names {len(missing)} node(s) the projection does not hold: "
-                           f"{missing[:10]}", {"field": field, "nodes": missing[:100]})
+        raise RequestError(FAILED, "unknown_node", f"{field} names {len(missing)} node(s) the projection does not "
+                           f"hold: {missing[:10]}", {"field": field, "nodes": missing[:100]})
     return [p._node_index[n] for n in ids]          # the request lists IDs in ascending order: so are the indices
 
 
@@ -281,12 +281,12 @@ def _costs(p: Projection, costs: Any, fwd: list[bool], rev: list[bool]) -> tuple
     else:
         unknown = sorted(e for e in table if e not in p._edge_index)
         if unknown:
-            raise RequestError(FAILED, "unknown_edge", f"costs.by_edge names {len(unknown)} edge(s) the projection does "
-                               f"not hold: {unknown[:10]}", {"edges": unknown[:100]})
+            raise RequestError(FAILED, "unknown_edge", f"costs.by_edge names {len(unknown)} edge(s) the projection "
+                               f"does not hold: {unknown[:10]}", {"edges": unknown[:100]})
         missing = [p._edge_ids[ei] for ei in in_scope if p._edge_ids[ei] not in table]
         if missing:
-            raise RequestError(FAILED, "missing_cost", f"costs.by_edge gives no cost for {len(missing)} edge(s) in scope: "
-                               f"{missing[:10]}", {"edges": missing[:100], "count": len(missing)})
+            raise RequestError(FAILED, "missing_cost", f"costs.by_edge gives no cost for {len(missing)} edge(s) in "
+                               f"scope: {missing[:10]}", {"edges": missing[:100], "count": len(missing)})
         for ei in in_scope:
             given[ei] = table[p._edge_ids[ei]]
     rational = any(isinstance(x, float) for x in table.values())

@@ -49,7 +49,8 @@ def test_every_result_and_request_validates():
             limits = {"max_expansions": rng.randint(0, 4)}
             if raw["operation"] in ("reachability", "dependency_impact"):
                 limits["max_results"] = rng.randint(0, 4)
-            for extra, ctx in (({}, {}), ({"limits": limits}, {}), ({}, {"cancel": [CancelToken(), lambda: True][i % 2]})):
+            cancel = [CancelToken(), lambda: True][i % 2]
+            for extra, ctx in (({}, {}), ({"limits": limits}, {}), ({}, {"cancel": cancel})):
                 res = execute(p, {**raw, **extra, "projection": p.identity}, **ctx)
                 assert errors("result", res.to_dict()) == [], res.to_dict()
                 assert errors("request", res.to_dict()["request"]) == []

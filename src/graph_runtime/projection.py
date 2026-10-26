@@ -10,8 +10,9 @@ A projection never changes once built. Its identity is a sha256 digest of its ca
 (:func:`_identity`), so two projections of the same records, in any order, share one identity, and a request names
 the identity of the projection it was made for.
 
-Candidate records (``kind: hypothesis_candidate``, or ``epistemic_status: unverified``) are refused: the v0 projection holds source records only, so a
-proposed relationship can never become a traversable edge (docs/HYPOTHESES_AND_PROVENANCE.md).
+Candidate records (``kind: hypothesis_candidate``, or ``epistemic_status: unverified``) are refused: the v0
+projection holds source records only, so a proposed relationship can never become a traversable edge
+(docs/HYPOTHESES_AND_PROVENANCE.md).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Any, NamedTuple
 
-from ._canonical import canonical_json, is_digest
+from ._canonical import canonical_json, encode_text, is_digest
 from ._validation import shape_problems
 from .errors import ProjectionError
 
@@ -45,6 +46,8 @@ class EdgeRecord(NamedTuple):
 
 def _text(value: Any, what: str) -> str:
     """A non-empty string that encodes as UTF-8 (an ID, a relation, a type, a binding)."""
+    if type(value) is str and value and value.isascii():      # the common case, decided without encoding
+        return value
     if not isinstance(value, str) or not value:
         raise ProjectionError("invalid_record", f"{what} must be a non-empty string, not {value!r}")
     try:
@@ -57,6 +60,8 @@ def _text(value: Any, what: str) -> str:
 def _is_candidate(record: Any) -> bool:
     """Whether a record is a hypothesis candidate, which a v0 projection never holds: a ``HypothesisCandidate``, or a
     mapping with ``kind: hypothesis_candidate`` or ``epistemic_status: unverified``."""
+    if type(record) is dict:
+        return record.get("kind") == "hypothesis_candidate" or record.get("epistemic_status") == "unverified"
     if getattr(record, "kind", None) == "hypothesis_candidate":
         return True
     return isinstance(record, Mapping) and (record.get("kind") == "hypothesis_candidate"
@@ -326,11 +331,22 @@ def _identity(p: Projection, node_types_of: Mapping[str, tuple[str, ...]]) -> st
               "relations": list(p._relations), "node_types": list(p._node_types),
               "node_count": len(p._node_ids), "edge_count": len(p._edge_ids)}
     h.update(canonical_json(header).encode("utf-8") + b"\n")
-    for nid in p._node_ids:
-        h.update(canonical_json([nid, list(node_types_of[nid])]).encode("utf-8") + b"\n")
-    for i, eid in enumerate(p._edge_ids):
-        line = [eid, p._node_ids[p._edge_src[i]], p._node_ids[p._edge_dst[i]], p._relations[p._edge_rel[i]]]
-        h.update(canonical_json(line).encode("utf-8") + b"\n")
+    # each line as canonical_json writes it (the same string encoder), hashed a chunk of lines at a time
+    enc, ids, rels, lines = encode_text, p._node_ids, p._relations, []
+
+    def flush() -> None:
+        if lines:
+            h.update(("\n".join(lines) + "\n").encode("utf-8"))
+            lines.clear()
+    for nid in ids:
+        lines.append(f"[{enc(nid)},[{','.join(map(enc, node_types_of[nid]))}]]")
+        if len(lines) == 8192:
+            flush()
+    for eid, s, t, r in zip(p._edge_ids, p._edge_src, p._edge_dst, p._edge_rel):
+        lines.append(f"[{enc(eid)},{enc(ids[s])},{enc(ids[t])},{enc(rels[r])}]")
+        if len(lines) == 8192:
+            flush()
+    flush()
     out = "sha256:" + h.hexdigest()
     assert is_digest(out)
     return out

@@ -24,10 +24,11 @@ from __future__ import annotations
 
 import math
 import numbers
+import sys
 from collections.abc import Mapping
 from typing import Any
 
-from ._canonical import digest, freeze, is_digest, thaw
+from ._canonical import canonical_json, canonical_object, freeze, is_digest, sha256_text, thaw
 from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
@@ -56,7 +57,7 @@ class Request:
     """A normalized request: read-only, with its identity. Make one with :func:`normalize_request` or
     :meth:`graph_runtime.Projection.request`."""
 
-    __slots__ = ("_data", "_id")
+    __slots__ = ("_data", "_id", "_json")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         raise TypeError("make a Request with normalize_request(...) or Projection.request(...)")
@@ -69,9 +70,14 @@ class Request:
 
     @classmethod
     def _make(cls, data: dict) -> "Request":
+        """Freeze the normalized data, and encode each field once: the request's canonical JSON (which a result
+        echoes) and its identity (the digest of the same fields with the request kind) share the encodings."""
         r = object.__new__(cls)
+        parts = {k: canonical_json(v) for k, v in data.items()}
+        text = canonical_object(parts)
+        object.__setattr__(r, "_id", sha256_text(canonical_object({**parts, "kind": canonical_json(REQUEST_KIND)})))
+        object.__setattr__(r, "_json", text)
         object.__setattr__(r, "_data", freeze(data))
-        object.__setattr__(r, "_id", digest({"kind": REQUEST_KIND, **data}))
         return r
 
     @property
@@ -267,14 +273,21 @@ def _costs(value: Any) -> dict[str, dict[str, int | float]]:
         raise _fail("invalid_request", f"costs.{kind} is a mapping of IDs to costs")
     out = {}
     for key, x in table.items():
-        if not isinstance(key, str) or not key:
+        if type(key) is not str or not key:
             raise _fail("invalid_request", f"costs.{kind} holds the key {key!r}; a key is a non-empty string")
-        out[key] = _cost(x, f"costs.{kind}[{key!r}]")
-    return {kind: dict(sorted(out.items()))}
+        if type(x) is int and x >= 0 or type(x) is float and 0 <= x <= _FLOAT_MAX:
+            out[key] = x                       # the common case, checked without a call
+        else:
+            out[key] = _cost(x, kind, key)
+    return {kind: out}                         # canonical JSON sorts the keys; nothing else reads their order
 
 
-def _cost(x: Any, where: str) -> int | float:
+_FLOAT_MAX = sys.float_info.max
+
+
+def _cost(x: Any, kind: str, key: str) -> int | float:
     """A cost: an integer (any size, kept exact) or a finite float, never negative."""
+    where = f"costs.{kind}[{key!r}]"
     if isinstance(x, bool) or not isinstance(x, (numbers.Integral, float)):
         raise _fail("invalid_cost", f"{where} is {x!r}; a cost is an integer or a finite float")
     x = int(x) if isinstance(x, numbers.Integral) else float(x)

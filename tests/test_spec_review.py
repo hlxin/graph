@@ -166,7 +166,8 @@ def test_malformed_candidate_bearing_is_reported(bearing):
 
 
 def test_large_finite_score_and_extension_keys_survive_transport():
-    c = candidate().add_score(value=10**400, method='m', method_version='1', candidate_set='s', direction='higher_first')
+    c = candidate().add_score(value=10**400, method='m', method_version='1', candidate_set='s',
+                              direction='higher_first')
     assert HypothesisCandidate.from_json(c.to_json()).scores[0]['value'] == 10**400
     with pytest.raises(CandidateError):
         candidate(extensions={1: 'lost', '1': 'retained'})
@@ -285,7 +286,8 @@ def test_benchmark_parity_includes_isolated_nodes(monkeypatch, tmp_path):
         {'size': 'small', 'build_s': 0, 'requests': [
             {'operation': 'reachability', 'status': 'completed', 'stats': {'expansions': 0},
              'timing': dict.fromkeys(['bind_s', 'search_s', 'witness_s', 'result_s'], 0), 'json_s': 0,
-             'verified': True, 'parity': {'checked': False, 'why': 'networkx not installed'}}]}]}
+             'read_s': 0, 'verify_s': 0, 'verified': True,
+             'parity': {'checked': False, 'why': 'networkx not installed'}}]}]}
     monkeypatch.setattr(bench, 'run', lambda sizes, seed: report)
     monkeypatch.setattr(bench, 'HERE', tmp_path)
     assert bench.main(['--sizes', 'small']) == 1

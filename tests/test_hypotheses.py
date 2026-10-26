@@ -42,7 +42,8 @@ def codes(record):
 def test_a_new_candidate_is_active_and_unverified(proj):
     c = make(proj)
     d = c.to_dict()
-    assert (d["kind"], d["epistemic_status"], d["revision"], d["previous"]) == ("hypothesis_candidate", "unverified", 1, None)
+    assert (d["kind"], d["epistemic_status"], d["revision"], d["previous"]) == \
+        ("hypothesis_candidate", "unverified", 1, None)
     assert c.state == "active" and c.id.startswith("hc:sha256:") and c.projection == proj.identity
     assert d["scores"][0] == {"value": 0.8, "method": "priority", "method_version": "0", "candidate_set": "set-1",
                               "direction": "higher_first", "interpretation": "ordering", "calibration": None}
@@ -61,7 +62,8 @@ def test_serialization_preserves_everything(proj):
     d = back.to_dict()
     assert d["epistemic_status"] == "unverified"
     assert [e["state"] for e in d["lifecycle"]] == ["active", "withdrawn"]
-    assert d["assessments"][0]["stance"] == "opposing" and d["assumptions"] and d["proposed_tests"] == c.to_dict()["proposed_tests"]
+    assert d["assessments"][0]["stance"] == "opposing" and d["assumptions"]
+    assert d["proposed_tests"] == c.to_dict()["proposed_tests"]
     assert json.loads(c.to_json(indent=2)) == d
 
 
@@ -292,7 +294,8 @@ def test_witness_references(proj):
 def test_review_findings_on_candidates(proj):
     with pytest.raises(CandidateError) as err:                      # identical observations cannot discriminate
         make(proj, proposed_tests=[{"description": "d", "outcomes": [
-            {"observation": "rank rises", "bearing": "supports"}, {"observation": "Rank  rises", "bearing": "opposes"}]}])
+            {"observation": "rank rises", "bearing": "supports"},
+            {"observation": "Rank  rises", "bearing": "opposes"}]}])
     assert err.value.code == "not_discriminating"
     for bad_time in ("2026-99-99", "2026-02-30", "2026-10-25T25:00Z", "2026-10-25T10:00+25:00"):
         with pytest.raises(CandidateError) as err:
@@ -301,9 +304,10 @@ def test_review_findings_on_candidates(proj):
     with pytest.raises(CandidateError) as err:                      # a withdrawal is not dated before the creation
         make(proj).withdraw(at="1999-01-01", reason="r")
     assert err.value.code == "invalid_time"
-    assert make(proj, at="2026-10-25T23:30:00-05:00").withdraw(at="2026-10-26T04:45:00Z", reason="r").state == "withdrawn"
+    late = make(proj, at="2026-10-25T23:30:00-05:00").withdraw(at="2026-10-26T04:45:00Z", reason="r")
+    assert late.state == "withdrawn"
     assert make(proj, at="2026-10-25T10:00:00.123456789Z").revision == 1
-    with pytest.raises(CandidateError) as err:                      # text that is not valid Unicode is a problem, not a crash
+    with pytest.raises(CandidateError) as err:            # text that is not valid Unicode is a problem, not a crash
         make(proj, statement="bad \ud800 text")
     assert err.value.code == "invalid_text"
     c = make(proj)

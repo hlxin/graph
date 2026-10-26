@@ -154,7 +154,8 @@ def context(state: Mapping, roots: Sequence | None = None, shells: int = 2, max_
         index = int(e["id"][1:].partition("@")[0])
         ends = (parse_image_id(e["source"]), parse_image_id(e["target"]))
         if a and b:
-            edges.append({"source_edge": index, "ends": sorted([[x[0], list(x[1])] for x in ends]), "kind": e["relation"]})
+            edges.append({"source_edge": index, "ends": sorted([[x[0], list(x[1])] for x in ends]),
+                          "kind": e["relation"]})
         elif a or b:
             inner, outer = ends if a else ends[::-1]
             ports.append({"source_edge": index, "inside": [inner[0], list(inner[1])],

@@ -131,13 +131,14 @@ def trace(doc: Mapping, spec: Mapping, plan: Mapping, projection: Projection | N
         res: Result = execute(p, p.request("typed_path", sources=[rid], pattern=pattern,
                                            **({"limits": limits} if limits else {})), current_bindings=current)
         links = [h["edge"] for h in res.witness or []]
-        rows.append({"record": rid, "status": res.status, "found": res.found, "links": links, "evidence": evidence_of(doc, links), "result_id": res.result_id,
+        rows.append({"record": rid, "status": res.status, "found": res.found, "links": links,
+                     "evidence": evidence_of(doc, links), "result_id": res.result_id,
                      **({"error": dict(res.error)} if res.error else {})})
     return {"projection": p.identity, "bindings": dict(p.bindings), "pattern": json.loads(json.dumps(pattern)),
             "records": rows}
 
 
-# ---------------------------------------------------------------------------------------------- what rests on retractions
+# ------------------------------------------------------------------------------------- what rests on retractions
 # The dependency projection of SCALE's source lifecycle (scale.lifecycle.resting): a record depends on each evidence
 # item it holds, an item on the source it cites (or, for a partial retraction recorded as a dataset, on that
 # dataset's retraction), a record on its inclusion in a retracted dataset whose sources its evidence does not cite,
@@ -218,7 +219,7 @@ def retraction_dependencies(doc: Mapping, spec: Mapping) -> dict:
             edges.append({"id": f"included:{rid}@{d}", "source": atom, "target": retraction_of(d),
                           "relation": RETRACTED_WITH})
     inputs = lifecycle.input_edges(spec)
-    for e in doc["links"]:                 # a link to a record of another part (graphs/ parts) is not followed, as SCALE
+    for e in doc["links"]:            # a link to a record of another part (graphs/ parts) is not followed, as SCALE
         if e["type"] in inputs and e["source"] in kind and e["target"] in kind and e["source"] != e["target"] \
                 and kind[e["target"]] not in lifecycle.UNFLAGGED:
             edges.append({"id": f"uses:{e['id']}", "source": e["source"], "target": e["target"], "relation": USES})
@@ -230,7 +231,8 @@ def retraction_dependencies(doc: Mapping, spec: Mapping) -> dict:
     p = Projection.build(nodes=list(nodes.values()), edges=list(unique.values()), relations=DEPENDENCIES,
                          node_types=["Record", "EvidenceItem", "Inclusion", "Retraction"],
                          bindings={**bindings_of(doc, spec), "projection": "scale.lifecycle dependencies v1"})
-    return {"projection": p, "changed": sorted(changed), "flaggable": sorted(rid for rid, _, skip in records if not skip)}
+    return {"projection": p, "changed": sorted(changed),
+            "flaggable": sorted(rid for rid, _, skip in records if not skip)}
 
 
 def resting_records(doc: Mapping, spec: Mapping) -> dict:

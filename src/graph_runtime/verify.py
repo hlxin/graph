@@ -22,7 +22,7 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
     """Problems found in ``result`` (empty when it checks out). ``nodes`` and ``edges``: the records the projection
     was built from, as :meth:`graph_runtime.Projection.build` takes them."""
     try:
-        data = result.to_dict() if isinstance(result, Result) else dict(result)
+        data = dict(result._data) if isinstance(result, Result) else dict(result)      # read, never changed
         problems = contract_problems(data)
         if problems or data["status"] not in (COMPLETED, INTERRUPTED):
             return problems
@@ -87,7 +87,8 @@ class _Checker:
             self.bad(f"{where}: direction {direction!r} is neither forward nor reverse")
             return
         if ends != (frm, to):
-            self.bad(f"{where}: edge {edge} runs {src} -> {dst}; a {direction} hop from {frm} to {to} does not follow it")
+            self.bad(f"{where}: edge {edge} runs {src} -> {dst}; a {direction} hop from {frm} to {to} does not "
+                     "follow it")
 
     def chain(self, where: str, witness: Any, sources: set, targets: Any, scopes: list[set],
               node_types: list | None = None) -> list[Mapping]:
@@ -146,6 +147,9 @@ class _Checker:
             by_node[e["node"]] = e
             if e["node"] not in self.types_of:
                 self.bad(f"{e['node']!r} is not an input node")
+        # Each entry's own hop is checked once; its witness is then checked hop by hop back to a source, stopping
+        # at an entry whose witness was already found sound from the same depth: every hop is checked once.
+        sound: set[tuple[str, int]] = set()
         for e in entries:
             d, where = e["depth"], f"{key} {e['node']!r}"
             if not _is_int(d) or d < 0:
@@ -159,19 +163,29 @@ class _Checker:
                 elif e["node"] not in seeds or e["via"] is not None:
                     self.bad(f"{where}: depth 0 is a source, with no via")
                 continue
-            node, cur = e["node"], e
+            node, cur, walked = e["node"], e, []
             for step in range(d):
+                if (node, d - step) in sound:
+                    break
                 if cur is None or not isinstance(cur.get("via"), Mapping):
                     self.bad(f"{where}: the witness breaks off after {step} of {d} hops")
+                    walked = []
                     break
                 via = cur["via"]
+                before = len(self.problems)
                 self.hop(f"{where}: hop {d - step} of {d}", via["from"], node, via["edge"], via["relation"],
                          via["direction"], allowed)
+                if len(self.problems) == before:
+                    walked.append((node, d - step))
+                else:
+                    walked = []
                 node = via["from"]
                 cur = by_node.get(node)
             else:
                 if node not in seeds:
                     self.bad(f"{where}: the witness starts at {node!r}, which is not a requested source")
+                    walked = []
+            sound.update(walked)
         if not strict and status == COMPLETED:
             for s in sorted(seeds):
                 if by_node.get(s, {}).get("depth") != 0:

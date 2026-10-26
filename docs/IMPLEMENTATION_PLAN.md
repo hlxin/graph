@@ -12,7 +12,7 @@ section 6. Status as of 25 October 2026, contract `graph-runtime/v0.1`, runtime 
 | 2 | The immutable view and four exact operations with structural witnesses | Done | `projection.py`, `request.py`, `engine.py`, `result.py`, `verify.py`; unit, scenario, oracle and limit tests; 49 conformance cases |
 | 3 | Candidate-hypothesis validation and transport, without source mutation | Done | `hypotheses.py`, [HYPOTHESES_AND_PROVENANCE.md](HYPOTHESES_AND_PROVENANCE.md), the synthetic example |
 | 4 | The first real consumer adapter and scientific parity fixtures | First cut | SCALE's adapter, staged in `integrations/scale/`, with two read-only workflows and parity against SCALE's own engine; it still has to go to SCALE as a pull request |
-| 5 | Measure the whole request; evaluate one alternative backend only if needed | Started | every result's `timing` (bind, search, witness, result) and `benchmarks/bench.py` (build, serialization, workload identity, versions, raw results, parity); no alternative backend yet, and none is needed so far |
+| 5 | Measure the whole request; evaluate one alternative backend only if needed | Measured and optimized | every result's `timing` (bind, search, witness, result) and `benchmarks/bench.py` (build, serialization, reading back, verifying, workload identity, versions, raw results, parity); the hot spots found are fixed (see Measurements); no alternative backend is needed at the sizes measured |
 | 6 | Prepare the extraction path; exercise a real second consumer | Second consumer exercised | STATES's adapter, staged in `integrations/states/`: context extraction as bounded reachability over the lifted periodic substrate, with parity against STATES's own `extract_context` ([STATES_INTEGRATION.md](STATES_INTEGRATION.md)); the private repository `hlxin/graph` holds the runtime; no release yet |
 
 The note's criterion for a separately versioned package is a real second workflow that validates the same
@@ -56,25 +56,49 @@ and `tests/test_hypotheses.py`):
 A passing suite is not proof that a production service or a scientific model is correct. The SCALE parity tests
 show that the adapter and the runtime reproduce what SCALE's engine and lifecycle compute, on SCALE's documents.
 
-## First measurements
+## Measurements
 
 These come from `benchmarks/bench.py` on one Apple-silicon laptop (Python 3.13.5, 25 October 2026). Use them to
 compare runs on that machine only. The workload is a uniform random multigraph with 4 relations, and every answer
-agreed with NetworkX.
+agreed with NetworkX. Times are in seconds.
 
-| Size | Build | Reachability: search, witness, result, JSON (s) | Shortest path: bind, search (s) |
+The first measurements (`v0`) showed that making the result and serializing it cost as much as the search. Binding a
+per-edge cost table cost more than the search it served:
+
+| Size | Build | Reachability: search, witness, result, JSON | Shortest path: bind, search |
 | --- | --- | --- | --- |
-| 1,000 nodes, 5,000 edges | 0.017 s | 0.0013, 0.0006, 0.0027, 0.0026 | 0.006, 0.0015 |
-| 10,000 nodes, 50,000 edges | 0.19 s | 0.012, 0.005, 0.027, 0.032 | 0.071, 0.020 |
-| 100,000 nodes, 500,000 edges | 2.8 s | 0.40, 0.09, 0.42, 0.41 | 1.0, 0.17 |
+| 1,000 nodes, 5,000 edges | 0.017 | 0.0013, 0.0006, 0.0027, 0.0026 | 0.006, 0.0015 |
+| 10,000 nodes, 50,000 edges | 0.19 | 0.012, 0.005, 0.027, 0.032 | 0.071, 0.020 |
+| 100,000 nodes, 500,000 edges | 2.8 | 0.40, 0.09, 0.42, 0.41 | 1.0, 0.17 |
 
-Making the result (freezing and digesting it) and serializing it cost as much as the search itself. So does binding
-a per-edge cost table. These are the first places to optimize, before any alternative backend is considered.
+The `v0.1` revision made reading a result back much costlier: it checks every field against the schema. A
+100,000-node answer took about 10 seconds to read or verify, 120 times as long as making it. The current runtime fixes
+both:
+
+- **Encoding.** A result encodes each top-level field once, which gives both its `result_id` and its JSON; it reuses
+  the request's own encoding and freezes its views only when they are read.
+- **Projection identity.** Its lines are written with JSON's own string encoder, and plain ASCII text is checked
+  without encoding it.
+- **Cost tables.** Normalizing one no longer sorts it, or builds a message for every entry.
+- **Schema checks.** The checks compile the bundled schema into closures once, with predicate modes that stop at the
+  first problem.
+- **Verification.** `verify_result` checks each witness hop once.
+
+Every result id, identity and digest is unchanged: the example's committed outputs still match byte for byte.
+
+| Size | Build | Reachability: search, witness, result, JSON, read back, verify | Shortest path: bind, search, read back |
+| --- | --- | --- | --- |
+| 1,000 nodes, 5,000 edges | 0.007 | 0.0008, 0.0004, 0.0007, 0.0000, 0.0074, 0.0066 | 0.0016, 0.0011, 0.0056 |
+| 10,000 nodes, 50,000 edges | 0.078 | 0.0085, 0.0038, 0.0075, 0.0002, 0.066, 0.074 | 0.020, 0.017, 0.060 |
+| 100,000 nodes, 500,000 edges | 1.19 | 0.20, 0.079, 0.079, 0.0014, 0.84, 0.93 | 0.31, 0.10, 0.78 |
+
+The search now dominates making an answer. Reading an answer back is what costs most, because it checks every
+field, and it is still under a second at 100,000 nodes. No alternative backend is needed for these sizes.
 
 ## Next
 
 1. Review the contract (work item 1) and settle anything it should change before a consumer depends on it.
 2. Propose the SCALE adapter to SCALE as a pull request, under SCALE's process.
-3. Profile and reduce result-making and per-edge cost binding (work item 5): lighter freezing, streaming digests.
-4. Propose the STATES adapter to STATES, under its own process.
+3. Propose the STATES adapter to STATES, under its own process.
+4. Measure a whole SCALE or STATES request with both engines, on a real workload (work item 5).
 5. A third workflow, RATES (its site graphs), when one needs an operation GRAPH has.

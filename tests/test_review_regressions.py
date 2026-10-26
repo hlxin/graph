@@ -38,7 +38,7 @@ def test_execute_reports_every_request_problem_in_a_result(raw, status):
 
 def test_an_answer_too_large_for_json_is_reported_not_raised():
     p, _, _ = chain()
-    big = 9 * 10**4299                                             # 4,300 digits: the request is writable, the sum is not
+    big = 9 * 10**4299                              # 4,300 digits: the request is writable, the sum is not
     res = execute(p, p.request("shortest_path", sources=["a"], targets=["c"], scope=[R],
                                costs={"by_relation": {"R": big}}))
     assert (res.status, res.error["code"]) == (FAILED, "unrepresentable_result")
