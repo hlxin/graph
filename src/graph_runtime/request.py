@@ -41,6 +41,11 @@ Operations (docs/API_CONTRACT.md):
 * ``biconnectivity``: ``scope`` (each edge in it a link between its ends, either way), ``nodes`` (only the
   components holding these; null: all), ``blocks`` (list the blocks too; default false), ``certificate``; limit
   ``max_expansions``.
+* ``max_flow``: ``sources``, ``targets`` (disjoint from the sources), ``scope``, ``capacities`` (as costs; null: every
+  edge 1), ``node_capacity`` (what each node other than the sources and targets passes; null: no limit),
+  ``certificate``; limit ``max_expansions``.
+* ``matching``: ``left`` (``{node_types, nodes}``: the nodes to pair), ``scope`` (from a left node to its candidate
+  partners), ``certificate``; limit ``max_expansions``.
 
 No operation takes a field named ``kind``: a request's identity digests its fields with ``kind`` naming the record
 kind (``graph_runtime.request``).
@@ -65,7 +70,7 @@ from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
-              "biconnectivity")
+              "biconnectivity", "max_flow", "matching")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
@@ -88,7 +93,9 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "periodicity": ("max_expansions",),
            "personalized_pagerank": ("max_expansions",),
            "components": ("max_expansions", "max_results"),
-           "biconnectivity": ("max_expansions",)}
+           "biconnectivity": ("max_expansions",),
+           "max_flow": ("max_expansions",),
+           "matching": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -101,7 +108,9 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "periodicity": (("nodes", "scope"), ()),
            "personalized_pagerank": (("sources", "scope"), ("alpha", "tolerance", "top", "certificate")),
            "components": (("scope",), ("connectivity", "nodes", "min_size", "certificate")),
-           "biconnectivity": (("scope",), ("nodes", "blocks", "certificate"))}
+           "biconnectivity": (("scope",), ("nodes", "blocks", "certificate")),
+           "max_flow": (("sources", "targets", "scope"), ("capacities", "node_capacity", "certificate")),
+           "matching": (("left", "scope"), ("certificate",))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -286,6 +295,28 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["nodes"] = None if raw.get("nodes") is None else _ids(raw["nodes"], "nodes")
         data["blocks"] = _flag(raw.get("blocks", False), "blocks")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "max_flow":
+        data["sources"] = _ids(raw["sources"], "sources")
+        data["targets"] = _ids(raw["targets"], "targets")
+        both = sorted(set(data["sources"]) & set(data["targets"]))
+        if both:
+            raise _fail("invalid_request", f"sources and targets are disjoint; both name {both[:10]}")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["capacities"] = None if raw.get("capacities") is None else _capacities(raw["capacities"])
+        cap = raw.get("node_capacity")
+        if cap is not None:
+            cap = _capacity(cap, "node_capacity")
+        data["node_capacity"] = cap
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "matching":
+        left = raw["left"]
+        if not isinstance(left, Mapping) or any(k not in ("node_types", "nodes") for k in left):
+            raise _fail("invalid_request", "left is {node_types, nodes}: the nodes to pair")
+        data["left"] = _node_constraint(left, "left")
+        if data["left"]["node_types"] is None and data["left"]["nodes"] is None:
+            raise _fail("invalid_request", "left names node_types or nodes")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "periodicity":
         data["nodes"] = _ids(raw["nodes"], "nodes")
         data["scope"] = _scope(raw["scope"], "scope")
@@ -456,6 +487,32 @@ def _weights(value: Any, field: str = "weights") -> dict[str, dict[str, int | fl
             raise _fail("non_finite_cost", f"{field}.{kind}[{key!r}] is {x!r}; weights are finite")
         out[key] = x
     return {kind: out}
+
+
+def _capacities(value: Any) -> dict[str, dict[str, int | float]]:
+    """``{"by_relation": {...}}`` or ``{"by_edge": {...}}`` of capacities: non-negative integers or finite floats."""
+    if not isinstance(value, Mapping) or len(value) != 1 or next(iter(value)) not in ("by_relation", "by_edge"):
+        raise _fail("invalid_request", 'capacities is {"by_relation": {relation: capacity}} or {"by_edge": {edge: '
+                    'capacity}}')
+    kind, table = next(iter(value.items()))
+    if not isinstance(table, Mapping):
+        raise _fail("invalid_request", f"capacities.{kind} is a mapping of IDs to capacities")
+    out = {}
+    for key, x in table.items():
+        if type(key) is not str or not key:
+            raise _fail("invalid_request", f"capacities.{kind} holds the key {key!r}; a key is a non-empty string")
+        out[key] = _capacity(x, f"capacities.{kind}[{key!r}]")
+    return {kind: out}
+
+
+def _capacity(x: Any, where: str) -> int | float:
+    """A capacity: a non-negative integer (any size, kept exact) or a non-negative finite float."""
+    if isinstance(x, bool) or not isinstance(x, (numbers.Integral, float)):
+        raise _fail("invalid_cost", f"{where} is {x!r}; a capacity is an integer or a finite float")
+    x = int(x) if isinstance(x, numbers.Integral) else float(x)
+    if isinstance(x, float) and not math.isfinite(x) or x < 0:
+        raise _fail("invalid_cost", f"{where} is {x!r}; a capacity is finite and not negative")
+    return x
 
 
 def _cost(x: Any, kind: str, key: str) -> int | float:

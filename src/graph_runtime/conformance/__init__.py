@@ -179,6 +179,22 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             got = [x["edge"] if key == "bridge_edges" else list(x["edges"]) for x in answer.get(field) or []]
             if (got != exp[key]) if done else any(g not in exp[key] for g in got):
                 problems.append(f"{field} {got}, expected {exp[key]}")
+    if "flow_value" in exp:                                 # a maximum flow: exact, or bracketed when interrupted
+        want = Fraction(exp["flow_value"])
+        got, bound = _cost(answer, "value"), _cost(answer, "upper_bound")
+        if done and (got is None or Fraction(got) != want):
+            problems.append(f"flow value {got}, expected {want}")
+        if not done and not (got is not None and bound is not None and Fraction(got) <= want <= Fraction(bound)):
+            problems.append(f"an interrupted flow's bounds [{got}, {bound}] miss the maximum {want}")
+    if "cut_edges" in exp and done:
+        got = [[h["edge"], h["direction"]] for h in answer.get("cut") or []]
+        if got != exp["cut_edges"]:
+            problems.append(f"cut {got}, expected the cut nearest the sources {exp['cut_edges']}")
+    if "cut_node_ids" in exp and done and [x["node"] for x in answer.get("cut_nodes") or []] != exp["cut_node_ids"]:
+        problems.append(f"cut nodes {answer.get('cut_nodes')}, expected {exp['cut_node_ids']}")
+    for key, field in (("matching_size", "size"), ("left_count", "left_count"), ("deficiency", "deficiency")):
+        if key in exp and done and answer.get(field) != exp[key]:
+            problems.append(f"{field} {answer.get(field)!r}, expected {exp[key]}")
     if "component_count" in exp and done and answer.get("components") != exp["component_count"]:
         problems.append(f"components {answer.get('components')}, expected {exp['component_count']}")
     if "count" in exp and answer.get("count") != exp["count"]:

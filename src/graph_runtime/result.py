@@ -436,6 +436,10 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_components_problems(request, answer, status, data.get("interruption")))
     elif op == "biconnectivity":
         out.extend(_biconnectivity_problems(request, answer, status))
+    elif op == "max_flow":
+        out.extend(_flow_problems(request, answer, status))
+    elif op == "matching":
+        out.extend(_matching_problems(request, answer, status))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -685,6 +689,73 @@ def _biconnectivity_problems(request: dict, answer: dict, status: str) -> list[s
         out.append("components is counted exactly when the answer is complete")
     if (answer["certificate"] is not None) != bool(request["certificate"]):
         out.append("a certificate comes exactly when asked for")
+    return out
+
+
+def _flow_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A max-flow answer's own consistency, read without the records: numbers exact (integers, or nearest floats with
+    ``p/q`` beside them when a capacity is a float); flows positive, one per edge, in ascending edge order; the value
+    at most the upper bound, equal to it and optimal exactly when complete; a complete answer's cut adding up to the
+    value; a certificate only on a complete answer, exactly when asked for. Whether the flow and the cut hold is
+    checked against the records (:func:`graph_runtime.verify_result`)."""
+    out = []
+    rational = any(isinstance(x, float) for x in (next(iter(request["capacities"].values())).values()
+                                                     if request["capacities"] is not None else ())) or \
+        isinstance(request["node_capacity"], float)
+
+    def read(entry: Mapping, field: str) -> Fraction:
+        if rational:
+            exact = entry[f"{field}_exact"]
+            number = Fraction(exact)
+            if str(number) != exact or entry[field] != _nearest(number):
+                raise ValueError(f"{field}_exact is a rational in lowest terms, {field} its nearest float")
+            return number
+        if type(entry[field]) is not int or f"{field}_exact" in entry:
+            raise ValueError(f"{field} is an integer when every capacity is one")
+        return Fraction(entry[field])
+    try:
+        value, bound = read(answer, "value"), read(answer, "upper_bound")
+        flows = [read(f, "flow") for f in answer["flows"]]
+        cut = None if answer["cut"] is None else [read(h, "capacity") for h in answer["cut"]] + [
+            read(x, "capacity") for x in answer["cut_nodes"]]
+    except (ValueError, KeyError, TypeError, ZeroDivisionError) as exc:
+        return [f"max_flow: {exc}"]
+    complete = status == COMPLETED
+    if answer["optimal"] is not complete or value < 0 or value > bound or (complete and value != bound):
+        out.append("the value is at most the upper bound, equal to it and optimal exactly when complete")
+    edges = [f["edge"] for f in answer["flows"]]
+    if edges != sorted(set(edges)) or any(x <= 0 for x in flows):
+        out.append("flows are positive, one per edge, in ascending edge ID order")
+    if (cut is not None) != complete or (answer["cut_nodes"] is None) != (answer["cut"] is None):
+        out.append("a cut comes exactly with a complete answer")
+    elif cut is not None and sum(cut, Fraction(0)) != value:
+        out.append("the cut's capacities add up to the value")
+    if (answer["certificate"] is not None) != (bool(request["certificate"]) and complete):
+        out.append("a certificate comes exactly when asked for, on a complete answer")
+    return out
+
+
+def _matching_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A matching's own consistency, read without the records: pairs by left node, no node in two of them, size their
+    number, at most left_count; deficiency and optimality exactly when complete; a certificate (as many nodes as
+    pairs) only on a complete answer, exactly when asked for."""
+    out = []
+    pairs = answer["pairs"]
+    lefts = [x["left"] for x in pairs]
+    rights = [x["right"] for x in pairs]
+    if lefts != sorted(set(lefts)) or len(set(rights)) != len(rights) or set(lefts) & set(rights):
+        out.append("pairs are by left node, with no node in two pairs")
+    complete = status == COMPLETED
+    if answer["size"] != len(pairs) or answer["size"] > answer["left_count"]:
+        out.append("size is the number of pairs, at most left_count")
+    if answer["optimal"] is not complete or (answer["deficiency"] is None) == complete or (
+            complete and answer["deficiency"] != answer["left_count"] - answer["size"]):
+        out.append("a complete answer is optimal, its deficiency the left nodes it leaves unpaired")
+    cert = answer["certificate"]
+    if (cert is not None) != (bool(request["certificate"]) and complete):
+        out.append("a certificate comes exactly when asked for, on a complete answer")
+    elif cert is not None and (len(cert["nodes"]) != answer["size"] or cert["nodes"] != sorted(set(cert["nodes"]))):
+        out.append("the cover has as many nodes as there are pairs, unique and ascending")
     return out
 
 

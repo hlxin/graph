@@ -379,6 +379,11 @@
       ],
       "description": "value: the witness's weakest hop weight (max_min) or its highest (min_max), null for a path with no hop. bound (interrupted only): no path to a target is strictly better. threshold: what the sources reach by hops strictly better than it holds no target."
     },
+    "capacity": {
+      "type": "number",
+      "minimum": 0,
+      "description": "A capacity: a non-negative integer or finite float."
+    },
     "certificate_number": {
       "oneOf": [
         {
@@ -833,6 +838,195 @@
       "pattern": "^(0|[1-9][0-9]*)(/[1-9][0-9]*)?$(?![\\s\\S])",
       "description": "An exact non-negative rational, p or p/q in lowest terms."
     },
+    "flow_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "optimal",
+        "upper_bound",
+        "flows",
+        "cut",
+        "cut_nodes",
+        "certificate"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "integer",
+            "null"
+          ]
+        },
+        "value_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "optimal": {
+          "type": "boolean"
+        },
+        "upper_bound": {
+          "type": [
+            "number",
+            "integer",
+            "null"
+          ]
+        },
+        "upper_bound_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "flows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "edge",
+              "relation",
+              "direction",
+              "from",
+              "to",
+              "flow"
+            ],
+            "properties": {
+              "edge": {
+                "$ref": "#/$defs/id"
+              },
+              "relation": {
+                "$ref": "#/$defs/id"
+              },
+              "direction": {
+                "$ref": "#/$defs/direction"
+              },
+              "from": {
+                "$ref": "#/$defs/id"
+              },
+              "to": {
+                "$ref": "#/$defs/id"
+              },
+              "flow": {
+                "type": [
+                  "number",
+                  "integer",
+                  "null"
+                ]
+              },
+              "flow_exact": {
+                "$ref": "#/$defs/exact"
+              }
+            }
+          }
+        },
+        "cut": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "edge",
+                  "relation",
+                  "direction",
+                  "from",
+                  "to",
+                  "capacity"
+                ],
+                "properties": {
+                  "edge": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "relation": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "direction": {
+                    "$ref": "#/$defs/direction"
+                  },
+                  "from": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "to": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "capacity": {
+                    "type": [
+                      "number",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "capacity_exact": {
+                    "$ref": "#/$defs/exact"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cut_nodes": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "capacity"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "capacity": {
+                    "type": [
+                      "number",
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "capacity_exact": {
+                    "$ref": "#/$defs/exact"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "source_side"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "cut"
+                },
+                "source_side": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "max_flow: the value (with value_exact as p/q when a capacity is a float), whether it is proven optimal, an upper bound, the net flow on each edge that carries any, and, when complete, a minimum cut: the hops from its source side to the rest and the nodes whose own capacity it cuts, adding up to the value. The cut certificate is the cut's source side."
+    },
     "hop": {
       "type": "object",
       "additionalProperties": false,
@@ -1257,6 +1451,97 @@
           "$ref": "#/$defs/count"
         }
       }
+    },
+    "matching_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pairs",
+        "size",
+        "left_count",
+        "optimal",
+        "deficiency",
+        "certificate"
+      ],
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "left",
+              "right",
+              "edge",
+              "relation",
+              "direction"
+            ],
+            "properties": {
+              "left": {
+                "$ref": "#/$defs/id"
+              },
+              "right": {
+                "$ref": "#/$defs/id"
+              },
+              "edge": {
+                "$ref": "#/$defs/id"
+              },
+              "relation": {
+                "$ref": "#/$defs/id"
+              },
+              "direction": {
+                "$ref": "#/$defs/direction"
+              }
+            }
+          }
+        },
+        "size": {
+          "$ref": "#/$defs/count"
+        },
+        "left_count": {
+          "$ref": "#/$defs/count"
+        },
+        "optimal": {
+          "type": "boolean"
+        },
+        "deficiency": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "nodes"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "cover"
+                },
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "matching: the pairs by left node, each with the hop that pairs them; size; how many left nodes there are; when complete, the deficiency (left nodes no maximum matching pairs) and on request König's vertex cover: as many nodes as pairs, touching every candidate hop."
     },
     "max_depth": {
       "type": [
@@ -3350,6 +3635,164 @@
             }
           },
           "description": "biconnectivity: every edge in scope (in either direction) is a link between its ends; nodes: only the components holding these (null: all); blocks: list the blocks too."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "sources",
+            "targets",
+            "scope",
+            "capacities",
+            "node_capacity",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "max_flow"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "sources": {
+              "$ref": "#/$defs/ids"
+            },
+            "targets": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "capacities": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "properties": {
+                    "by_relation": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/capacity"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    },
+                    "by_edge": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/capacity"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "node_capacity": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/capacity"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "max_flow: sources and targets are disjoint; capacities as costs (null: every edge 1); node_capacity: what each node other than the sources and targets passes (null: no limit)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "left",
+            "scope",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "matching"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "left": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "node_types",
+                "nodes"
+              ],
+              "properties": {
+                "node_types": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nodes": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "matching: left names the nodes to pair (node_types, nodes, or both); scope leads from a left node to its candidate partners outside the left set."
         }
       ]
     },
@@ -3896,7 +4339,9 @@
                   "periodicity",
                   "personalized_pagerank",
                   "components",
-                  "biconnectivity"
+                  "biconnectivity",
+                  "max_flow",
+                  "matching"
                 ]
               }
             }
@@ -4716,6 +5161,92 @@
             "properties": {
               "operation": {
                 "const": "biconnectivity"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "max_flow"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/flow_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "max_flow"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "max_flow"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "matching"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/matching_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "matching"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "matching"
               }
             }
           }
