@@ -3764,7 +3764,8 @@
             "limits",
             "failed",
             "scope",
-            "all_of"
+            "all_of",
+            "certificate"
           ],
           "properties": {
             "contract": {
@@ -3797,6 +3798,9 @@
                   "type": "null"
                 }
               ]
+            },
+            "certificate": {
+              "type": "boolean"
             }
           }
         },
@@ -6827,7 +6831,8 @@
         "failed",
         "lost",
         "weakened",
-        "counts"
+        "counts",
+        "certificate"
       ],
       "properties": {
         "failed": {
@@ -6885,9 +6890,67 @@
               "type": "null"
             }
           ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "nodes"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "fixpoints"
+                },
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "before",
+                      "after"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "before": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/count"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "after": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/count"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "description": "Every node the analysis read (the failure's region and everything it rests on), in ascending ID order, with its rank in the least fixpoint before and after the failure, or null where it does not stand: a rank proves a node stands (a ground, or its rule met by supports of lower rank), and the nodes without one are unfounded (failed, or their rule fails on supports without one)."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
-      "description": "lost: nodes that stood before the failure and do not now; weakened: nodes that still stand but lost a support. lost, weakened and counts are null only when the analysis was interrupted before its end; counts are exact even when an output limit lists fewer nodes."
+      "description": "lost: nodes that stood before the failure and do not now; weakened: nodes that still stand but lost a support. lost, weakened and counts are null only when the analysis was interrupted before its end; counts are exact even when an output limit lists fewer nodes. With certificate: true, a complete answer carries both fixpoints' ranks, which prove it without recomputing them."
     },
     "support_entry": {
       "type": "object",

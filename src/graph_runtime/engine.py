@@ -342,6 +342,7 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
                            "translation lattice of a component of an infinite periodic graph",
                            {"operation": op, "projection": "plain"})
     elif op == "support":
+        plan.certificate = req["certificate"]
         plan.failed = _nodes(p, req["failed"], "failed")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
         plan.all_of = None if req["all_of"] is None else _types(p, req["all_of"], "all_of")
@@ -1371,7 +1372,12 @@ def _search_support(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
     3. Two least fixpoints over the closure, by counting each node's standing supports: before (nothing failed) and
        after (the failed nodes held down).
     4. The causes: the failed nodes each fallen node, and each node that lost a support, rests on, carried as bits
-       along the fallen supports."""
+       along the fallen supports.
+
+    Each fixpoint ranks what stands: 0 for a ground, else one more than the support that completed its rule (the
+    first standing support of any other node, the last of an ``all_of`` node). The queue takes nodes in order of rank,
+    so a rank is one more than the least standing support's, or the greatest for ``all_of``: a function of the
+    fixpoint alone, whatever the order. The ranks, with what does not stand, are the certificate."""
     st = SimpleNamespace(interruption=None, examined=0, discovered=0, done=False)
     fwd, rev = plan.fwd, plan.rev
     failed = set(plan.failed)
@@ -1433,30 +1439,30 @@ def _search_support(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
     need0 = {u: (len(supports[u]) if every is not None and mask_of[u] & every else min(1, len(supports[u])))
              for u in closure}
 
-    def standing(down: set[int]) -> set[int] | None:          # 3: a least fixpoint, by counting standing supports
+    def standing(down: set[int]) -> dict[int, int] | None:    # 3: a least fixpoint, by counting standing supports
         nonlocal examined
-        need, stands = dict(need0), set()
+        need, rank = dict(need0), {}                          # what stands, by rank
         queue = deque(u for u in sorted(closure) if need[u] == 0 and u not in down)
-        stands.update(queue)
+        rank.update(dict.fromkeys(queue, 0))
         while queue:
             v = queue.popleft()
             if stopped():
                 return None
             for u in dependents[v]:
                 examined += 1
-                if u in stands or u in down:
+                if u in rank or u in down:
                     continue
                 need[u] -= 1
                 if need[u] == 0:
-                    stands.add(u)
+                    rank[u] = rank[v] + 1
                     queue.append(u)
-        return stands
+        return rank
 
     before = standing(set())
     after = standing(failed) if before is not None else None
     if after is None:
         return st
-    fallen = before - after                                  # stood before, not after (failed nodes included)
+    fallen = before.keys() - after.keys()                    # stood before, not after (failed nodes included)
     lost = sorted(u for u in region if u in fallen and u not in failed)
     weakened = sorted(u for u in region if u in after and any(v in fallen for v, _, _ in supports[u]))
     roots = [r for r in plan.failed if r in fallen]           # 4: the causes, as bits of the failed nodes that fell
@@ -1477,7 +1483,8 @@ def _search_support(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
                     if u in lost_set:                         # a node that still stands passes nothing on
                         queue.append(u)
     st.examined, st.done = examined, True
-    st.supports, st.after, st.fallen, st.roots, st.cause = supports, after, fallen, roots, cause
+    st.supports, st.before, st.after, st.fallen, st.roots, st.cause = supports, before, after, fallen, roots, cause
+    st.closure = closure
     st.lost, st.weakened = lost, weakened
     st.ungrounded = sum(1 for u in region if u not in before and u not in failed)
     return st
@@ -1486,7 +1493,7 @@ def _search_support(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
 def _answer_support(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
     failed = [p._node_ids[r] for r in plan.failed]
     if not st.done:                                          # stopped before both fixpoints: nothing is known
-        return {"failed": failed, "lost": None, "weakened": None, "counts": None}, []
+        return {"failed": failed, "lost": None, "weakened": None, "counts": None, "certificate": None}, []
     ids = p._node_ids
 
     def entry(u: int) -> dict:
@@ -1499,8 +1506,13 @@ def _answer_support(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -
     lost, weakened = st.lost[:cap], st.weakened[:max(0, cap - len(st.lost))]
     if len(lost) + len(weakened) < len(st.lost) + len(st.weakened):
         st.interruption = "output_limit"
+    cert = None
+    if plan.certificate and st.interruption is None:          # complete: both fixpoints over the closure, ranked
+        cert = {"kind": "fixpoints", "nodes": [{"node": ids[u], "before": st.before.get(u), "after": st.after.get(u)}
+                                               for u in sorted(st.closure)]}
     answer = {"failed": failed, "lost": [entry(u) for u in lost], "weakened": [entry(u) for u in weakened],
-              "counts": {"lost": len(st.lost), "weakened": len(st.weakened), "ungrounded": st.ungrounded}}
+              "counts": {"lost": len(st.lost), "weakened": len(st.weakened), "ungrounded": st.ungrounded},
+              "certificate": cert}
     return answer, ([WITNESS_NOTE] if lost or weakened else [])
 
 

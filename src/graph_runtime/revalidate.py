@@ -18,12 +18,14 @@ The verdict has three values:
   types no longer fit, a hop from an expanded node to a node the answer does not list (or lists deeper), or a node,
   relation, type or cost the request names that the new projection lacks.
 * ``unknown``: neither can be shown without a new search. This covers an interrupted answer, an operation without
-  certificates (pattern, support), a negative or an optimum without its certificate, and a certificate an edit
+  certificates (pattern), a negative or an optimum without its certificate, and a certificate an edit
   broke without refuting the answer.
 
-Components, biconnectivity, maximum flows, matchings, dominators and incidence are revalidated by their certificates:
-those prove the whole answer from the records alone (trees and an ordered closed partition, a depth-first forest, a
-cut, a vertex cover, a low-high order, a nonsingular minor with a kernel basis), so the answer holds on the new projection exactly when its certificate still checks
+Components, biconnectivity, maximum flows, matchings, dominators, incidence, critical paths, d-separation and support
+are revalidated by their certificates: those prove the whole answer from the records alone (trees and an ordered
+closed partition, a depth-first forest, a cut, a vertex cover, a low-high order, a nonsingular minor with a kernel
+basis, a topological order with earliest times, Bayes-ball states, both least fixpoints' ranks), so the answer holds
+on the new projection exactly when its certificate still checks
 against the new projection's records (:func:`graph_runtime.verify_result`), and a listed node or edge that is gone
 refutes it. These are always checked in full.
 
@@ -52,7 +54,7 @@ VERDICTS = (HOLDS, FAILS, UNKNOWN)
 REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
 _RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators",   # by verifying the certificate
-              "incidence", "critical_path", "d_separation")
+              "incidence", "critical_path", "d_separation", "support")
 _SELF_PROVEN = {"critical_path": ("acyclic", False), "d_separation": ("separated", False)}   # a witness is the proof
 _NODE_FIELDS = frozenset({"node", "nodes", "left", "right", "idom", "source", "target", "from", "to", "dominators"})
 _EDGE_FIELDS = frozenset({"edge", "edges"})

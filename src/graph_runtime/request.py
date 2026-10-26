@@ -19,7 +19,7 @@ Operations (docs/API_CONTRACT.md):
 * ``pattern``: ``match`` (``{var, node_types, nodes}``), ``steps``, ``answer`` (``rows``, ``count`` or
   ``exists``); limits ``max_expansions``, ``max_results``.
 * ``support``: ``failed``, ``scope`` (from a node to what supports it), ``all_of`` (node types that need every
-  support; null: every node needs one); limits ``max_expansions``, ``max_results``.
+  support; null: every node needs one), ``certificate``; limits ``max_expansions``, ``max_results``.
 * ``bottleneck_path``: ``sources``, ``targets``, ``scope``, ``weights`` (as costs, any finite number),
   ``objective`` (``max_min``: the path whose weakest edge is strongest; ``min_max``: the path whose highest edge is
   lowest), ``certificate``; limit ``max_expansions``.
@@ -116,7 +116,7 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
            "shortest_path": (("sources", "targets", "scope", "costs"), ("certificate",)),
            "pattern": (("match",), ("steps", "answer")),
-           "support": (("failed", "scope"), ("all_of",)),
+           "support": (("failed", "scope"), ("all_of", "certificate")),
            "bottleneck_path": (("sources", "targets", "scope", "weights"), ("objective", "certificate")),
            "regular_path": (("sources", "path"), ("targets", "answer", "certificate")),
            "derivation": (("targets", "scope"), ("all_of", "grounds", "costs", "objective", "certificate")),
@@ -381,6 +381,7 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["failed"] = _ids(raw["failed"], "failed")
         data["scope"] = _scope(raw["scope"], "scope")
         data["all_of"] = _node_constraint(raw, "support", ("all_of",))["all_of"]
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     else:
         data["sources"] = _ids(raw["sources"], "sources")
         data["targets"] = _ids(raw["targets"], "targets")
