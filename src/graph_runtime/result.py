@@ -370,7 +370,9 @@ def _contract_problems(data: dict) -> list[str]:
         if strict and answer["changed"] != request["changed"]:
             out.append("changed must match the request")
         by_node = {e["node"]: e for e in entries}
-        allowed = {(s["relation"], s["direction"]) for s in request["scope"]}
+        # whether a hop's relation is in scope depends on the projection's relation hierarchy: verify_result checks
+        # it against the records; here, only its direction
+        directions = {s["direction"] for s in request["scope"]}
         for entry in entries:
             node, depth, via = entry["node"], entry["depth"], entry["via"]
             if request["max_depth"] is not None and depth > request["max_depth"]:
@@ -379,8 +381,8 @@ def _contract_problems(data: dict) -> list[str]:
                 if node not in seeds:
                     out.append("a depth-zero node must be a source")
                 continue
-            if (via["relation"], via["direction"]) not in allowed:
-                out.append("a via hop is outside the request's scope")
+            if via["direction"] not in directions:
+                out.append("a via hop goes in a direction the scope does not follow")
             parent = by_node.get(via["from"])
             # Impact paths end at a changed node at expansion depth zero, even if a cycle also reaches it.
             if strict and depth == 1:
@@ -413,8 +415,8 @@ def _contract_problems(data: dict) -> list[str]:
             for i, (hop, pos) in enumerate(zip(hops, request["pattern"])):
                 if hop["position"] != i or type(hop["position"]) is not int:
                     out.append("typed hop positions must be consecutive integers")
-                if {"relation": hop["relation"], "direction": hop["direction"]} not in pos["scope"]:
-                    out.append("a typed hop must match its pattern scope")
+                if hop["direction"] not in {s["direction"] for s in pos["scope"]}:
+                    out.append("a typed hop goes in a direction its pattern position does not follow")
     if op == "shortest_path":
         out.extend(_cost_problems(request, answer, status))
     return out
@@ -451,8 +453,8 @@ def _cost_problems(request: dict, answer: dict, status: str) -> list[str]:
         out.append("lower_bound exceeds the witness cost")
     total = 0
     for hop in answer["witness"]["hops"]:
-        if {"relation": hop["relation"], "direction": hop["direction"]} not in request["scope"]:
-            out.append("a shortest path hop must be in scope")
+        if hop["direction"] not in {s["direction"] for s in request["scope"]}:
+            out.append("a shortest path hop goes in a direction the scope does not follow")
         expected = table.get(hop["relation"] if kind == "by_relation" else hop["edge"])
         if expected is None or hop["cost"] != expected or type(hop["cost"]) is not type(expected):
             out.append("a hop cost must match the request")

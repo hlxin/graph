@@ -26,7 +26,7 @@ from ._canonical import canonical_json, encode_text, is_digest
 from ._validation import shape_problems
 from .errors import ProjectionError
 
-CONTRACT = "graph-runtime/v0.1"
+CONTRACT = "graph-runtime/v0.2"
 FORWARD, REVERSE = "forward", "reverse"
 DIRECTIONS = (FORWARD, REVERSE)
 PROJECTION_KIND = "graph_runtime.projection"
@@ -68,6 +68,69 @@ def _is_candidate(record: Any) -> bool:
                                             or record.get("epistemic_status") == "unverified")
 
 
+def _hierarchy(value: Any, what: str) -> dict[str, tuple[str, ...]]:
+    """``{name: (parents, sorted)}`` of a hierarchy, checked to be acyclic; names without parents are left out."""
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ProjectionError("invalid_hierarchy", f"{what}_parents is a mapping of a {what} to its parents")
+    out: dict[str, tuple[str, ...]] = {}
+    for child, parents in value.items():
+        name = _text(child, f"a {what} in {what}_parents")
+        if isinstance(parents, (str, bytes)) or not isinstance(parents, Iterable):
+            raise ProjectionError("invalid_hierarchy", f"the parents of {what} {name!r} are a list of names")
+        ps = tuple(sorted({_text(x, f"a parent of {what} {name!r}") for x in parents}))
+        if ps:
+            out[name] = ps
+    state: dict[str, int] = {}                      # 1: on the current walk, 2: done
+    for start in out:
+        stack = [(start, iter(out.get(start, ())))]
+        state[start] = state.get(start) or 1
+        if state[start] == 2:
+            continue
+        while stack:
+            node, parents = stack[-1]
+            nxt = next(parents, None)
+            if nxt is None:
+                state[node] = 2
+                stack.pop()
+            elif state.get(nxt) == 1:
+                raise ProjectionError("hierarchy_cycle", f"the {what} hierarchy has a cycle through {nxt!r}")
+            elif state.get(nxt) is None:
+                state[nxt] = 1
+                stack.append((nxt, iter(out.get(nxt, ()))))
+    return dict(sorted(out.items()))
+
+
+def _named(hierarchy: Mapping[str, tuple[str, ...]]) -> set[str]:
+    return set(hierarchy) | {p for ps in hierarchy.values() for p in ps}
+
+
+def _children(hierarchy: Mapping[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+    out: dict[str, list[str]] = {}
+    for child, parents in hierarchy.items():
+        for parent in parents:
+            out.setdefault(parent, []).append(child)
+    return {k: tuple(sorted(v)) for k, v in out.items()}
+
+
+def _closure(up: Mapping[str, tuple[str, ...]]) -> dict[str, frozenset[str]]:
+    """Every name's transitive ``up`` set (its ancestors, for a parents map), for an acyclic map."""
+    memo: dict[str, frozenset[str]] = {}
+
+    def walk(name: str) -> frozenset[str]:
+        if name not in memo:
+            acc: set[str] = set()
+            for nxt in up.get(name, ()):
+                acc.add(nxt)
+                acc |= walk(nxt)
+            memo[name] = frozenset(acc)
+        return memo[name]
+    for name in up:
+        walk(name)
+    return memo
+
+
 def _names(values: Iterable[Any] | None, what: str) -> tuple[str, ...] | None:
     if values is None:
         return None
@@ -81,6 +144,7 @@ class Projection:
 
     __slots__ = ("_identity", "_bindings", "_relations", "_rel_index", "_node_types", "_type_index", "_node_ids",
                  "_node_index", "_node_mask", "_edge_ids", "_edge_index", "_edge_src", "_edge_dst", "_edge_rel",
+                 "_type_parents", "_relation_parents", "_rel_cover", "_declared_mask",
                  "_out", "_in", "_sealed")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -98,7 +162,9 @@ class Projection:
     # ------------------------------------------------------------------------------------------------ building
     @classmethod
     def build(cls, *, nodes: Iterable[Any], edges: Iterable[Mapping], relations: Iterable[str] | None = None,
-              node_types: Iterable[str] | None = None, bindings: Mapping[str, str] | None = None) -> "Projection":
+              node_types: Iterable[str] | None = None, bindings: Mapping[str, str] | None = None,
+              type_parents: Mapping[str, Iterable[str]] | None = None,
+              relation_parents: Mapping[str, Iterable[str]] | None = None) -> "Projection":
         """Build a projection from source records.
 
         ``nodes``: node IDs, or mappings ``{"id": str, "types": [str, ...]}``. ``edges``: mappings ``{"id", "source",
@@ -107,6 +173,11 @@ class Projection:
         answer); when omitted, the ones the records use. ``bindings``: what the projection was built from, as
         ``{name: text}`` (suggested names: ``source``, ``schema``, ``policy``); they are part of its identity, and a
         caller passing the current bindings at execution learns when the projection has gone stale.
+
+        ``type_parents`` and ``relation_parents``: hierarchies, as ``{name: [parent, ...]}`` (acyclic; several
+        parents allowed). A node has every ancestor of the types it declares, so a constraint on a type matches the
+        nodes of its subtypes; a scope on a relation also follows the relations below it (a step on CONTROL_FOR follows
+        DARK_CONTROL_FOR). Witnesses still name each edge's own relation.
 
         Raises :class:`ProjectionError` for a duplicate ID, an edge whose source or target is not a node, a relation or
         type outside a declared vocabulary, or a hypothesis candidate. The records passed in are only read."""
@@ -120,6 +191,8 @@ class Projection:
             for k, v in bindings.items():
                 binds[_text(k, "a binding name")] = _text(v, f"the binding {k!r}")
 
+        tparents = _hierarchy(type_parents, "type")
+        rparents = _hierarchy(relation_parents, "relation")
         declared_types = _names(node_types, "node_types")
         node_types_of: dict[str, tuple[str, ...]] = {}
         for rec in nodes:
@@ -154,7 +227,7 @@ class Projection:
                 raise ProjectionError("duplicate_node_id", f"the node ID {nid!r} is used twice")
             node_types_of[nid] = tuple(sorted({_text(t, f"a type of node {nid!r}") for t in types}))
 
-        used_types = sorted({t for ts in node_types_of.values() for t in ts})
+        used_types = sorted({t for ts in node_types_of.values() for t in ts} | _named(tparents))
         if declared_types is None:
             declared_types = tuple(used_types)
         else:
@@ -191,7 +264,7 @@ class Projection:
                     raise ProjectionError("dangling_edge", f"edge {eid!r} names {end!r}, which is not a node")
             edge_recs[eid] = (src, dst, rel)
 
-        used_rel = sorted({r for _, _, r in edge_recs.values()})
+        used_rel = sorted({r for _, _, r in edge_recs.values()} | _named(rparents))
         if declared_rel is None:
             declared_rel = tuple(used_rel)
         else:
@@ -213,12 +286,20 @@ class Projection:
         for ei in range(len(edge_ids)):              # ascending edge ID: every adjacency list is in canonical order
             out[edge_src[ei]].append(ei)
             inc[edge_dst[ei]].append(ei)
-        masks = []
+        ancestors = _closure(tparents)                 # type -> the types above it
+        type_bits = {t: (1 << type_index[t]) | sum(1 << type_index[a] for a in ancestors.get(t, ()))
+                     for t in declared_types}
+        masks, declared = [], []                       # with the types' ancestors, and as declared
         for nid in node_ids:
-            m = 0
+            m = d = 0
             for t in node_types_of[nid]:
-                m |= 1 << type_index[t]
+                m |= type_bits[t]
+                d |= 1 << type_index[t]
             masks.append(m)
+            declared.append(d)
+        below = _closure(_children(rparents))           # relation -> the relations below it
+        cover = tuple(tuple(sorted({rel_index[r]} | {rel_index[d] for d in below.get(r, ())}))
+                      for r in declared_rel)
         put = object.__setattr__
         put(p, "_bindings", MappingProxyType(dict(sorted(binds.items()))))
         put(p, "_relations", declared_rel)
@@ -228,6 +309,7 @@ class Projection:
         put(p, "_node_ids", node_ids)
         put(p, "_node_index", MappingProxyType(node_index))
         put(p, "_node_mask", tuple(masks))
+        put(p, "_declared_mask", tuple(declared))
         put(p, "_edge_ids", edge_ids)
         put(p, "_edge_index", MappingProxyType({e: i for i, e in enumerate(edge_ids)}))
         put(p, "_edge_src", edge_src)
@@ -235,6 +317,9 @@ class Projection:
         put(p, "_edge_rel", edge_rel)
         put(p, "_out", tuple(tuple(x) for x in out))
         put(p, "_in", tuple(tuple(x) for x in inc))
+        put(p, "_type_parents", MappingProxyType(tparents))
+        put(p, "_relation_parents", MappingProxyType(rparents))
+        put(p, "_rel_cover", cover)
         put(p, "_identity", _identity(p, node_types_of))
         put(p, "_sealed", True)
         return p
@@ -251,7 +336,8 @@ class Projection:
         if problems:
             raise ProjectionError("invalid_snapshot", "; ".join(problems))
         p = cls.build(nodes=data["nodes"], edges=data["edges"], relations=data["relations"],
-                      node_types=data["node_types"], bindings=data["bindings"])
+                      node_types=data["node_types"], bindings=data["bindings"], type_parents=data["type_parents"],
+                      relation_parents=data["relation_parents"])
         if data["identity"] != p.identity:
             raise ProjectionError("identity_mismatch", f"the snapshot says {data['identity']}, its records give "
                                   f"{p.identity}")
@@ -276,6 +362,20 @@ class Projection:
         return self._node_types
 
     @property
+    def type_parents(self) -> Mapping[str, tuple[str, ...]]:
+        """The type hierarchy: each type's parents (types without parents are left out)."""
+        return self._type_parents
+
+    @property
+    def relation_parents(self) -> Mapping[str, tuple[str, ...]]:
+        """The relation hierarchy: each relation's parents (relations without parents are left out)."""
+        return self._relation_parents
+
+    def covered(self, relation: str) -> tuple[str, ...]:
+        """The relations a scope on ``relation`` follows: itself and every relation below it."""
+        return tuple(self._relations[i] for i in self._rel_cover[self._rel_index[relation]])
+
+    @property
     def node_count(self) -> int:
         return len(self._node_ids)
 
@@ -291,7 +391,7 @@ class Projection:
 
     def node(self, node_id: str) -> NodeRecord:
         i = self._node_index[node_id]
-        m, types = self._node_mask[i], []
+        m, types = self._declared_mask[i], []
         for t, b in self._type_index.items():
             if m >> b & 1:
                 types.append(t)
@@ -322,6 +422,8 @@ class Projection:
         return {"kind": PROJECTION_KIND, "contract": CONTRACT, "identity": self._identity,
                 "bindings": dict(self._bindings), "relations": list(self._relations),
                 "node_types": list(self._node_types),
+                "type_parents": {k: list(v) for k, v in self._type_parents.items()},
+                "relation_parents": {k: list(v) for k, v in self._relation_parents.items()},
                 "nodes": [{"id": n.id, "types": list(n.types)} for n in self.nodes()],
                 "edges": [e._asdict() for e in self.edges()]}
 
@@ -350,6 +452,8 @@ def _identity(p: Projection, node_types_of: Mapping[str, tuple[str, ...]]) -> st
     h = hashlib.sha256()
     header = {"kind": PROJECTION_KIND, "contract": CONTRACT, "bindings": dict(p._bindings),
               "relations": list(p._relations), "node_types": list(p._node_types),
+              "type_parents": {k: list(v) for k, v in p._type_parents.items()},
+              "relation_parents": {k: list(v) for k, v in p._relation_parents.items()},
               "node_count": len(p._node_ids), "edge_count": len(p._edge_ids)}
     h.update(canonical_json(header).encode("utf-8") + b"\n")
     # each line as canonical_json writes it (the same string encoder), hashed a chunk of lines at a time

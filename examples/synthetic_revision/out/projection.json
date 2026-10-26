@@ -3,7 +3,7 @@
     "policy": "public",
     "source": "examples/synthetic_revision/records.json@1"
   },
-  "contract": "graph-runtime/v0.1",
+  "contract": "graph-runtime/v0.2",
   "edges": [
     {
       "id": "dep:model-input",
@@ -42,7 +42,7 @@
       "target": "ranking:screen-1"
     }
   ],
-  "identity": "sha256:cbda37dbb0dfd3ba0082a6f880d1b60744db28a0b64cd6b708590c0c670f33df",
+  "identity": "sha256:70dc4e7ba77a933a52ff9e306dd8faacaac9dbab961cd1836a811e25d631fee3",
   "kind": "graph_runtime.projection",
   "node_types": [
     "Input",
@@ -89,7 +89,9 @@
       ]
     }
   ],
+  "relation_parents": {},
   "relations": [
     "DEPENDS_ON"
-  ]
+  ],
+  "type_parents": {}
 }

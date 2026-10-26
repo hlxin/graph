@@ -15,7 +15,7 @@ The applications (SCALE, STATES, RATES, Cathanor) keep their scientific definiti
 records and workflows. GRAPH imports none of their vocabularies; each application reaches it through an adapter it
 owns.
 
-Status: **v0 in development** (`0.1.0.dev0`, contract `graph-runtime/v0.1`). Nothing is published. The distribution
+Status: **in development** (`0.1.0.dev0`, contract `graph-runtime/v0.2`). Nothing is published. The distribution
 name `scale-graph-runtime` and the import name `graph_runtime` are proposals, not yet reserved or checked for
 availability (the bare PyPI name `graph` belongs to another project).
 
