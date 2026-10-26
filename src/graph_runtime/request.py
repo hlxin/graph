@@ -28,6 +28,9 @@ Operations (docs/API_CONTRACT.md):
   ``reached``: every node a matching walk reaches), ``certificate``; limits ``max_expansions``, ``max_results``.
 * ``periodicity`` (periodic projections only): ``nodes`` (images), ``scope`` (followed both ways); limit
   ``max_expansions``.
+* ``personalized_pagerank``: ``sources``, ``scope`` (the hops a walk follows), ``alpha`` (the probability of stopping
+  at each step; default ``3/20``), ``tolerance`` (the residual to reach; default ``1/10000``), ``top`` (nodes listed;
+  default 20), ``certificate``; limit ``max_expansions``.
 * ``derivation``: ``targets``, ``scope`` (from a node to what it needs), ``all_of`` (node types that need every input;
   null: every node needs one), ``grounds`` (nodes given; null: every node with no input), ``costs`` (as a shortest
   path's; null: every hop costs 1), ``objective`` (``min_sum``: the least total cost; ``min_max``: the least highest
@@ -52,7 +55,7 @@ from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
-              "bottleneck_path", "regular_path", "derivation", "periodicity")
+              "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
@@ -71,7 +74,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "bottleneck_path": ("max_expansions",),
            "regular_path": ("max_expansions", "max_results"),
            "derivation": ("max_expansions",),
-           "periodicity": ("max_expansions",)}
+           "periodicity": ("max_expansions",),
+           "personalized_pagerank": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -81,7 +85,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "bottleneck_path": (("sources", "targets", "scope", "weights"), ("objective", "certificate")),
            "regular_path": (("sources", "path"), ("targets", "answer", "certificate")),
            "derivation": (("targets", "scope"), ("all_of", "grounds", "costs", "objective", "certificate")),
-           "periodicity": (("nodes", "scope"), ())}
+           "periodicity": (("nodes", "scope"), ()),
+           "personalized_pagerank": (("sources", "scope"), ("alpha", "tolerance", "top", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -239,6 +244,16 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["costs"] = (None if costs is None else _costs(costs) if data["objective"] == "min_sum"
                          else _weights(costs, "costs"))
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "personalized_pagerank":
+        data["sources"] = _ids(raw["sources"], "sources")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["alpha"] = _fraction(raw.get("alpha", "3/20"), "alpha", 0, 1)
+        data["tolerance"] = _fraction(raw.get("tolerance", "1/10000"), "tolerance", 0, 1)
+        top = raw.get("top", 20)
+        if isinstance(top, bool) or not isinstance(top, int) or top < 1:
+            raise _fail("invalid_request", f"top is a positive integer, not {top!r}")
+        data["top"] = top
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "periodicity":
         data["nodes"] = _ids(raw["nodes"], "nodes")
         data["scope"] = _scope(raw["scope"], "scope")
@@ -315,6 +330,21 @@ def _scope(value: Any, field: str) -> list[dict[str, str]]:
     if not seen:
         raise _fail("invalid_request", f"{field} selects no relation: a scope is explicit, there is no wildcard")
     return [{"relation": r, "direction": d} for r, d in sorted(seen)]
+
+
+def _fraction(value: Any, field: str, low: int, high: int) -> str:
+    """A probability strictly between ``low`` and ``high``, given as a number (a float is read as its exact binary
+    value) or as text ``p/q``, normalized to ``p/q`` (or ``p``) in lowest terms."""
+    from fractions import Fraction
+    try:
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            raise ValueError
+        x = Fraction(value)
+    except (ValueError, ZeroDivisionError, OverflowError):
+        raise _fail("invalid_request", f"{field} is a number or a fraction p/q, not {value!r}") from None
+    if not low < x < high:
+        raise _fail("invalid_request", f"{field} lies strictly between {low} and {high}, not {value!r}")
+    return str(x)
 
 
 def _flag(value: Any, field: str) -> bool:

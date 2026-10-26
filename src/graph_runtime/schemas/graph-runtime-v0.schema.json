@@ -695,6 +695,60 @@
             }
           },
           "description": "periodicity (periodic projections only): nodes are images; the scope is followed both ways."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "sources",
+            "scope",
+            "alpha",
+            "tolerance",
+            "top",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "personalized_pagerank"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "sources": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "alpha": {
+              "$ref": "#/$defs/exact"
+            },
+            "tolerance": {
+              "$ref": "#/$defs/exact"
+            },
+            "top": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "personalized_pagerank: alpha (the probability of stopping at each step) and tolerance (the residual to reach) are exact fractions strictly between 0 and 1."
         }
       ]
     },
@@ -1680,7 +1734,8 @@
                   "bottleneck_path",
                   "regular_path",
                   "derivation",
-                  "periodicity"
+                  "periodicity",
+                  "personalized_pagerank"
                 ]
               }
             }
@@ -2371,6 +2426,49 @@
             "properties": {
               "operation": {
                 "const": "periodicity"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "personalized_pagerank"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/pagerank_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "personalized_pagerank"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "personalized_pagerank"
               }
             }
           }
@@ -4568,6 +4666,111 @@
         }
       },
       "description": "periodicity: for each component of the requested images (in the infinite graph), the cell's nodes it meets, each with the image a spanning tree reaches and the hop it follows; the cycles that edges outside the tree close and their net shifts; the translation lattice they generate, as its Hermite normal form (basis) and rank (0 finite, 1 a chain, 2 a layer, 3 a framework); copies, the lattice's index in the integer vectors of its span (how many translated copies of the component run through the same space: a framework's degree of interpenetration); and each basis row written as a combination of the cycles (witnesses)."
+    },
+    "pagerank_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ranked",
+        "count",
+        "certified_top",
+        "residual",
+        "residual_exact",
+        "certificate"
+      ],
+      "properties": {
+        "ranked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "lower",
+              "lower_exact",
+              "upper",
+              "upper_exact"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "lower": {
+                "type": "number",
+                "minimum": 0
+              },
+              "lower_exact": {
+                "$ref": "#/$defs/exact"
+              },
+              "upper": {
+                "type": "number",
+                "minimum": 0
+              },
+              "upper_exact": {
+                "$ref": "#/$defs/exact"
+              }
+            }
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "certified_top": {
+          "$ref": "#/$defs/count"
+        },
+        "residual": {
+          "type": "number",
+          "minimum": 0
+        },
+        "residual_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "values"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "estimates"
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "value",
+                      "value_exact"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "value": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "value_exact": {
+                        "$ref": "#/$defs/exact"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "personalized_pagerank: the top nodes by lower bound, each with an interval proven to hold its personalized PageRank (exact in _exact, nearest floats beside); certified_top: how many leading entries are proven the top ones; residual: the probability mass the push left unplaced; the estimates certificate lets a checker recompute every residual exactly."
     }
   }
 }

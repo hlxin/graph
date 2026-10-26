@@ -430,6 +430,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_derivation_problems(request, answer, status))
     elif op == "periodicity":
         out.extend(_periodicity_problems(request, answer, status))
+    elif op == "personalized_pagerank":
+        out.extend(_pagerank_problems(request, answer))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -553,6 +555,50 @@ def _regular_problems(request: dict, answer: dict, status: str, interruption: di
             out.append("certificate states start with every source at the start state, with no hop")
         if cert["bound"] is not None and any(st["length"] >= cert["bound"] for st in cert["states"]):
             out.append("certificate states have fewer hops than its bound")
+    return out
+
+
+def _pagerank_problems(request: dict, answer: dict) -> list[str]:
+    """A ranking's own consistency, read without the records: exact numbers written in lowest terms with their
+    nearest floats; every interval non-empty; entries unique, by lower bound then node ID, at most ``top`` of them;
+    a certified prefix the listed intervals do not contradict; a certificate exactly when asked for, giving each listed
+    node its lower bound as its estimate. Whether the intervals hold is checked against the records
+    (:func:`graph_runtime.verify_result`) from the certificate."""
+    out = []
+
+    def read(entry: Mapping, field: str) -> Fraction:
+        exact = entry[f"{field}_exact"]
+        number = Fraction(exact)
+        if str(number) != exact or number < 0 or entry[field] != _nearest(number):
+            raise ValueError(f"{field}_exact is a non-negative rational in lowest terms, {field} its nearest float")
+        return number
+
+    try:
+        ranked = [(read(e, "lower"), read(e, "upper"), e["node"]) for e in answer["ranked"]]
+        read(answer, "residual")
+        values = {e["node"]: read(e, "value") for e in (answer["certificate"] or {}).get("values", ())}
+    except (ValueError, KeyError, TypeError, ZeroDivisionError) as exc:
+        return [f"ranking: {exc}"]
+    if answer["count"] != len(ranked) or len(ranked) > request["top"]:
+        out.append("count must match the ranked entries and fit top")
+    if any(lo > hi for lo, hi, _ in ranked):
+        out.append("every interval has its lower bound at most its upper bound")
+    nodes = [n for _, _, n in ranked]
+    if len(set(nodes)) != len(nodes) or ranked != sorted(ranked, key=lambda x: (-x[0], x[2])):
+        out.append("ranked nodes are unique, by lower bound (highest first) then node ID")
+    m = answer["certified_top"]
+    if type(m) is not int or not 0 <= m <= len(ranked) or (m and min(lo for lo, _, _ in ranked[:m]) <= max(
+            [hi for _, hi, _ in ranked[m:]] or [Fraction(-1)])):
+        out.append("the certified prefix is part of the list, and its lower bounds clear the other listed intervals")
+    cert = answer["certificate"]
+    if (cert is not None) != bool(request["certificate"]):
+        out.append("a certificate comes exactly when asked for")
+    elif cert is not None:
+        names = [e["node"] for e in cert["values"]]
+        if names != sorted(set(names)) or any(v == 0 for v in values.values()):
+            out.append("certificate estimates are unique, nonzero, in ascending node ID order")
+        if any(values.get(n, Fraction(0)) != lo for lo, _, n in ranked):
+            out.append("each listed lower bound is the node's estimate")
     return out
 
 

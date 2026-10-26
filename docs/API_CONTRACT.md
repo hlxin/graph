@@ -26,6 +26,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - the `derivation` operation: the best derivation of each target in an AND/OR graph (a node of an `all_of` type needs
   every input, any other node one), for a sum of costs, the least highest cost or the greatest lowest, with a
   derivation as witness, certified by values no rule improves on (section 4)
+- the `personalized_pagerank` operation: a relevance ranking around chosen nodes in which every number is proven:
+  each listed node carries an interval that contains its personalized PageRank, the top of the ranking is certified
+  where intervals separate, and the certificate (the estimates) is checked by recomputing the residuals exactly
+  (section 4)
 - periodic projections: one cell of an infinite periodic graph, with image shifts on its edges, searched by
   reachability and dependency impact without lifting it (section 1), and the `periodicity` operation: each
   component's translation lattice (rank, Hermite normal form basis, interpenetration), witnessed (section 4)
@@ -132,6 +136,7 @@ no wildcard: a scope lists what it follows.
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
 | `bottleneck_path` | `sources`, `targets`, `scope`, `weights` (as costs, but any finite number), `objective` (`max_min`, the default, or `min_max`), `certificate` (default false) | `max_expansions` |
 | `regular_path` | `sources`, `path` (a path expression: text, a list or a tree, normalized to the tree), `targets` (null: any node), `answer` (`witness`, the default, or `reached`), `certificate` (default false) | `max_expansions`, `max_results` |
+| `personalized_pagerank` | `sources`, `scope` (the hops a walk follows), `alpha` (the probability of stopping at each step, strictly between 0 and 1; a number or `p/q`, normalized to `p/q`; default `3/20`), `tolerance` (the residual to reach, the same way; default `1/10000`), `top` (nodes listed; default 20), `certificate` (default false) | `max_expansions` |
 | `periodicity` | `nodes` (images of a periodic projection's nodes), `scope` (every relation in both directions: it is followed both ways) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
@@ -376,6 +381,32 @@ for any other node, each hop's cost with its input's value. By induction on deri
 these values; the derivation shows each derived value is reached, so it is the best, and a target worth a null bound
 has no derivation. A complete answer carries one; an interrupted answer only when its bound says something.
 
+**Personalized PageRank.** A relevance ranking around the sources (Page and Brin; Jeh and Widom), the retrieval step
+of graph-based retrieval such as HippoRAG, with every number proven. A walk starts at a source chosen uniformly; at
+each step it stops with probability `alpha`, or else follows a hop in scope chosen uniformly (each parallel edge
+counts); a walk that must move from a node with no hop in scope is lost. A node's personalized PageRank, pi(v), is the
+probability that the walk stops there.
+
+- **Push.** The local push of Andersen, Chung and Lang (2006) keeps estimates p and residuals r with the invariant
+  `p (I - (1 - alpha) P) / alpha + r = s` (P the walk, s the sources' distribution), so pi = p + sum_u r(u) pi_u. It
+  runs in exact integer units of 2^-64: rounds push, in ascending node order, every node whose residual divides into a
+  whole move (a multiple of b times its hops, for alpha = a/b), until the total residual R is at most `tolerance` or
+  nothing can move. Each push is one expansion. The invariant then holds exactly.
+- **Intervals.** Each pi_u is non-negative and gives u at most 1 and every other node at most 1 - alpha, so
+  `p(v) <= pi(v) <= p(v) + r(v) + (1 - alpha) (R - r(v))`, a node the push never reached at most (1 - alpha) R. These
+  bounds hold whenever the push stops, interrupted or not.
+- **Answer.** `ranked`: the `top` nodes by lower bound (ties by node ID), each with `lower` and `upper` as their
+  nearest floats and exact `p/q` values (`lower_exact`, `upper_exact`); `certified_top`: the largest m such that the
+  first m nodes are proven to be, as a set, the m nodes with the highest PageRank (their lowest lower bound exceeds
+  every other node's upper bound); `residual` (and `residual_exact`): R.
+- **Certificate.** With `certificate: true`, `{"kind": "estimates", "values": [{"node", "value", "value_exact"}]}`:
+  every nonzero estimate, by node ID. A checker recomputes every residual exactly from them through the invariant; when
+  none is negative, every interval, the residual and the certified prefix follow. The estimates alone prove the
+  answer.
+
+Answer: `{"ranked": [{"node", "lower", "lower_exact", "upper", "upper_exact"}], "count", "certified_top",
+"residual", "residual_exact", "certificate"}`.
+
 **Periodicity.** How each requested image's component repeats, on a periodic projection: the classic analysis of a
 periodic net through its quotient graph, which crystallography uses to tell molecules, chains, layers and frameworks
 apart (Chung, Hahn and Klee, 1984; Delgado-Friedrichs and O'Keeffe, 2003), here exact and witnessed.
@@ -494,6 +525,8 @@ The result contract reports how an execution ended. It carries no scientific ans
   - for a derivation, every listed node's rule against the records (given: a ground; all: a node of an `all_of`
     type using one hop to each distinct input; one: any other node) and every use as a hop in scope; and the
     certificate's conditions at every node of the targets' region, which it finds from the records
+  - for personalized PageRank, from its certificate: every residual recomputed exactly from the estimates and the
+    records' hops, none negative, and the intervals, residual and certified prefix exactly those they prove
   - for periodicity, against the cell's records: the tree's hops, every hop from a listed node's image leading to a
     listed node by a lattice vector, and the cycles being exactly the edges with a nonzero net, with those nets
   - for a regular path, every hop of a witness or of the tree against the path's automaton, which it builds itself
@@ -503,7 +536,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 112 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 116 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -527,6 +560,10 @@ A regular path answer holds while its witness (or its tree) is still made of hop
 step's scope and landing on its step's types, and its certificate is unbroken: an added move from a listed state
 below the bound must reach a listed state no further, and end no match the answer lacks. A listed state carries no
 witness of its own, so an edit that breaks the certificate leaves the answer unknown rather than refuted.
+
+A ranking holds while its estimates still prove it on the new projection: put into the new walk's equation they
+leave no negative residual, and the intervals and certified prefix they prove are within the ones the answer gives. It
+is always checked in full.
 
 A derivation holds while every listed node keeps its rule and every use is still a hop in scope, and its certificate's
 conditions still hold over the targets' region in the new projection. An edit far from the answer can join the
@@ -553,7 +590,8 @@ projection. A new search could reach the same answer with other witnesses and st
 
 These are later extensions:
 
-- approximate modes and ranking (personalized PageRank, learned graph reasoning)
+- approximate modes without proven bounds, and learned graph reasoning (personalized PageRank is in, as proven
+  intervals)
 - GPU execution and alternative backends (to be introduced after profiling, behind the conformance suite)
 - AND/OR execution beyond the rules of `support` and `derivation` (hyperedges as records, counted or thresholded
   support)
