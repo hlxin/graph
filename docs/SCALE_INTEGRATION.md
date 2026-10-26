@@ -1,7 +1,7 @@
 # SCALE integration
 
 SCALE is GRAPH's first consumer. This document records the baseline the integration was built against, the adapter,
-the two read-only workflows it runs, and their parity with SCALE's own behaviour. Nothing in SCALE was changed. The
+the four read-only workflows it runs, and their parity with SCALE's own behaviour. Nothing in SCALE was changed. The
 adapter only reads SCALE documents and schemas, and the SCALE checkout's working tree was clean before and after
 every run.
 
@@ -66,7 +66,8 @@ The other questions are not chains:
 - 2 have an optional step
 - 2 have no steps
 
-A typed path does not express those shapes, and the adapter refuses them (`Unsupported`).
+A typed path does not express those shapes, and the adapter refuses them (`Unsupported`). Workflow 3 runs every
+plan whose steps are edge steps, whatever its shape.
 
 ## Workflow 2: what rests on a retraction (dependency impact)
 
@@ -93,6 +94,44 @@ retracted to what depends on it, with a witness for each record.
 | The source-lifecycle example | `source-lifecycle/retracted-source.json` (CQ-05's document) | the same 4 records as `lifecycle.resting`, with the same retracted source |
 | Injected retractions | the 134 documents SCALE reads that cite sources, each copied in memory twice: with notices retracting or withdrawing a third of the sources it cites, and with a partial retraction recorded as a dataset (`REPORTED_IN` a cited source, `INCLUDES` records that cite it and records that do not) | the same 18,951 records as `lifecycle.resting`, each with the same retracted sources and datasets (2,548 dataset attributions) |
 
+## Workflow 3: tree-shaped plans (pattern)
+
+`pattern_request(plan, spec)` maps a plan whose steps are all edge steps, of any tree shape and with optional
+steps, to a GRAPH `pattern` request:
+
+- the match's label (with its subtypes, through the projection's type hierarchy) or its id
+- each step's edge type with every type that specializes it (the relation hierarchy), in its direction
+- each step's `to` label, `edge_as` and `optional`
+
+**Parity.** On every competency question whose plan has only edge steps, GRAPH's rows are SCALE's structural rows,
+in SCALE's order: the same bound records and the same links, row for row. That is 39 question–document pairs and
+203 rows, among them 8 tree-shaped plans and 3 with optional steps. GRAPH's exact `total` equals SCALE's row count.
+Value filters, entries and field steps stay SCALE's. A consumer passes the records its own filters keep to GRAPH as
+a step's `nodes` or `edges`.
+
+## Workflow 4: evidence search, and text stages
+
+SCALE's evidence search (`tools/passages.py`) is GRAPH's optional retrieval module ([RETRIEVAL.md](RETRIEVAL.md)).
+The adapter supplies SCALE's words:
+
+- `tokenizer()`: SCALE's word pattern, formula aliases and spelling variants
+- `evidence_index(doc)`: a GRAPH index of the document's evidence items (SCALE's `evidence_items`)
+- `search(...)`: hits as SCALE reports them, with scores rounded to four places
+- `text_ranked(...)`: a plan's text stage on the rows that reach it
+
+**Parity**, on the public methanol-synthesis example (55 sources, 2,851 nodes, 9,335 links, 12,802 evidence
+quotes):
+
+- GRAPH's vectors and inverted index are SCALE's, byte for byte.
+- BM25 and cosine scores are SCALE's, bit for bit.
+- 1,980 searches (four modes, three values of k, with and without filters) return 130,173 hits, all SCALE's, in
+  SCALE's order.
+- The three manuscript questions with a text stage (q2, q3, q5) rank the same claims with the same text scores.
+- 235 page texts split into SCALE's 1,350 passages, which index and search alike.
+
+GRAPH builds the index in 0.38 s against SCALE's 0.93 s, because it encodes each distinct quote once. Searches take
+the same time.
+
 ## Cost
 
 On the 29 competency-question requests, GRAPH takes 0.41 ms per document to build the projection and 0.48 ms per
@@ -118,7 +157,7 @@ PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale
 ```
 
 The tests run in SCALE's environment, because they import `scale`. They read the checkout the imported package
-comes from, or `SCALE_REPO`. They write nothing: no bytecode, no cache. They take about 45 seconds.
+comes from, or `SCALE_REPO`. They write nothing: no bytecode, no cache. They take about 50 seconds.
 
 ## Next
 
@@ -126,5 +165,5 @@ comes from, or `SCALE_REPO`. They write nothing: no bytecode, no cache. They tak
    person's approval), with the parity tests as its fixtures.
 2. Measure a whole SCALE request on a real competency question with both engines: projection, execution, witness
    reconstruction and serialization, with the workload's identity and versions.
-3. Decide with SCALE whether tree-shaped plans (the 8 branching questions) need a GRAPH operation, or stay with
-   SCALE's engine.
+3. Decide with SCALE which of its engines it hands to GRAPH: tree-shaped plans (Workflow 3) and evidence search
+   (Workflow 4) now match SCALE's own, row for row and hit for hit.

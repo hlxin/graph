@@ -351,15 +351,31 @@ def test_runtime_imports_only_the_standard_library():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1] / 'src' / 'graph_runtime'
     for path in root.rglob('*.py'):
-        for node in ast.walk(ast.parse(path.read_text())):
+        tree = ast.parse(path.read_text())
+        top = {id(node) for node in tree.body}
+        for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 modules = [a.name.split('.')[0] for a in node.names]
             elif isinstance(node, ast.ImportFrom) and node.level == 0:
                 modules = [node.module.split('.')[0]]
             else:
                 continue
-            assert all(m in sys.stdlib_module_names for m in modules), (path, node.lineno, modules)
+            # the optional retrieval module alone needs numpy (an extra), imported where it is used, never on import
+            optional = {'numpy'} if path.name == 'retrieval.py' and id(node) not in top else set()
+            assert all(m in sys.stdlib_module_names or m in optional for m in modules), (path, node.lineno, modules)
             assert not {'scale', 'states', 'rates', 'cathanor'} & set(modules)
+
+
+def test_the_runtime_never_loads_the_optional_retrieval_module_or_numpy():
+    import subprocess
+    import sys
+    from pathlib import Path
+    src = Path(__file__).resolve().parents[1] / 'src'
+    code = ("import sys, graph_runtime, graph_runtime.conformance; "
+            "print(sorted(m for m in ('numpy', 'graph_runtime.retrieval') if m in sys.modules))")
+    out = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, check=True,
+                         env={'PYTHONPATH': str(src)})
+    assert out.stdout.strip() == '[]'
 
 
 def test_bundled_shape_checks_match_independent_jsonschema_on_mutations():

@@ -296,3 +296,43 @@ def resting_records(doc: Mapping, spec: Mapping) -> dict:
                 else:
                     out[e["node"]]["sources"].append(seed)
     return {"projection": p.identity, "complete": every.complete, "records": out, "results": results}
+
+
+# ------------------------------------------------------------------------------------------ evidence search
+# SCALE's search (scale.passages) as GRAPH retrieval: SCALE's words (its word pattern, formula aliases and spelling
+# variants) as a GRAPH tokenizer, and its evidence items as the items. Which items a document has and who may read
+# them (access) stay with SCALE; GRAPH ranks them.
+def tokenizer():
+    """SCALE's words: its word pattern, its formula aliases (case-sensitive) and its spelling variants."""
+    from graph_runtime.retrieval import Tokenizer
+    from scale import passages
+    return Tokenizer(aliases=passages.FORMULAS, variants=passages.SPELLING, word=passages.WORD.pattern)
+
+
+def evidence_index(doc: Mapping):
+    """A GRAPH index of a document's evidence quotes (SCALE's evidence items), with SCALE's words."""
+    from graph_runtime.retrieval import HashEmbedder, Index
+    from scale.passages import evidence_items
+    words = tokenizer()
+    return Index.build(evidence_items(doc), tokenizer=words, embedder=HashEmbedder(words))
+
+
+def search(ix, query: str, *, k: int = 10, mode: str = "hybrid", records=None, where=None) -> list[dict]:
+    """GRAPH's hits as SCALE reports them: scores rounded to four places, and a score the mode does not compute as
+    0."""
+    return [{**h, "score": round(h["score"], 4), "keyword": round(h["keyword"] or 0.0, 4),
+             "cosine": round(h["cosine"] or 0.0, 4)}
+            for h in ix.search(query, k=k, mode=mode, records=records, where=where)]
+
+
+def text_ranked(ix, roots: list[str], text: Mapping) -> list[tuple[str, float]]:
+    """A plan's text stage on rows that bind one record each (``roots``): the records whose evidence a search of
+    their own quotes finds, best first (ties by record id), each with its best rounded hit score at or above
+    ``min_score``. The search ranks only the quotes of these records, so quotes the earlier stages left out never
+    crowd them out."""
+    hits = search(ix, text["query"], k=text.get("k", 500), mode=text.get("mode", "hybrid"), records=roots)
+    best: dict[str, float] = {}
+    for h in hits:
+        if h["score"] >= text.get("min_score", 0.0):
+            best[h["record"]] = max(best.get(h["record"], 0.0), h["score"])
+    return sorted(((r, round(best[r], 4)) for r in set(roots) if best.get(r, 0.0) > 0), key=lambda x: (-x[1], x[0]))

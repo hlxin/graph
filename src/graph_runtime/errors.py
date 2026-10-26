@@ -28,6 +28,11 @@ class RequestError(GraphRuntimeError):
         self.detail = detail or {}
 
 
+class RetrievalError(GraphRuntimeError):
+    """Text retrieval cannot proceed (:mod:`graph_runtime.retrieval`): numpy is missing, the items or a query are not
+    valid, or an embedder or saved index does not match the index it is used with."""
+
+
 class CandidateError(GraphRuntimeError):
     """A hypothesis candidate record is not valid; ``problems`` lists every problem found, as
     ``{"path", "code", "message"}``."""

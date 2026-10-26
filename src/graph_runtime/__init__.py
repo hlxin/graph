@@ -1,11 +1,13 @@
 """GRAPH: Graph Runtime for Analysis, Provenance, Hypotheses. Reusable graph algorithms for scientific software.
 
 GRAPH executes graph operations for scientific applications and keeps the computational contract the same across
-them: explicit inputs (an immutable :class:`Projection` and a normalized :class:`Request`), four exact operations
-(reachability, typed path, shortest path, dependency impact) with structural witnesses, bounded work, reproducible
-results, and witnesses that can be checked against the input records (:func:`verify_result`). It transports
-hypothesis candidates (:class:`HypothesisCandidate`) without ever turning them into assertions. Scientific meaning
-stays with the applications that own it; GRAPH imports none of their vocabularies.
+them: explicit inputs (an immutable :class:`Projection`, with optional type and relation hierarchies, and a
+normalized :class:`Request`), five exact operations (reachability, typed path, shortest path, dependency impact and
+tree patterns) with structural witnesses, bounded work, reproducible results, and witnesses that can be checked
+against the input records (:func:`verify_result`). It transports hypothesis candidates (:class:`HypothesisCandidate`)
+without ever turning them into assertions. The optional :mod:`graph_runtime.retrieval` (numpy) ranks text items that
+name a projection's records, so a search can choose where a traversal starts. Scientific meaning stays with the
+applications that own it; GRAPH imports none of their vocabularies.
 
 >>> p = Projection.build(nodes=["a", "b"], edges=[{"id": "e1", "source": "a", "target": "b", "relation": "R"}])
 >>> r = execute(p, p.request("reachability", sources=["a"], scope=[("R", "forward")]))
@@ -15,7 +17,7 @@ stays with the applications that own it; GRAPH imports none of their vocabularie
 
 from ._version import __version__
 from .engine import CancelToken, execute
-from .errors import CandidateError, GraphRuntimeError, ProjectionError, RequestError
+from .errors import CandidateError, GraphRuntimeError, ProjectionError, RequestError, RetrievalError
 from .hypotheses import (HypothesisCandidate, order_candidates, staleness, validate_candidate, verify_revisions,
                          witness_refs)
 from .projection import CONTRACT, FORWARD, REVERSE, EdgeRecord, NodeRecord, Projection
@@ -29,5 +31,5 @@ __all__ = [
     "REVERSE", "Projection", "NodeRecord", "EdgeRecord", "Request", "normalize_request", "execute", "CancelToken",
     "Result", "verify_result", "HypothesisCandidate", "validate_candidate", "verify_revisions", "staleness",
     "order_candidates", "witness_refs", "json_schema", "GraphRuntimeError", "ProjectionError", "RequestError",
-    "CandidateError", "__version__",
+    "RetrievalError", "CandidateError", "__version__",
 ]
