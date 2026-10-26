@@ -12,7 +12,7 @@ from graph_runtime import (CONTRACT, CandidateError, HypothesisCandidate, Projec
 from graph_runtime._canonical import digest
 from graph_runtime._validation import shape_problems
 from graph_runtime.conformance import check_case, load_cases, run_conformance
-from oracle import least_cost, least_depths, typed_ends
+from oracle import closed_nodes, expand_scope, least_cost, least_depths, typed_ends
 from test_hypotheses import TESTS
 
 
@@ -247,6 +247,12 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             continue
         g, r = suite['graphs'][case['graph']], case['request']
         op = r['operation']
+        rp, relations = g.get('relation_parents') or {}, g.get('relations') or []
+        if 'scope' in r:                          # hierarchies written out by the oracle, not by the runtime
+            r = {**r, 'scope': expand_scope(r['scope'], rp, relations)}
+        if 'pattern' in r:
+            r = {**r, 'pattern': [{**pos, 'scope': expand_scope(pos['scope'], rp, relations)} for pos in r['pattern']]}
+        g = {**g, 'nodes': closed_nodes(g['nodes'], g.get('type_parents') or {})}
         if op in ('reachability', 'dependency_impact'):
             strict = op == 'dependency_impact'
             want = least_depths(g['edges'], r['changed' if strict else 'sources'], r['scope'],

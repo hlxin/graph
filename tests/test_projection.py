@@ -50,7 +50,7 @@ def test_identity_is_reproducible_from_the_records_alone():
     types = {n if isinstance(n, str) else n["id"]: sorted(set([] if isinstance(n, str) else n["types"])) for n in NODES}
     h = hashlib.sha256(line({"kind": "graph_runtime.projection", "contract": CONTRACT, "bindings": {"source": "doc@1"},
                              "relations": ["CITES", "USES"], "node_types": ["Catalyst", "Sample", "Species"],
-                             "node_count": 5, "edge_count": 6}))
+                             "type_parents": {}, "relation_parents": {}, "node_count": 5, "edge_count": 6}))
     for nid in sorted(types):
         h.update(line([nid, types[nid]]))
     for e in sorted(EDGES, key=lambda e: e["id"]):

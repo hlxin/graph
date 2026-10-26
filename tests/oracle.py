@@ -109,3 +109,40 @@ def random_scope(rng: random.Random, relations=RELATIONS):
 
 def node_id(n):
     return n if isinstance(n, str) else n["id"]
+
+
+def closure_up(parents):
+    """Every name's ancestors in a hierarchy, by repeated expansion."""
+    up = {}
+    for n in parents or {}:
+        seen, todo = set(), list(parents[n])
+        while todo:
+            x = todo.pop()
+            if x not in seen:
+                seen.add(x)
+                todo += (parents or {}).get(x, [])
+        up[n] = seen
+    return up
+
+
+def expand_scope(scope, relation_parents, relations=RELATIONS):
+    """A scope over a relation hierarchy, written out: an entry covers every relation that has it above."""
+    up = closure_up(relation_parents)
+    names = set(relations) | {s["relation"] if isinstance(s, dict) else s[0] for s in scope}
+    out = []
+    for r in sorted(names):
+        for s in scope:
+            rel, direction = (s["relation"], s["direction"]) if isinstance(s, dict) else s
+            if rel == r or rel in up.get(r, ()):
+                out.append({"relation": r, "direction": direction})
+    return out
+
+
+def closed_nodes(nodes, type_parents):
+    """Nodes with every ancestor of their declared types."""
+    up = closure_up(type_parents)
+    out = []
+    for n in nodes:
+        types = set() if isinstance(n, str) else set(n.get("types") or [])
+        out.append({"id": node_id(n), "types": sorted(types.union(*(up.get(t, ()) for t in types)))})
+    return out

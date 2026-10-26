@@ -18,9 +18,13 @@ from typing import Any
 from .result import COMPLETED, INTERRUPTED, Result, contract_problems
 
 
-def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iterable[Mapping]) -> list[str]:
-    """Problems found in ``result`` (empty when it checks out). ``nodes`` and ``edges``: the records the projection
-    was built from, as :meth:`graph_runtime.Projection.build` takes them."""
+def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iterable[Mapping],
+                  type_parents: Mapping[str, Iterable[str]] | None = None,
+                  relation_parents: Mapping[str, Iterable[str]] | None = None) -> list[str]:
+    """Problems found in ``result`` (empty when it checks out). ``nodes``, ``edges`` and the hierarchies: the records
+    the projection was built from, as :meth:`graph_runtime.Projection.build` takes them. A hop is in scope when its
+    edge's relation, or a relation above it, is in the scope with the hop's direction; a node has a type when it
+    declares it or a type below it."""
     try:
         data = dict(result._data) if isinstance(result, Result) else dict(result)      # read, never changed
         problems = contract_problems(data)
@@ -29,13 +33,13 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
         answer, request = data.get("answer"), data.get("request")
         if not isinstance(request, Mapping):
             return ["a completed or interrupted result carries its normalized request"]
+        type_up = _ancestors(type_parents)
         types_of: dict[str, set[str]] = {}
         for n in nodes:
-            if isinstance(n, str):
-                types_of[n] = set()
-            else:
-                types_of[n["id"]] = set(n.get("types") or ())
-        check = _Checker(problems, {e["id"]: (e["source"], e["target"], e["relation"]) for e in edges}, types_of)
+            declared = set() if isinstance(n, str) else set(n.get("types") or ())
+            types_of[n if isinstance(n, str) else n["id"]] = declared.union(*(type_up.get(t, ()) for t in declared))
+        check = _Checker(problems, {e["id"]: (e["source"], e["target"], e["relation"]) for e in edges}, types_of,
+                         _ancestors(relation_parents))
         op, status = data.get("operation"), data["status"]
         if op in ("reachability", "dependency_impact"):
             check.node_set(op, request, answer, status)
@@ -50,6 +54,21 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
         return [f"malformed result ({type(exc).__name__}: {exc})"]
 
 
+def _ancestors(parents: Mapping[str, Iterable[str]] | None) -> dict[str, set[str]]:
+    """Every name's ancestors in a hierarchy, by plain repeated expansion (independent of the projection's code)."""
+    up = {k: set(v) for k, v in (parents or {}).items()}
+    out: dict[str, set[str]] = {}
+    for name in up:
+        seen, todo = set(), list(up[name])
+        while todo:
+            x = todo.pop()
+            if x not in seen:
+                seen.add(x)
+                todo.extend(up.get(x, ()))
+        out[name] = seen
+    return out
+
+
 def _is_int(x: Any) -> bool:
     return isinstance(x, int) and not isinstance(x, bool)
 
@@ -62,8 +81,8 @@ def _nearest(x: Fraction) -> float | None:
 
 
 class _Checker:
-    def __init__(self, problems: list[str], edge_of: dict, types_of: dict):
-        self.problems, self.edge_of, self.types_of = problems, edge_of, types_of
+    def __init__(self, problems: list[str], edge_of: dict, types_of: dict, relation_up: dict):
+        self.problems, self.edge_of, self.types_of, self.relation_up = problems, edge_of, types_of, relation_up
 
     def bad(self, message: str) -> None:
         self.problems.append(message)
@@ -77,7 +96,8 @@ class _Checker:
         src, dst, rel = rec
         if relation != rel:
             self.bad(f"{where}: edge {edge} has the relation {rel}, not {relation}")
-        if (rel, direction) not in allowed:
+        if (rel, direction) not in allowed and not any((up, direction) in allowed
+                                                       for up in self.relation_up.get(rel, ())):
             self.bad(f"{where}: {rel} {direction} is outside the requested scope")
         if direction == "forward":
             ends = (src, dst)

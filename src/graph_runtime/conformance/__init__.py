@@ -78,7 +78,8 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     status = data.get("status")
     if status not in statuses:
         return [f"status {status!r} ({(data.get('error') or {}).get('code')}), expected {statuses}"]
-    problems = list(verify_result(data, nodes=graph["nodes"], edges=graph["edges"]))
+    problems = list(verify_result(data, nodes=graph["nodes"], edges=graph["edges"],
+                                  type_parents=graph.get("type_parents"), relation_parents=graph.get("relation_parents")))
     p = Projection.build(**graph)
     ctx = case.get("context") or {}
     raw = {**case["request"], "projection": ctx.get("request_projection", p.identity)}

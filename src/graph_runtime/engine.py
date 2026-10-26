@@ -243,7 +243,9 @@ def _scope(p: Projection, scope: Any, field: str) -> tuple[list[bool], list[bool
                            f"{unknown}", {"field": field, "relations": unknown})
     fwd, rev = [False] * len(p._relations), [False] * len(p._relations)
     for e in scope:
-        (fwd if e["direction"] == FORWARD else rev)[p._rel_index[e["relation"]]] = True
+        marks = fwd if e["direction"] == FORWARD else rev
+        for r in p._rel_cover[p._rel_index[e["relation"]]]:      # the relation and every relation below it
+            marks[r] = True
     return fwd, rev
 
 

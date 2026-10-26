@@ -13,7 +13,7 @@ def test_normalization_sorts_dedupes_and_fills_defaults():
                            "scope": [("USES", "forward"), {"relation": "CITES", "direction": "reverse"},
                                      ["USES", "forward"]]})
     assert r.to_dict() == {
-        "contract": "graph-runtime/v0.1", "operation": "reachability", "mode": "exact", "projection": P,
+        "contract": "graph-runtime/v0.2", "operation": "reachability", "mode": "exact", "projection": P,
         "limits": {"max_expansions": DEFAULT_LIMITS["max_expansions"], "max_results": DEFAULT_LIMITS["max_results"]},
         "sources": ["a", "b"], "max_depth": None,
         "scope": [{"relation": "CITES", "direction": "reverse"}, {"relation": "USES", "direction": "forward"}]}
@@ -23,7 +23,7 @@ def test_equivalent_requests_share_one_identity():
     a = normalize_request({"operation": "typed_path", "projection": P, "sources": ["x", "y"],
                            "pattern": [{"scope": [("R", "forward"), ("S", "reverse")], "node_types": ["B", "A"]}]})
     b = normalize_request({"operation": "typed_path", "projection": P, "sources": ["y", "x", "x"], "targets": None,
-                           "mode": "exact", "contract": "graph-runtime/v0.1",
+                           "mode": "exact", "contract": "graph-runtime/v0.2",
                            "pattern": [{"node_types": ["A", "B", "A"],
                                         "scope": [{"relation": "S", "direction": "reverse"}, ("R", "forward")]}],
                            "limits": {"max_expansions": DEFAULT_LIMITS["max_expansions"]}})

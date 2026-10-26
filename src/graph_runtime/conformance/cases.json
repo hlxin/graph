@@ -1,5 +1,5 @@
 {
- "contract": "graph-runtime/v0.1",
+ "contract": "graph-runtime/v0.2",
  "description": "Backend conformance cases: expectations are written by hand from the developer note and graphs. Results bind the case projection and normalized request, retain canonical node order and witnesses, and never certify negatives when interrupted.",
  "graphs": {
   "G1": {
@@ -199,6 +199,81 @@
    "relations": [
     "R"
    ]
+  },
+  "G4": {
+   "nodes": [
+    {
+     "id": "dark",
+     "types": [
+      "DarkControl"
+     ]
+    },
+    {
+     "id": "plain",
+     "types": [
+      "Experiment"
+     ]
+    },
+    {
+     "id": "run",
+     "types": [
+      "CatalyticTest"
+     ]
+    },
+    {
+     "id": "sample",
+     "types": [
+      "Sample"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "c1",
+     "source": "dark",
+     "target": "run",
+     "relation": "DARK_CONTROL_FOR"
+    },
+    {
+     "id": "c2",
+     "source": "plain",
+     "target": "run",
+     "relation": "CONTROL_FOR"
+    },
+    {
+     "id": "u1",
+     "source": "run",
+     "target": "sample",
+     "relation": "USES"
+    }
+   ],
+   "relations": [
+    "CONTROL_FOR",
+    "DARK_CONTROL_FOR",
+    "USES"
+   ],
+   "node_types": [
+    "CatalyticTest",
+    "DarkControl",
+    "Experiment",
+    "Sample"
+   ],
+   "type_parents": {
+    "CatalyticTest": [
+     "Experiment"
+    ],
+    "DarkControl": [
+     "Experiment"
+    ]
+   },
+   "relation_parents": {
+    "DARK_CONTROL_FOR": [
+     "CONTROL_FOR"
+    ]
+   },
+   "bindings": {
+    "source": "conformance-g4@1"
+   }
   }
  },
  "cases": [
@@ -1864,6 +1939,163 @@
      "b": 2,
      "c": 1
     }
+   }
+  },
+  {
+   "name": "hierarchy-parent-relation-covers-child",
+   "covers": [
+    "relation hierarchy"
+   ],
+   "graph": "G4",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "run"
+    ],
+    "scope": [
+     {
+      "relation": "CONTROL_FOR",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "run": 0,
+     "dark": 1,
+     "plain": 1
+    }
+   }
+  },
+  {
+   "name": "hierarchy-child-relation-excludes-parent",
+   "covers": [
+    "relation hierarchy"
+   ],
+   "graph": "G4",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "run"
+    ],
+    "scope": [
+     {
+      "relation": "DARK_CONTROL_FOR",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "reached": {
+     "run": 0,
+     "dark": 1
+    }
+   }
+  },
+  {
+   "name": "hierarchy-parent-type-matches-subtypes",
+   "covers": [
+    "type hierarchy"
+   ],
+   "graph": "G4",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "sample"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "reverse"
+       }
+      ],
+      "node_types": [
+       "Experiment"
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "CONTROL_FOR",
+        "direction": "reverse"
+       }
+      ],
+      "node_types": [
+       "Experiment"
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "witness_edges": [
+     "u1",
+     "c1"
+    ]
+   }
+  },
+  {
+   "name": "hierarchy-impact-through-subrelation",
+   "covers": [
+    "relation hierarchy",
+    "dependency impact"
+   ],
+   "graph": "G4",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "run"
+    ],
+    "scope": [
+     {
+      "relation": "CONTROL_FOR",
+      "direction": "reverse"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "affected": {
+     "dark": 1,
+     "plain": 1
+    }
+   }
+  },
+  {
+   "name": "hierarchy-costs-name-each-relation-in-scope",
+   "covers": [
+    "relation hierarchy",
+    "missing costs refused"
+   ],
+   "graph": "G4",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "run"
+    ],
+    "targets": [
+     "dark"
+    ],
+    "scope": [
+     {
+      "relation": "CONTROL_FOR",
+      "direction": "reverse"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "CONTROL_FOR": 1
+     }
+    }
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "missing_cost"
    }
   }
  ]

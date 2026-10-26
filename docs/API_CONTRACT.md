@@ -1,4 +1,4 @@
-# GRAPH contract `graph-runtime/v0.1`
+# GRAPH contract `graph-runtime/v0.2`
 
 This is the contract the runtime implements (`src/graph_runtime`). It was written on 25 October 2026 from the
 developer note ([GRAPH_Developer_Note_for_Claude.md](GRAPH_Developer_Note_for_Claude.md)). The handoff package the
@@ -8,16 +8,21 @@ Schema of every record is `src/graph_runtime/schemas/graph-runtime-v0.schema.jso
 Every operation binds an immutable **projection** and a normalized **request**, and returns a **result**. The
 runtime is exact-only and runs in process, on the CPU, with the standard library.
 
-Revision `v0.1` tightens transport validation, orders node-set answers by ascending ID, counts source search states
-consistently, and requires costs only for edges actually in scope. It supersedes `v0`; readers reject older
-contract tags. The schema retains its original filename. This revision follows `CLAUDE.md`'s contract-version rule.
+Revision `v0.1` tightened transport validation, ordered node-set answers by ascending ID, counted source search
+states consistently, and required costs only for edges actually in scope. Revision `v0.2`, in development, adds:
+
+- type and relation hierarchies (section 1)
+
+Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
+Revisions follow `CLAUDE.md`'s contract-version rule.
 
 ## 1. Projections
 
 A projection is an immutable, read-only graph view built from the consumer's records:
 
 ```python
-Projection.build(nodes=..., edges=..., relations=None, node_types=None, bindings=None)
+Projection.build(nodes=..., edges=..., relations=None, node_types=None, bindings=None,
+                 type_parents=None, relation_parents=None)
 ```
 
 | Input | Form | Rule |
@@ -26,12 +31,18 @@ Projection.build(nodes=..., edges=..., relations=None, node_types=None, bindings
 | `edges` | an iterable of `{"id", "source", "target", "relation"}`; other keys are not read | IDs unique; both ends are nodes; one relation per edge |
 | `relations`, `node_types` | the declared vocabularies | may hold relations or types no record uses; default: those the records use |
 | `bindings` | `{name: text}` | what the projection describes: suggested `source`, `schema`, `policy` |
+| `type_parents`, `relation_parents` | `{name: [parent, ...]}` | hierarchies: acyclic, several parents allowed; names join the vocabularies (and must be in declared ones) |
 
+- **Hierarchies.** A node has every ancestor of the types it declares, so a constraint on a type matches the nodes
+  of its subtypes. A scope entry on a relation also follows every relation below it: a scope on `CONTROL_FOR` follows
+  `DARK_CONTROL_FOR` edges, never the reverse. `projection.covered(relation)` lists what an entry follows. Witnesses
+  still name each edge's own relation, `node(id).types` the types a node declares, and `by_relation` costs the
+  relation each edge has: no cost is inherited.
 - **Original IDs are kept.** Nodes and edges are remapped to dense integers for execution, and every answer names
   them by their original IDs. Parallel edges (same ends and relation) stay distinct records.
 - **Identity.** `projection.identity` is `sha256:<hex>`, computed over newline-terminated canonical JSON lines. The
-  first line is a header: kind, contract, bindings, both vocabularies and the counts. Then comes one `[id, [types]]`
-  line per node and one `[id, source, target, relation]` line per edge, each in ascending ID order. Canonical JSON
+  first line is a header: kind, contract, bindings, both vocabularies, both hierarchies and the counts. Then
+  comes one `[id, [types]]` line per node and one `[id, source, target, relation]` line per edge, each in ascending ID order. Canonical JSON
   means sorted keys, no whitespace and UTF-8 text. The same records in any order give the same identity; any
   change in a record, a vocabulary or a binding gives another. The identity can be reproduced from the records
   alone (`tests/test_projection.py`).
@@ -45,7 +56,8 @@ Projection.build(nodes=..., edges=..., relations=None, node_types=None, bindings
   reused only while its source, schema/context bindings and policy scope are unchanged.
 
 Errors: `ProjectionError` with code `duplicate_node_id`, `duplicate_edge_id`, `dangling_edge`,
-`undeclared_relation`, `undeclared_node_type`, `invalid_record`, `invalid_bindings`, `candidate_record`, or (when
+`undeclared_relation`, `undeclared_node_type`, `invalid_record`, `invalid_bindings`, `invalid_hierarchy`,
+`hierarchy_cycle`, `candidate_record`, or (when
 reading a snapshot) `invalid_snapshot`, `unsupported_contract` or `identity_mismatch`.
 
 ## 2. Requests
@@ -63,7 +75,7 @@ Two requests that ask the same thing share one `request_id`.
 Node-ID sets, scopes, typed patterns and non-null node-type lists must be non-empty. A projection itself may be
 empty; requesting a node it does not contain fails as `unknown_node`.
 
-Common fields: `contract` (`graph-runtime/v0.1`), `operation`, `mode` (`exact`, the only mode), `projection` (the
+Common fields: `contract` (`graph-runtime/v0.2`), `operation`, `mode` (`exact`, the only mode), `projection` (the
 identity, required) and `limits`.
 
 **Scope.** A list of `{"relation", "direction"}`. `forward` follows an edge from its source to its target;
@@ -170,7 +182,7 @@ gave its edge. Answer: `{"found", "optimal", "cost", ["cost_exact"], "witness"}`
 | `error` | `{"code", "message", ["detail"]}` for `unsupported`, `failed` and `stale_snapshot` |
 | `stats` | `expansions`, `edges_examined` and `discovered`: deterministic counters; discovered counts the source states plus newly retained search states, including changed nodes even when absent from the impact answer |
 | `limitations` | what the answer does not claim, in words |
-| `runtime`, `contract`, `kind` | `scale-graph-runtime` and its version, `graph-runtime/v0.1`, `graph_runtime.result` |
+| `runtime`, `contract`, `kind` | `scale-graph-runtime` and its version, `graph-runtime/v0.2`, `graph_runtime.result` |
 | `result_id` | the digest of everything but `timing` |
 | `timing` | wall-clock seconds for `bind_s`, `search_s`, `witness_s`, `result_s` and `total_s`; errors may report only result and total time; not part of `result_id` |
 
@@ -211,8 +223,8 @@ The result contract reports how an execution ended. It carries no scientific ans
 
 ## 6. Checking results
 
-- `verify_result(result, nodes=..., edges=...)` re-checks a result against the input records, independently of the
-  engine. It checks:
+- `verify_result(result, nodes=..., edges=..., type_parents=None, relation_parents=None)` re-checks a result
+  against the input records, independently of the engine. It checks:
   - the contract's invariants
   - that every witness hop names an input edge with that relation, in the requested scope and direction
   - that hops chain from a requested source to what they witness, and match typed-path positions and node types
