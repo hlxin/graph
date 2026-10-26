@@ -390,3 +390,75 @@ def regular_ends(nodes, edges, sources, path, targets=None, type_parents=None, r
                     nxt.add((b, d))
         layer, depth = nxt, depth + 1
     return out
+
+
+def derivation_values(nodes, edges, scope, all_of=None, grounds=None, costs=None, objective="min_sum",
+                      type_parents=None, relation_parents=None, relations=RELATIONS):
+    """``{node: best value}`` for every node that has a derivation (a given node is worth 0 for min_sum, None for
+    min_max and max_min), by synchronous rounds of the rules over every node, from "nothing is derived", until a
+    round changes nothing. Round k gives the best derivation of height at most k, and a best derivation never needs
+    a node twice on one branch, so the rounds end at the best values. No region, no priority queue, no order."""
+    types = {n["id"]: set(n["types"]) for n in closed_nodes(nodes, type_parents)}
+    names = set(relations) | {e["relation"] for e in edges}
+    expanded = expand_scope(scope, relation_parents or {}, names)
+    fwd = {x["relation"] for x in expanded if x["direction"] == "forward"}
+    rev = {x["relation"] for x in expanded if x["direction"] == "reverse"}
+    kind, table = next(iter(costs.items())) if costs is not None else (None, None)
+    rational = objective == "min_sum" and table is not None and any(isinstance(x, float) for x in table.values())
+
+    def cost(e):
+        x = 1 if table is None else table[e["relation"] if kind == "by_relation" else e["id"]]
+        return Fraction(x) if rational else x
+    hops = {u: [] for u in types}
+    for e in edges:
+        if e["relation"] in fwd:
+            hops[e["source"]].append((e["target"], cost(e)))
+        if e["relation"] in rev:
+            hops[e["target"]].append((e["source"], cost(e)))
+    every = set(all_of or ())
+    identity = 0 if objective == "min_sum" else None
+
+    def better(a, b):
+        if objective == "min_sum":
+            return a < b
+        if a is None or b is None:
+            return a is None and b is not None
+        return a > b if objective == "max_min" else a < b
+
+    def hop(c, v):
+        if objective == "min_sum":
+            return c + v
+        return c if v is None else (max(c, v) if objective == "min_max" else min(c, v))
+
+    def best_of(xs):
+        out = xs[0]
+        for x in xs[1:]:
+            if better(x, out):
+                out = x
+        return out
+
+    value = {}
+    while True:
+        new = {}
+        for u in types:
+            is_all = bool(every & types[u])
+            if (u in grounds) if grounds is not None else (not hops[u] and not is_all):
+                new[u] = identity
+            elif is_all:
+                inputs = {}
+                for v, c in hops[u]:
+                    if v in value:
+                        inputs.setdefault(v, []).append(hop(c, value[v]))
+                if len(inputs) == len({v for v, _ in hops[u]}):
+                    total = identity
+                    for xs in inputs.values():
+                        x = best_of(xs)
+                        total = hop(x, total) if objective != "min_sum" else total + x
+                    new[u] = total
+            else:
+                offers = [hop(c, value[v]) for v, c in hops[u] if v in value]
+                if offers:
+                    new[u] = best_of(offers)
+        if new == value:
+            return value
+        value = new

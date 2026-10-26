@@ -12,8 +12,8 @@ from graph_runtime import (CONTRACT, CandidateError, HypothesisCandidate, Projec
 from graph_runtime._canonical import digest
 from graph_runtime._validation import shape_problems
 from graph_runtime.conformance import check_case, load_cases, run_conformance
-from oracle import (bottleneck, closed_nodes, expand_scope, least_cost, least_depths, pattern_rows, regular_ends,
-                    support_answer, typed_ends)
+from oracle import (bottleneck, closed_nodes, derivation_values, expand_scope, least_cost, least_depths,
+                    pattern_rows, regular_ends, support_answer, typed_ends)
 from test_hypotheses import TESTS
 
 
@@ -289,6 +289,16 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 assert len(exp['witness_edges']) == min(want.values()), case['name']
             if 'path_reached' in exp:
                 assert exp['path_reached'] == want, case['name']
+        elif op == 'derivation':
+            raw, graph = case['request'], suite['graphs'][case['graph']]     # the oracle expands the hierarchies
+            values = derivation_values(graph['nodes'], graph['edges'], raw['scope'], raw.get('all_of'),
+                                       raw.get('grounds'), raw.get('costs'), raw.get('objective', 'min_sum'),
+                                       graph.get('type_parents'), rp, relations)
+            if case['expect']['status'] == 'completed':
+                assert exp['derived'] == {t: values[t] for t in raw['targets'] if t in values}, case['name']
+                assert exp['underived'] == [t for t in sorted(raw['targets']) if t not in values], case['name']
+            else:
+                assert all(values[t] == v for t, v in exp['derived'].items()), case['name']
         elif op == 'pattern':
             raw = case['request']             # the brute force expands the hierarchies itself
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],

@@ -23,6 +23,9 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - the `regular_path` operation: walks whose hops match a regular expression of steps (regular path queries), one
   with the fewest hops or every node reached, certified by the closed product states of the expression's automaton
   (section 4)
+- the `derivation` operation: the best derivation of each target in an AND/OR graph (a node of an `all_of` type needs
+  every input, any other node one), for a sum of costs, the least highest cost or the greatest lowest, with a
+  derivation as witness, certified by values no rule improves on (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -103,6 +106,7 @@ no wildcard: a scope lists what it follows.
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one) | `max_expansions`, `max_results` |
 | `bottleneck_path` | `sources`, `targets`, `scope`, `weights` (as costs, but any finite number), `objective` (`max_min`, the default, or `min_max`), `certificate` (default false) | `max_expansions` |
 | `regular_path` | `sources`, `path` (a path expression: text, a list or a tree, normalized to the tree), `targets` (null: any node), `answer` (`witness`, the default, or `reached`), `certificate` (default false) | `max_expansions`, `max_results` |
+| `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
 normalized request always states it.
@@ -307,6 +311,44 @@ when `bound` is null), and every listed fewest-hop count is exact. A found witne
 complete negative and a complete `reached` answer carry `bound` null; a witness with no hop and an interrupted answer
 carry none.
 
+**Derivation.** The best derivation of each target in an AND/OR graph: Knuth's generalization of Dijkstra's
+algorithm (1977), the lightest derivation problem of Felzenszwalb and McAllester (2007). A hop in `scope` leads from
+a node to one of its inputs, for example from a species to a reaction that makes it, and from a reaction to each of
+its reactants. In a reaction network it answers: from these feedstocks, what is the cheapest way to make each target,
+the way whose highest barrier is lowest, or the way whose slowest step is fastest.
+
+- **Rules.** A ground (`grounds`; by default, a node with no input that needs one) is given. A node of an `all_of`
+  type (through the hierarchy) is derived from every one of its distinct inputs, each through one hop; it is derived
+  from nothing when it has no input. Any other node is derived from one input through one hop. A derivation is a
+  finite tree, so support in a circle derives nothing.
+- **Values.** `min_sum`: a derivation's value is the sum of its hops' costs, every use counted (a tree, not a DAG),
+  lower is better, and a given node is worth 0; costs are non-negative and exact as a shortest path's, with
+  `value_exact` in rational mode. `min_max`: the highest cost among its hops, lower is better. `max_min`: the lowest,
+  higher is better. For the last two, costs are any finite numbers, compared and never added, and a given node is
+  worth null (no hop). Of parallel hops to one input, the best is used (the first in canonical order among equals).
+- **Search.** First the region: the targets and, transitively, their inputs, stopping at grounds; each node read once
+  is one expansion. Then nodes are settled best value first, ties by node ID, each settle one expansion: grounds, and
+  `all_of` nodes without inputs, start at the identity; a settled node offers its value to the nodes that use it; a
+  one-input node takes a strictly better offer, and an `all_of` node is ready when its last input settles. A settled
+  value is final and the best there is (every combination is at least as bad as its parts). The search ends when every
+  target is settled or nothing is left to settle.
+- **Answer.** `derived` lists each derived target with its best value; `underived` (complete answers only) the
+  targets with no derivation; `bound` (interrupted answers only): no target the answer does not list has a derivation
+  better than it (null: nothing is known). `derivation` lists every node the derived targets' derivations use, by node
+  ID: its `rule` (`given`, `all` or `one`), its value, and the hops it `uses` (`{"edge", "relation", "direction",
+  "from", "to", "cost"}`), in canonical order. Each value follows from the node's uses alone: an `all` node combines
+  its uses in the order listed, keeping the earlier on a tie. Every listed node's value is its own best. Answer:
+  `{"derived": [{"node", "value"}], "underived", ["bound"], "derivation": [{"node", "rule", "value", "uses"}],
+  "certificate"}`.
+
+With `certificate: true`, an answer carries its proof whenever it claims more than its derivation: `{"kind":
+"values", "bound", "values": [{"node", "value"}]}`, the settled nodes' values, by node ID; every other node is
+worth `bound` (null: no derivation at all). At every node of the targets' region, no rule gives a value better than
+the node's: a ground's identity, an `all_of` node's combination of its inputs' values each through its best hop, and,
+for any other node, each hop's cost with its input's value. By induction on derivation trees, no derivation beats
+these values; the derivation shows each derived value is reached, so it is the best, and a target worth a null bound
+has no derivation. A complete answer carries one; an interrupted answer only when its bound says something.
+
 **Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
 SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for
 example from a claim to its evidence items, or from an item to the source it cites.
@@ -398,6 +440,9 @@ The result contract reports how an execution ended. It carries no scientific ans
   - for support, everything: it recomputes what stands before and after from the records, by re-evaluating each
     node's rule until nothing changes rather than by the engine's counting, and compares every listed node, count,
     failing hop and cause
+  - for a derivation, every listed node's rule against the records (given: a ground; all: a node of an `all_of`
+    type using one hop to each distinct input; one: any other node) and every use as a hop in scope; and the
+    certificate's conditions at every node of the targets' region, which it finds from the records
   - for a regular path, every hop of a witness or of the tree against the path's automaton, which it builds itself
     (writing repetitions out first, then nullable, first, last and follow sets by their textbook definitions): each
     state may follow the one before it, each hop is in its step's scope and lands on its step's types, and a witness
@@ -405,7 +450,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 91 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 100 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -430,12 +475,16 @@ step's scope and landing on its step's types, and its certificate is unbroken: a
 below the bound must reach a listed state no further, and end no match the answer lacks. A listed state carries no
 witness of its own, so an edit that breaks the certificate leaves the answer unknown rather than refuted.
 
+A derivation holds while every listed node keeps its rule and every use is still a hop in scope, and its certificate's
+conditions still hold over the targets' region in the new projection. An edit far from the answer can join the
+region, so a derivation is always checked in full (`checked` is `answer`, with or without a diff).
+
 The verdict is one of three:
 
 | Verdict | Meaning | Reasons |
 | --- | --- | --- |
 | `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
-| `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
+| `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `rule_changed` (a derivation's ground is no longer one, or an `all_of` node's inputs changed), `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
 | `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
 
 Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",
@@ -453,7 +502,8 @@ These are later extensions:
 
 - approximate modes and ranking (personalized PageRank, learned graph reasoning)
 - GPU execution and alternative backends (to be introduced after profiling, behind the conformance suite)
-- generic AND/hypergraph execution beyond `support`'s two rules (hyperedges, weighted or counted support)
+- AND/OR execution beyond the rules of `support` and `derivation` (hyperedges as records, counted or thresholded
+  support)
 - property filters on values
 - traversal of candidate relations: a combined view needs its own contract, one that keeps candidate identity in
   every edge and witness

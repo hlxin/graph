@@ -26,6 +26,10 @@ Operations (docs/API_CONTRACT.md):
 * ``regular_path``: ``sources``, ``path`` (a regular path expression: text, a list or a tree, see
   :mod:`graph_runtime.paths`), ``targets`` (null: any node), ``answer`` (``witness``: one walk with the fewest hops;
   ``reached``: every node a matching walk reaches), ``certificate``; limits ``max_expansions``, ``max_results``.
+* ``derivation``: ``targets``, ``scope`` (from a node to what it needs), ``all_of`` (node types that need every input;
+  null: every node needs one), ``grounds`` (nodes given; null: every node with no input), ``costs`` (as a shortest
+  path's; null: every hop costs 1), ``objective`` (``min_sum``: the least total cost; ``min_max``: the least highest
+  cost; ``max_min``: the greatest lowest), ``certificate``; limit ``max_expansions``.
 
 A scope is a list of ``{relation, direction}`` (``forward``: from an edge's source to its target; ``reverse``: from
 its target to its source); there is no wildcard.
@@ -46,10 +50,11 @@ from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
-              "bottleneck_path", "regular_path")
+              "bottleneck_path", "regular_path", "derivation")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
+DERIVATION_OBJECTIVES = ("min_sum", "min_max", "max_min")
 MODES = ("exact",)
 FAILED, UNSUPPORTED = "failed", "unsupported"
 REQUEST_KIND = "graph_runtime.request"
@@ -62,7 +67,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "pattern": ("max_expansions", "max_results"),
            "support": ("max_expansions", "max_results"),
            "bottleneck_path": ("max_expansions",),
-           "regular_path": ("max_expansions", "max_results")}
+           "regular_path": ("max_expansions", "max_results"),
+           "derivation": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -70,7 +76,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "pattern": (("match",), ("steps", "answer")),
            "support": (("failed", "scope"), ("all_of",)),
            "bottleneck_path": (("sources", "targets", "scope", "weights"), ("objective", "certificate")),
-           "regular_path": (("sources", "path"), ("targets", "answer", "certificate"))}
+           "regular_path": (("sources", "path"), ("targets", "answer", "certificate")),
+           "derivation": (("targets", "scope"), ("all_of", "grounds", "costs", "objective", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -215,6 +222,19 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         if data["answer"] not in PATH_ANSWERS:
             raise _fail("invalid_request", f"answer is one of {list(PATH_ANSWERS)}, not {data['answer']!r}")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "derivation":
+        data["targets"] = _ids(raw["targets"], "targets")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["all_of"] = _node_constraint(raw, "derivation", ("all_of",))["all_of"]
+        data["grounds"] = None if raw.get("grounds") is None else _ids(raw["grounds"], "grounds")
+        data["objective"] = raw.get("objective", "min_sum")
+        if data["objective"] not in DERIVATION_OBJECTIVES:
+            raise _fail("invalid_request", f"objective is one of {list(DERIVATION_OBJECTIVES)}, not "
+                        f"{data['objective']!r}")
+        costs = raw.get("costs")
+        data["costs"] = (None if costs is None else _costs(costs) if data["objective"] == "min_sum"
+                         else _weights(costs, "costs"))
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "support":
         data["failed"] = _ids(raw["failed"], "failed")
         data["scope"] = _scope(raw["scope"], "scope")
@@ -347,24 +367,24 @@ def _costs(value: Any) -> dict[str, dict[str, int | float]]:
 _FLOAT_MAX = sys.float_info.max
 
 
-def _weights(value: Any) -> dict[str, dict[str, int | float]]:
+def _weights(value: Any, field: str = "weights") -> dict[str, dict[str, int | float]]:
     """``{"by_relation": {...}}`` or ``{"by_edge": {...}}`` of finite numbers of any sign: a bottleneck compares
-    weights and never adds them, so any finite number is exact."""
+    weights and never adds them, so any finite number is exact (as are a min_max or max_min derivation's costs)."""
     if not isinstance(value, Mapping) or len(value) != 1 or next(iter(value)) not in ("by_relation", "by_edge"):
-        raise _fail("invalid_request", 'weights is {"by_relation": {relation: weight}} or {"by_edge": {edge: '
+        raise _fail("invalid_request", f'{field} is {{"by_relation": {{relation: weight}}}} or {{"by_edge": {{edge: '
                     'weight}}')
     kind, table = next(iter(value.items()))
     if not isinstance(table, Mapping):
-        raise _fail("invalid_request", f"weights.{kind} is a mapping of IDs to weights")
+        raise _fail("invalid_request", f"{field}.{kind} is a mapping of IDs to weights")
     out = {}
     for key, x in table.items():
         if type(key) is not str or not key:
-            raise _fail("invalid_request", f"weights.{kind} holds the key {key!r}; a key is a non-empty string")
+            raise _fail("invalid_request", f"{field}.{kind} holds the key {key!r}; a key is a non-empty string")
         if isinstance(x, bool) or not isinstance(x, (numbers.Integral, float)):
-            raise _fail("invalid_cost", f"weights.{kind}[{key!r}] is {x!r}; a weight is an integer or a finite float")
+            raise _fail("invalid_cost", f"{field}.{kind}[{key!r}] is {x!r}; a weight is an integer or a finite float")
         x = int(x) if isinstance(x, numbers.Integral) else float(x)
         if isinstance(x, float) and not math.isfinite(x):
-            raise _fail("non_finite_cost", f"weights.{kind}[{key!r}] is {x!r}; weights are finite")
+            raise _fail("non_finite_cost", f"{field}.{kind}[{key!r}] is {x!r}; weights are finite")
         out[key] = x
     return {kind: out}
 
