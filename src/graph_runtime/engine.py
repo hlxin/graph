@@ -26,7 +26,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import flows, paths, ranking, structure
+from . import dominators, flows, paths, ranking, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -300,6 +300,11 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         masks = p._node_mask
         plan.left = {u for u in (nodes if nodes is not None else range(len(p._node_ids)))
                      if tmask is None or masks[u] & tmask}
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "dominators":
+        plan.certificate = req["certificate"]
+        plan.sources = _nodes(p, req["sources"], "sources")
+        plan.targets = None if req["targets"] is None else _nodes(p, req["targets"], "targets")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
     elif op == "periodicity":
         raise RequestError("unsupported", "unsupported_operation", "periodicity runs on a periodic projection: the "
@@ -1829,4 +1834,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "max_flow": (lambda p, plan, ctl: flows.search_flow(p, plan, ctl),
                             lambda p, plan, st: flows.answer_flow(p, plan, st)),
                "matching": (lambda p, plan, ctl: flows.search_matching(p, plan, ctl),
-                            lambda p, plan, st: flows.answer_matching(p, plan, st))}
+                            lambda p, plan, st: flows.answer_matching(p, plan, st)),
+               "dominators": (lambda p, plan, ctl: dominators.search(p, plan, ctl),
+                              lambda p, plan, st: dominators.answer(p, plan, st))}

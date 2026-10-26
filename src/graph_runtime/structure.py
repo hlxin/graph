@@ -176,7 +176,7 @@ def answer_components(p: Any, plan: SimpleNamespace, st: SimpleNamespace) -> tup
     scope between its nodes (strong ones with their flags); ``total``: how many components the selection has
     (whatever their size), when the search finished."""
     from .engine import _back_sides, _sides
-    ids, eids, names, rel = p._node_ids, p._edge_ids, p._relations, p._edge_rel
+    ids = p._node_ids
     strong = plan.connectivity == "strong"
     want = None if plan.nodes is None else set(plan.nodes)
     either = _either(plan)

@@ -440,6 +440,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_flow_problems(request, answer, status))
     elif op == "matching":
         out.extend(_matching_problems(request, answer, status))
+    elif op == "dominators":
+        out.extend(_dominator_problems(request, answer, status))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -759,6 +761,68 @@ def _matching_problems(request: dict, answer: dict, status: str) -> list[str]:
     return out
 
 
+def _acyclic(parent: Mapping) -> bool:
+    """Whether every chain of parent links ends (at a node with no parent link), each link followed once: a walk
+    stops at a node already settled, and meeting a node of its own walk is a cycle."""
+    state: dict = {}
+    for start in parent:
+        walk, x = [], start
+        while x in parent and x not in state:
+            state[x] = 1
+            walk.append(x)
+            x = parent[x]
+        if state.get(x) == 1:
+            return False
+        for y in walk:
+            state[y] = 2
+    return True
+
+
+def _dominator_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A dominators answer's own consistency, read without the records: nothing claimed when interrupted; when
+    complete, the tree (without targets) by node ID, each node's dominator another listed node, every chain ending at
+    a node with none, the sources among those; or (with targets) one chain per target in order, an unreached target
+    with no dominators; a certificate exactly when asked for, listing every reached node once. Whether the tree is the
+    dominator tree is checked against the records from the certificate (:func:`graph_runtime.verify_result`)."""
+    out = []
+    if status != COMPLETED:
+        if any(answer[k] is not None for k in ("reached", "tree", "chains", "certificate")):
+            out.append("an interrupted dominators answer claims nothing: every field is null")
+        return out
+    if type(answer["reached"]) is not int:
+        out.append("a complete answer says how many nodes the sources reach")
+    if (answer["tree"] is None) != (request["targets"] is not None) or (answer["chains"] is None) != (
+            request["targets"] is None):
+        out.append("a tree comes exactly without targets, chains exactly with them")
+    tree = answer["tree"]
+    if tree is not None:
+        names = [e["node"] for e in tree]
+        parent = {e["node"]: e["idom"] for e in tree}
+        if names != sorted(set(names)) or len(names) != answer["reached"] or any(
+                d is not None and (d not in parent or d == n) for n, d in parent.items()):
+            out.append("the tree lists each reached node once, by node ID, its dominator another listed node")
+        elif any(parent.get(s, 0) is not None for s in request["sources"]):
+            out.append("a source has no dominator")
+        else:
+            if not _acyclic(parent):                         # every chain of dominators ends
+                out.append("the dominators form a tree")
+    chains = answer["chains"]
+    if chains is not None:
+        if [c["target"] for c in chains] != request["targets"]:
+            out.append("one chain per target, in the request's order")
+        for c in chains:
+            doms = list(c["dominators"])
+            if len(set(doms)) != len(doms) or c["target"] in doms or (not c["reachable"] and doms):
+                out.append(f"the chain of {c['target']!r} names each dominator once, not the target, none when "
+                           "the target is not reached")
+    cert = answer["certificate"]
+    if (cert is not None) != bool(request["certificate"]):
+        out.append("a certificate comes exactly when asked for, on a complete answer")
+    elif cert is not None and len({e["node"] for e in cert["order"]}) != answer["reached"]:
+        out.append("the certificate lists every reached node once")
+    return out
+
+
 def _periodicity_problems(request: dict, answer: dict, status: str) -> list[str]:
     """A periodicity answer's own consistency, read without the records: every requested image placed once (all of
     them when complete), components in order of their first seed; per component one tree over its listed nodes, rooted
@@ -799,13 +863,8 @@ def _periodicity_problems(request: dict, answer: dict, status: str) -> list[str]
         if sum(1 for x in c["nodes"] if x["via"] is None) != 1 or None in parent.values():
             out.append(f"{where}: one listed node is the tree's root, and every hop comes from a listed node's image")
             continue
-        for k in parent:                                    # the tree has no cycle: every chain ends at the root
-            at, steps = k, 0
-            while at in parent and steps <= len(parent):
-                at, steps = parent[at], steps + 1
-            if at in parent:
-                out.append(f"{where}: the tree of hops is circular")
-                break
+        if not _acyclic(parent):                            # the tree has no cycle: every chain ends at the root
+            out.append(f"{where}: the tree of hops is circular")
         basis = [tuple(r) for r in c["basis"]]
         if hermite(basis, dims) != basis or c["rank"] != len(basis) or c["copies"] != copies(basis):
             out.append(f"{where}: the basis is in Hermite normal form, with the rank and copies it states")

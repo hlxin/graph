@@ -400,6 +400,19 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                         b.add_edge(('L', u), ('R', v))
             size = len(nx.bipartite.maximum_matching(b, top_nodes=[('L', u) for u in left])) // 2
             assert (exp['matching_size'], exp['left_count'], exp['deficiency']) == (size, len(left), len(left) - size)
+        elif op == 'dominators':
+            from test_dominators import oracle as dominator_oracle
+            want = dominator_oracle(g['nodes'], g['edges'], case['request']['scope'], r['sources'])
+            if 'idoms' in exp:
+                assert exp['idoms'] == want, case['name']
+            if 'reached_count' in exp:
+                assert exp['reached_count'] == len(want), case['name']
+            for t, chain in exp.get('dominator_chains', {}).items():
+                walk, k = [], want.get(t)
+                while k is not None:
+                    walk.append(k)
+                    k = want[k]
+                assert chain == (walk[::-1] if t in want else None), case['name']
         elif op == 'pattern':
             raw = case['request']             # the brute force expands the hierarchies itself
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],

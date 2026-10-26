@@ -195,6 +195,18 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     for key, field in (("matching_size", "size"), ("left_count", "left_count"), ("deficiency", "deficiency")):
         if key in exp and done and answer.get(field) != exp[key]:
             problems.append(f"{field} {answer.get(field)!r}, expected {exp[key]}")
+    if "idoms" in exp and done:                             # dominators: each reached node's immediate dominator
+        got = {e["node"]: e["idom"] for e in answer.get("tree") or []}
+        if got != exp["idoms"]:
+            problems.append(f"immediate dominators {got}, expected {exp['idoms']}")
+    if "dominator_chains" in exp and done:
+        got = {c["target"]: list(c["dominators"]) if c["reachable"] else None for c in answer.get("chains") or []}
+        if got != exp["dominator_chains"]:
+            problems.append(f"dominator chains {got}, expected {exp['dominator_chains']}")
+    if "reached_count" in exp and done and answer.get("reached") != exp["reached_count"]:
+        problems.append(f"reached {answer.get('reached')}, expected {exp['reached_count']}")
+    if exp.get("claims_nothing") and any(v is not None for v in answer.values()):
+        problems.append("an interrupted answer that cannot claim anything lists nothing")
     if "component_count" in exp and done and answer.get("components") != exp["component_count"]:
         problems.append(f"components {answer.get('components')}, expected {exp['component_count']}")
     if "count" in exp and answer.get("count") != exp["count"]:

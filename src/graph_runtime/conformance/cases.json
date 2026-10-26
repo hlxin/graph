@@ -1531,6 +1531,80 @@
    "bindings": {
     "source": "conformance-g16@1"
    }
+  },
+  "G17": {
+   "nodes": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "F",
+    "P",
+    "X",
+    "Y"
+   ],
+   "edges": [
+    {
+     "id": "d1",
+     "source": "F",
+     "target": "A",
+     "relation": "R"
+    },
+    {
+     "id": "d2",
+     "source": "A",
+     "target": "B",
+     "relation": "R"
+    },
+    {
+     "id": "d3",
+     "source": "A",
+     "target": "C",
+     "relation": "R"
+    },
+    {
+     "id": "d4",
+     "source": "B",
+     "target": "D",
+     "relation": "R"
+    },
+    {
+     "id": "d5",
+     "source": "C",
+     "target": "D",
+     "relation": "R"
+    },
+    {
+     "id": "d6",
+     "source": "D",
+     "target": "P",
+     "relation": "R"
+    },
+    {
+     "id": "d7",
+     "source": "X",
+     "target": "Y",
+     "relation": "R"
+    },
+    {
+     "id": "d8",
+     "source": "P",
+     "target": "A",
+     "relation": "R"
+    },
+    {
+     "id": "d9",
+     "source": "C",
+     "target": "C",
+     "relation": "R"
+    }
+   ],
+   "relations": [
+    "R"
+   ],
+   "bindings": {
+    "source": "conformance-g17@1"
+   }
   }
  },
  "cases": [
@@ -7807,6 +7881,171 @@
     "matching_size": 2,
     "left_count": 2,
     "deficiency": 0
+   }
+  },
+  {
+   "name": "dominators-tree",
+   "covers": [
+    "dominator tree",
+    "a back edge",
+    "a self-loop"
+   ],
+   "graph": "G17",
+   "request": {
+    "operation": "dominators",
+    "sources": [
+     "F"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "reached_count": 6,
+    "idoms": {
+     "A": "F",
+     "B": "A",
+     "C": "A",
+     "D": "A",
+     "F": null,
+     "P": "D"
+    }
+   }
+  },
+  {
+   "name": "dominators-chains",
+   "covers": [
+    "each target's dominators",
+    "an unreached target"
+   ],
+   "graph": "G17",
+   "request": {
+    "operation": "dominators",
+    "sources": [
+     "F"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "targets": [
+     "P",
+     "Y",
+     "F"
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "reached_count": 6,
+    "dominator_chains": {
+     "F": [],
+     "P": [
+      "F",
+      "A",
+      "D"
+     ],
+     "Y": null
+    }
+   }
+  },
+  {
+   "name": "dominators-two-sources",
+   "covers": [
+    "several sources: nodes no single node dominates"
+   ],
+   "graph": "G17",
+   "request": {
+    "operation": "dominators",
+    "sources": [
+     "B",
+     "F"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "reached_count": 6,
+    "idoms": {
+     "A": null,
+     "B": null,
+     "C": "A",
+     "D": null,
+     "F": null,
+     "P": "D"
+    }
+   }
+  },
+  {
+   "name": "dominators-reverse-scope",
+   "covers": [
+    "dominators along reverse hops"
+   ],
+   "graph": "G17",
+   "request": {
+    "operation": "dominators",
+    "sources": [
+     "P"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "reverse"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "reached_count": 6,
+    "idoms": {
+     "A": "D",
+     "B": "D",
+     "C": "D",
+     "D": "P",
+     "F": "A",
+     "P": null
+    }
+   }
+  },
+  {
+   "name": "dominators-expansion-budget",
+   "covers": [
+    "an interrupted search claims nothing"
+   ],
+   "graph": "G17",
+   "request": {
+    "operation": "dominators",
+    "sources": [
+     "F"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "limits": {
+     "max_expansions": 2
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "claims_nothing": true
    }
   }
  ]

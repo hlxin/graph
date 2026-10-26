@@ -833,6 +833,141 @@
         "reverse"
       ]
     },
+    "dominators_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reached",
+        "tree",
+        "chains",
+        "certificate"
+      ],
+      "properties": {
+        "reached": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tree": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "idom"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "idom": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/id"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chains": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "target",
+                  "reachable",
+                  "dominators"
+                ],
+                "properties": {
+                  "target": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "reachable": {
+                    "type": "boolean"
+                  },
+                  "dominators": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/id"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "order"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "low_high"
+                },
+                "order": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "idom"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "idom": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/id"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "dominators: how many nodes the sources reach; without targets, each reached node and its immediate dominator (null when no single node dominates it); with targets, each target's dominators from the sources toward it. The low_high certificate lists every reached node with its immediate dominator in a low-high order of the dominator tree. An interrupted answer claims nothing (every field null)."
+    },
     "exact": {
       "type": "string",
       "pattern": "^(0|[1-9][0-9]*)(/[1-9][0-9]*)?$(?![\\s\\S])",
@@ -3793,6 +3928,58 @@
             }
           },
           "description": "matching: left names the nodes to pair (node_types, nodes, or both); scope leads from a left node to its candidate partners outside the left set."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "sources",
+            "scope",
+            "targets",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "dominators"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "sources": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "targets": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "dominators: the nodes every walk of hops in scope from a source to a node passes through; targets null gives the whole dominator tree, else each target's dominators."
         }
       ]
     },
@@ -4341,7 +4528,8 @@
                   "components",
                   "biconnectivity",
                   "max_flow",
-                  "matching"
+                  "matching",
+                  "dominators"
                 ]
               }
             }
@@ -5247,6 +5435,49 @@
             "properties": {
               "operation": {
                 "const": "matching"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "dominators"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/dominators_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "dominators"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "dominators"
               }
             }
           }
