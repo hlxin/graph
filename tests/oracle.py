@@ -11,6 +11,13 @@ RELATIONS = ("R", "S", "T")
 TYPES = ("A", "B", "C")
 
 
+def is_d_separator(g, x, y, z):
+    """networkx's d-separation test: is_d_separator since networkx 3.3, d_separated before it (removed in 3.5); the
+    declared minimum is networkx 3.0."""
+    import networkx as nx
+    return (getattr(nx, "is_d_separator", None) or nx.d_separated)(g, x, y, z)
+
+
 def hops_of(edges, scope):
     """Every hop the scope allows, as (from, to, edge id)."""
     allowed = {(s["relation"], s["direction"]) if isinstance(s, dict) else tuple(s) for s in scope}

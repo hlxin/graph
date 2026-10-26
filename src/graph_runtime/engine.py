@@ -1041,6 +1041,9 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
     link: list = [None] * len(steps)
     cap = plan.max_results if plan.answer == "rows" else 0
     count = 0
+    loops = {j: {u for u, by in index[j].items() if u in by}       # a closing step from a variable to itself
+             for j, s in enumerate(steps) if s.closing and s.parent == s.child}
+    positions: dict[tuple, dict[int, list]] = {}            # (step, parent node) -> hop target -> positions
 
     def allowed(j: int, role: str) -> Any:
         """The nodes closing step j allows the variable being bound, given the other one's node."""
@@ -1049,18 +1052,21 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
             return index[j].get(val[s.parent], {})
         if role == "from":
             return back[j].get(val[s.child], ())
-        return {u for u, by in index[j].items() if u in by}
+        return loops[j]
 
-    def admit(hs: list, sets: list) -> list:
-        """The hops whose node every set allows, in their canonical order, iterating the smallest side."""
+    def admit(key: tuple, hs: Any, sets: list) -> Any:
+        """The hops whose node every set allows, in their canonical order, iterating the smallest side. The hops are
+        indexed by target once per step and parent node, so a binding costs the smallest side, not every hop."""
         if not sets:
             return hs
         smallest = min(sets, key=len)
         if len(hs) <= len(smallest):
             return [h for h in hs if all(h[1] in x for x in sets)]
-        position: dict[int, list] = {}
-        for k, h in enumerate(hs):
-            position.setdefault(h[1], []).append(k)
+        position = positions.get(key)
+        if position is None:
+            position = positions[key] = {}
+            for k, h in enumerate(hs):
+                position.setdefault(h[1], []).append(k)
         picked = [k for w in smallest if w in position and all(w in x for x in sets) for k in position[w]]
         return [hs[k] for k in sorted(picked)]
 
@@ -1087,7 +1093,7 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
         u = val[s.parent]
         hs = () if u is None else st.hops[i].get(u, ())
         if checks.get(i):
-            hs = admit(list(hs), [allowed(j, role) for j, role in checks[i]])
+            hs = admit((i, u), hs, [allowed(j, role) for j, role in checks[i]])
         if not hs:
             if s.optional:                                   # an optional step: no closing step reaches its variable
                 val[s.child], link[i] = None, None
@@ -1101,7 +1107,7 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
 
     roots = sorted(kept[0])
     if checks.get(-1):
-        roots = [h[1] for h in admit([(None, u, None) for u in roots], [allowed(j, r) for j, r in checks[-1]])]
+        roots = [h[1] for h in admit((-1,), [(None, u, None) for u in roots], [allowed(j, r) for j, r in checks[-1]])]
     try:
         for u in roots:
             tick()
