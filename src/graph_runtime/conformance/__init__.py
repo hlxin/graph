@@ -1,8 +1,8 @@
 """Backend conformance: language-neutral cases (``cases.json``) that every GRAPH backend must pass.
 
 Each case names a graph, a request, an execution context and what the answer must be, written by hand from the
-graph. A completed answer must match exactly; which of several equally good witnesses it gives is free, unless the
-case names the one optimal witness (``witness_edges``). An interrupted answer may list only what the full answer
+graph. A completed answer must match exactly; ``witness_edges`` checks the canonical choice, including ties.
+An interrupted answer may list only what the full answer
 holds, at the same depths: what it lists is never wrong, and nothing it leaves out is denied. Every witness is
 checked against the graph's records with :func:`graph_runtime.verify_result`.
 
@@ -19,7 +19,9 @@ from fractions import Fraction
 from importlib import resources
 from typing import Any
 
-from ..projection import Projection
+from ..projection import CONTRACT, Projection
+from ..request import normalize_request
+from ..errors import RequestError
 from ..verify import verify_result
 
 
@@ -32,6 +34,8 @@ def run_conformance(execute: Callable[..., Any] | None = None) -> dict:
     if execute is None:
         from ..engine import execute
     suite = load_cases()
+    if suite["contract"] != CONTRACT:
+        raise ValueError("conformance cases must name the runtime contract")
     failures = []
     for case in suite["cases"]:
         graph = suite["graphs"][case["graph"]]
@@ -49,6 +53,12 @@ def run_conformance(execute: Callable[..., Any] | None = None) -> dict:
             res = execute(p, request, **kwargs)
             data = res.to_dict() if hasattr(res, "to_dict") else dict(res)
             problems = check_case(case, data, graph)
+            if not problems and "timeout" not in kwargs and "cancel" not in kwargs:
+                again = execute(p, request, **kwargs)
+                repeated = again.to_dict() if hasattr(again, "to_dict") else dict(again)
+                problems.extend(check_case(case, repeated, graph))
+                if data.get("result_id") != repeated.get("result_id"):
+                    problems.append("repeating the same projection and request changed result_id")
         except Exception as exc:  # noqa: BLE001 - a backend that raises fails the case
             problems = [f"raised {type(exc).__name__}: {exc}"]
         if problems:
@@ -69,6 +79,23 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     if status not in statuses:
         return [f"status {status!r} ({(data.get('error') or {}).get('code')}), expected {statuses}"]
     problems = list(verify_result(data, nodes=graph["nodes"], edges=graph["edges"]))
+    p = Projection.build(**graph)
+    ctx = case.get("context") or {}
+    raw = {**case["request"], "projection": ctx.get("request_projection", p.identity)}
+    if data.get("projection") != p.identity:
+        problems.append("result is not bound to the case's projection")
+    if data.get("operation") != raw.get("operation"):
+        problems.append("result does not name the case's operation")
+    try:
+        request = normalize_request(raw)
+    except RequestError:
+        if data.get("request") is not None:
+            problems.append("an unnormalizable request must not be echoed as normalized")
+    else:
+        if data.get("request") != request.to_dict() or data.get("request_id") != request.request_id:
+            problems.append("result is not bound to the case's normalized request")
+    if problems:
+        return problems
     if "error_code" in exp and (data.get("error") or {}).get("code") != exp["error_code"]:
         problems.append(f"error {(data.get('error') or {}).get('code')!r}, expected {exp['error_code']!r}")
     if status == "interrupted" and "interruption" in exp and data["interruption"]["reason"] != exp["interruption"]:
@@ -84,6 +111,8 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
                 problems.append(f"{key} {got} lists what the full answer {exp[key]} does not hold")
     if "count" in exp and answer.get("count") != exp["count"]:
         problems.append(f"count {answer.get('count')}, expected {exp['count']}")
+    if "discovered" in exp and data["stats"]["discovered"] != exp["discovered"]:
+        problems.append(f"discovered {data['stats']['discovered']}, expected {exp['discovered']}")
     if "found" in exp:
         found = answer.get("found")
         if done and found is not exp["found"]:
@@ -100,5 +129,5 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
     if "witness_edges" in exp and done:
         got_edges = [h["edge"] for h in (answer.get("witness") or {}).get("hops") or []]
         if got_edges != exp["witness_edges"]:
-            problems.append(f"witness {got_edges}, expected the one optimal witness {exp['witness_edges']}")
+            problems.append(f"witness {got_edges}, expected the canonical witness {exp['witness_edges']}")
     return problems

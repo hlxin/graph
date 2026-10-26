@@ -169,6 +169,18 @@ def test_a_changed_document_makes_its_projection_stale(scale_env):
     assert adapter.bindings_of(doc, spec) == dict(p.bindings)      # the document itself was not changed
 
 
+@pytest.mark.parametrize("binding", ["source", "schema", "policy"])
+def test_trace_checks_reused_projection_bindings(scale_env, binding):
+    doc, spec = scale_env["document"]("examples/scale-catal/example.json")
+    bindings = adapter.bindings_of(doc, spec)
+    old = adapter.projection_from_document(doc, spec, bindings={**bindings, binding: "an older binding"})
+    plan = generated_plans(doc, spec)[0]
+    rows = adapter.trace(doc, spec, plan, old)["records"]
+    assert rows
+    assert all(r["status"] == STALE and r["error"]["code"] == "bindings_changed" and r["found"] is None
+               and not r["links"] and not r["evidence"] for r in rows)
+
+
 # ---------------------------------------------------------------------------------------------- what rests on retractions
 def compare_resting(doc, spec, tally):
     """GRAPH's dependency impact against scale.lifecycle.resting on one document: the same records, each resting on

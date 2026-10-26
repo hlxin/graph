@@ -22,9 +22,10 @@ from types import MappingProxyType
 from typing import Any, NamedTuple
 
 from ._canonical import canonical_json, is_digest
+from ._validation import shape_problems
 from .errors import ProjectionError
 
-CONTRACT = "graph-runtime/v0"
+CONTRACT = "graph-runtime/v0.1"
 FORWARD, REVERSE = "forward", "reverse"
 DIRECTIONS = (FORWARD, REVERSE)
 PROJECTION_KIND = "graph_runtime.projection"
@@ -104,6 +105,9 @@ class Projection:
 
         Raises :class:`ProjectionError` for a duplicate ID, an edge whose source or target is not a node, a relation or
         type outside a declared vocabulary, or a hypothesis candidate. The records passed in are only read."""
+        for name, records in (("nodes", nodes), ("edges", edges)):
+            if isinstance(records, (str, bytes, Mapping)) or not isinstance(records, Iterable):
+                raise ProjectionError("invalid_record", f"{name} must be an iterable of records")
         binds: dict[str, str] = {}
         if bindings is not None:
             if not isinstance(bindings, Mapping):
@@ -211,15 +215,18 @@ class Projection:
 
     @classmethod
     def from_dict(cls, data: Mapping) -> "Projection":
-        """Rebuild a projection from :meth:`to_dict`; when ``identity`` is given it must match the rebuilt one."""
+        """Rebuild a complete snapshot from :meth:`to_dict` and check its required identity."""
         if not isinstance(data, Mapping) or data.get("kind") != PROJECTION_KIND:
             raise ProjectionError("invalid_snapshot", f"a projection snapshot has kind {PROJECTION_KIND!r}")
         if data.get("contract") != CONTRACT:
             raise ProjectionError("unsupported_contract", f"this runtime reads contract {CONTRACT!r}, not "
                                   f"{data.get('contract')!r}")
-        p = cls.build(nodes=data.get("nodes") or [], edges=data.get("edges") or [], relations=data.get("relations"),
-                      node_types=data.get("node_types"), bindings=data.get("bindings"))
-        if data.get("identity") is not None and data["identity"] != p.identity:
+        problems = shape_problems("projection", dict(data))
+        if problems:
+            raise ProjectionError("invalid_snapshot", "; ".join(problems))
+        p = cls.build(nodes=data["nodes"], edges=data["edges"], relations=data["relations"],
+                      node_types=data["node_types"], bindings=data["bindings"])
+        if data["identity"] != p.identity:
             raise ProjectionError("identity_mismatch", f"the snapshot says {data['identity']}, its records give "
                                   f"{p.identity}")
         return p
@@ -281,7 +288,8 @@ class Projection:
         """The binding names whose value differs from ``current`` (or that one side lacks): empty while the projection
         still describes what it was built from."""
         names = set(self._bindings) | set(current)
-        return tuple(sorted((n for n in names if self._bindings.get(n) != current.get(n)), key=repr))
+        return tuple(sorted((n for n in names if n not in self._bindings or n not in current
+                             or self._bindings[n] != current[n]), key=repr))
 
     def to_dict(self) -> dict:
         """A JSON-ready snapshot, with its identity; :meth:`from_dict` rebuilds and checks it."""

@@ -61,7 +61,8 @@ questions:
 
 - **The snapshot** (`projection` alone, the current projection). A different identity from the one the candidate
   was formed on makes it stale (`projection_changed`). The same identity means nothing it references inside the
-  projection has changed.
+  projection has changed. Missing node or edge references, and result references (which a projection does not
+  contain), remain undecided even when the identity matches.
 - **The dependencies** (`impact`, a `dependency_impact` result of the revised nodes; `projection`, when its identity
   is the impact's, so that GRAPH can check it holds a node). A referenced node that was revised (`input_revised`),
   or that the impact reaches (`input_affected`, with the witness), makes the candidate stale.
@@ -91,6 +92,15 @@ express. Serialization preserves:
 - the assumptions
 - opposing evidence
 - the proposed tests
+
+Consumer extension object keys must be strings; transport never coerces keys and loses an entry. Finite integer
+scores are kept exactly, including values beyond the float range. Invalid proposed-test bearings and malformed
+JSON are reported as candidate problems. Lifecycle date-times retain all fractional digits: comparable date-times
+(both with offsets or both without) are ordered by their full instant/local time. Mixed date/date-time or
+offset/offset-free forms compare days, using the UTC day for an offset-bearing date-time. Calendar validity,
+chronology and normalized observation uniqueness require runtime checks beyond the schema's shape checks.
+
+`witness_refs` includes the source node of a zero-hop witness as well as its result identity.
 
 ## The synthetic example
 

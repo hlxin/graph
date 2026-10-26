@@ -42,6 +42,8 @@ request, and one person's approval.
 `trace(doc, spec, plan)` takes a plan whose steps are one chain of edge steps. It runs the chain as a GRAPH typed
 path from each matched record. Each record gets a witness (the original link IDs, in step order) or a complete
 negative, plus the evidence those links cite (`source`, `locator`, `quote`) and the `result_id` of its result.
+When a projection is supplied for reuse, `trace` checks the current document, schema and policy bindings before
+execution. A mismatch produces `stale_snapshot` with no witness or evidence mapped from the changed document.
 
 **Parity.** SCALE runs the plan's structural form (`structural`: the same match and steps, with filters, text,
 date, retraction and own-work rules left out, and evidence on). GRAPH and SCALE must then agree on three things:

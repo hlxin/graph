@@ -6,7 +6,7 @@
   ],
   "basis": [
     {
-      "ref": "sha256:09e515a7fcbf7878c26b0aafdbd828aceafae91697920112e66a13f83a799375",
+      "ref": "sha256:c84bd271876de47076b6b2babcadb31838db0327b85e51a5a2a104fabf4eeaf2",
       "type": "result"
     },
     {
@@ -38,7 +38,7 @@
       "type": "node"
     }
   ],
-  "contract": "graph-runtime/v0",
+  "contract": "graph-runtime/v0.1",
   "dependencies": [
     {
       "ref": "input:feedstock-table-v1",
@@ -51,7 +51,7 @@
   ],
   "epistemic_status": "unverified",
   "extensions": null,
-  "id": "hc:sha256:4f497c3a2fc30617aa3feb35d1df2777f48e17b0a05861ac2e3b98d844e40a61",
+  "id": "hc:sha256:de04811444971fcc7bee96d729e37821372a0e81029419c74f8eeae6be839be5",
   "kind": "hypothesis_candidate",
   "lifecycle": [
     {
@@ -66,7 +66,7 @@
     "name": "examples/synthetic_revision",
     "version": "1"
   },
-  "projection": "sha256:42258cb4cd481477debeb3914a17ca510034bc5607410e04744109376f4b1ab5",
+  "projection": "sha256:cbda37dbb0dfd3ba0082a6f880d1b60744db28a0b64cd6b708590c0c670f33df",
   "proposed_relations": [],
   "proposed_tests": [
     {
@@ -88,7 +88,7 @@
       ]
     }
   ],
-  "record_digest": "sha256:ffba892139a76062183931198f38d17a856dd0fc38f04748506a2c10eb7be93d",
+  "record_digest": "sha256:046a0aa8f94d8a76ff05ea1f60f9eaee3154695c4e4fadb40b76d4dc81821cdd",
   "revision": 1,
   "scope": "Synthetic example: the order within ranking:screen-1 only. No claim about any real catalyst.",
   "scores": [

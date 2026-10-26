@@ -133,7 +133,7 @@ def test_projection_is_immutable():
 
 def test_records_are_only_read():
     nodes, edges = copy.deepcopy(NODES), copy.deepcopy(EDGES)
-    build()
+    build(nodes=nodes, edges=edges)
     assert (nodes, edges) == (NODES, EDGES)
 
 

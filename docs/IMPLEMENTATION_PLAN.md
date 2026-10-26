@@ -2,14 +2,14 @@
 
 The developer note's work sequence ([GRAPH_Developer_Note_for_Claude.md](GRAPH_Developer_Note_for_Claude.md), section
 5) has six work items. This file records where each stands, and the evidence for each acceptance requirement of
-section 6. Status as of 25 October 2026, contract `graph-runtime/v0`, runtime `0.1.0.dev0`.
+section 6. Status as of 25 October 2026, contract `graph-runtime/v0.1`, runtime `0.1.0.dev0`.
 
 ## Work items
 
 | # | Work item | Status | What exists |
 | --- | --- | --- | --- |
 | 1 | Record the baseline and agree on the small contract | Done; **the contract awaits review** | [API_CONTRACT.md](API_CONTRACT.md) and the JSON Schema; the SCALE baseline in [SCALE_INTEGRATION.md](SCALE_INTEGRATION.md) |
-| 2 | The immutable view and four exact operations with structural witnesses | Done | `projection.py`, `request.py`, `engine.py`, `result.py`, `verify.py`; unit, scenario, oracle and limit tests; 34 conformance cases |
+| 2 | The immutable view and four exact operations with structural witnesses | Done | `projection.py`, `request.py`, `engine.py`, `result.py`, `verify.py`; unit, scenario, oracle and limit tests; 49 conformance cases |
 | 3 | Candidate-hypothesis validation and transport, without source mutation | Done | `hypotheses.py`, [HYPOTHESES_AND_PROVENANCE.md](HYPOTHESES_AND_PROVENANCE.md), the synthetic example |
 | 4 | The first real consumer adapter and scientific parity fixtures | First cut | SCALE's adapter, staged in `integrations/scale/`, with two read-only workflows and parity against SCALE's own engine; it still has to go to SCALE as a pull request |
 | 5 | Measure the whole request; evaluate one alternative backend only if needed | Started | every result's `timing` (bind, search, witness, result) and `benchmarks/bench.py` (build, serialization, workload identity, versions, raw results, parity); no alternative backend yet, and none is needed so far |
@@ -24,7 +24,7 @@ standard library only, and no application vocabulary.
 
 | Requirement (note, section 6) | Evidence | Where |
 | --- | --- | --- |
-| Exact results agree with independent small-graph checks and the consumer's reference behaviour | Every operation is checked on random graphs against an independent oracle (about 4,700 executions, with and without random limits), against NetworkX (reachability and integer-cost shortest paths), and against 34 hand-written conformance cases. SCALE parity covers 14 competency questions, 1,654 generated chains on 31 documents, and 18,951 records resting on injected retractions in 134 documents | `tests/test_oracle.py`, `tests/test_conformance.py`, `integrations/scale/` |
+| Exact results agree with independent small-graph checks and the consumer's reference behaviour | Every operation is checked on random graphs against an independent oracle (about 4,700 executions, with and without random limits), against NetworkX (reachability and integer-cost shortest paths), and against 49 hand-written conformance cases. SCALE parity covers 14 competency questions, 1,654 generated chains on 31 documents, and 18,951 records resting on injected retractions in 134 documents | `tests/test_oracle.py`, `tests/test_conformance.py`, `integrations/scale/` |
 | Witnesses survive parallel edges, cycles, reverse traversal and repeated nodes in typed patterns | Named scenarios for each (`e4`/`e5` twins, the `a-b-c-d-a` cycle, reverse hops, a witness `e1, e1, e1` that revisits nodes). Random graphs include parallel edges and self-loops, and `verify_result` re-checks every witness against the records | `tests/test_operations.py`, `tests/test_oracle.py` |
 | Large integer costs keep their order; missing, negative and non-finite costs are refused | Costs of `2**64 + 1` versus `2**64 + 2`, which a float sum cannot tell apart; floats added as exact rationals; each refusal code tested (`missing_cost`, `negative_cost` as unsupported, `non_finite_cost`, `invalid_cost`) | `tests/test_operations.py`, `tests/test_requests.py` |
 | Output limits, cancellation, deadlines and exhausted budgets cannot certify a negative | Each limit, with exact-fit and one-short cases. Random limits on every operation: an interrupted answer only lists what the full answer holds, and never says `found: false`. The JSON Schema and the conformance suite refuse a result that claims otherwise | `tests/test_limits.py`, `tests/test_oracle.py`, `tests/test_schemas.py`, `tests/test_conformance.py` |

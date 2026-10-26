@@ -110,6 +110,13 @@ def normalize_request(raw: Mapping | Request) -> Request:
     """Normalize a request (a mapping, as JSON gives it). Raises :class:`RequestError` with status ``failed`` for a
     malformed request and ``unsupported`` for one the v0 contract does not provide (another operation, a mode other
     than ``exact``, another contract version, negative costs)."""
+    try:
+        return _normalize_request(raw)
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise _fail("invalid_request", f"a request must be representable as JSON: {exc}") from None
+
+
+def _normalize_request(raw: Mapping | Request) -> Request:
     if isinstance(raw, Request):
         return raw
     if not isinstance(raw, Mapping):

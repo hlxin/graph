@@ -17,6 +17,7 @@ certified absent. A search that needs no further expansion completes, whatever t
 from __future__ import annotations
 
 import heapq
+import math
 import threading
 import time
 from collections import deque
@@ -112,12 +113,18 @@ def execute(projection: Projection, request: Mapping | Request, *, timeout: floa
         raise TypeError(f"execute runs on a Projection, not {type(projection).__name__}")
     if timeout is not None and deadline is not None:
         raise TypeError("give a timeout or a deadline, not both")
-    if not isinstance(check_interval, int) or check_interval < 1:
+    if type(check_interval) is not int or check_interval < 1:
         raise ValueError("check_interval is a positive integer")
+    for name, value in (("timeout", timeout), ("deadline", deadline)):
+        if value is not None and (type(value) not in (int, float) or
+                                  (isinstance(value, float) and not math.isfinite(value))):
+            raise ValueError(f"{name} is a finite number of seconds")
+    if not callable(clock):
+        raise TypeError("clock is callable")
     cancelled = _cancel_check(cancel)
-    if timeout is not None:
-        deadline = clock() + timeout
     try:
+        if timeout is not None:
+            deadline = clock() + timeout
         return _execute(projection, request, deadline, clock, cancelled, check_interval, current_bindings, started)
     except Exception as exc:  # noqa: BLE001 - the contract reports a runtime failure as a result, never raises it
         return _no_answer(FAILED, "internal_error", f"{type(exc).__name__}: {exc}", {"exception": type(exc).__name__},
@@ -264,7 +271,7 @@ def _costs(p: Projection, costs: Any, fwd: list[bool], rev: list[bool]) -> tuple
         if unknown:
             raise RequestError(FAILED, "unknown_relation", f"costs.by_relation names relations the projection does not "
                                f"declare: {unknown}", {"field": "costs", "relations": unknown})
-        scoped = sorted(p._relations[r] for r in range(len(p._relations)) if fwd[r] or rev[r])
+        scoped = sorted({p._relations[rel[ei]] for ei in in_scope})
         missing = [r for r in scoped if r not in table]
         if missing:
             raise RequestError(FAILED, "missing_cost", f"costs.by_relation gives no cost for the relations in scope "
@@ -320,6 +327,7 @@ def _search_bfs(p: Projection, plan: SimpleNamespace, ctl: _Control, strict: boo
         queue.append(s)
         if not strict:
             if len(order) >= cap:
+                st.discovered = len(plan.sources)
                 st.interruption = "output_limit"
                 return st
             depth[s] = 0
@@ -347,13 +355,13 @@ def _search_bfs(p: Projection, plan: SimpleNamespace, ctl: _Control, strict: boo
             if v not in level:
                 level[v] = d + 1
                 queue.append(v)
-    st.examined, st.discovered = examined, len(order)
+    st.examined, st.discovered = examined, len(level)
     return st
 
 
 def _answer_bfs(p: Projection, plan: SimpleNamespace, st: SimpleNamespace, strict: bool) -> tuple[dict, list[str]]:
     items = []
-    for v in st.order:
+    for v in sorted(st.order):
         par = st.parent.get(v)
         items.append({"node": p._node_ids[v], "depth": st.depth[v], "via": None if par is None else _via(p, *par)})
     if strict:

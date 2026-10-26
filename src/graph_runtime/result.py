@@ -21,11 +21,14 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
+from fractions import Fraction
 from typing import Any
 
 from ._canonical import canonical_json, digest, freeze, thaw
 from ._version import RUNTIME_NAME, __version__
+from ._validation import shape_problems
 from .projection import CONTRACT
+from .errors import RequestError
 
 COMPLETED, INTERRUPTED, UNSUPPORTED, FAILED, STALE = (
     "completed", "interrupted", "unsupported", "failed", "stale_snapshot")
@@ -97,7 +100,7 @@ class Result:
         body = {k: thaw(v) for k, v in data.items() if k not in ("result_id", "timing")}
         if data.get("result_id") != digest(body):
             raise ValueError("the result's content does not match its result_id")
-        problems = contract_problems(body)
+        problems = contract_problems(thaw(data))
         if problems:
             raise ValueError("the result breaks the contract: " + "; ".join(problems))
         return cls._wrap({**body, "result_id": data["result_id"]}, data.get("timing"))
@@ -173,13 +176,13 @@ class Result:
         return f"<Result {self.operation} {self.status} complete={self.complete}>"
 
     # ------------------------------------------------------------------------------------------------ reading answers
-    def _entries(self) -> dict[str, Mapping]:
+    def _entries(self) -> Mapping[str, Mapping]:
         key = _SET_OPERATIONS.get(self.operation or "")
         if key is None:
             raise ValueError(f"a {self.operation} result lists no node set")
         if self._index is None:
             items = (self.answer or {}).get(key) or ()
-            object.__setattr__(self, "_index", {e["node"]: e for e in items})
+            object.__setattr__(self, "_index", freeze({e["node"]: e for e in items}))
         return self._index
 
     def reachable(self, node_id: str) -> bool | None:
@@ -243,10 +246,19 @@ def contract_problems(data: Mapping) -> list[str]:
     them): the status, ``complete`` exactly for ``completed``, an answer exactly when the request ran, an
     interruption exactly when interrupted, an error exactly when not run, and ``found: false`` (or a proven optimum)
     only in a complete answer. :func:`graph_runtime.verify_result` adds the witnesses, checked against the records."""
+    try:
+        return _contract_problems(thaw(data))
+    except (TypeError, ValueError, KeyError, OverflowError, RecursionError, RequestError) as exc:
+        return [f"malformed result ({type(exc).__name__}: {exc})"]
+
+
+def _contract_problems(data: dict) -> list[str]:
+    if not isinstance(data, dict):
+        return ["a result is a mapping"]
     status = data.get("status")
     if status not in STATUSES:
         return [f"status {status!r} is not one of {list(STATUSES)}"]
-    out = []
+    out = shape_problems("result", data)
     if data.get("complete") is not (status == COMPLETED):
         out.append("complete is true exactly when the status is completed")
     ran = status in (COMPLETED, INTERRUPTED)
@@ -259,7 +271,7 @@ def contract_problems(data: Mapping) -> list[str]:
         out.append(f"a {status} result {'carries no error' if ran else 'carries an error with its code'}")
     if isinstance(answer, Mapping) and data.get("operation") in _WITNESS_OPERATIONS:
         found = answer.get("found")
-        if found not in (True, False, None):
+        if found is not True and found is not False and found is not None:
             out.append(f"found is true, false or null, not {found!r}")
         if found is False and status != COMPLETED:
             out.append("found is false only in a complete answer")
@@ -268,4 +280,149 @@ def contract_problems(data: Mapping) -> list[str]:
         if data.get("operation") == "shortest_path" and found is True \
                 and answer.get("optimal") is not (status == COMPLETED):
             out.append("a witness is proven optimal exactly when the search completed")
+    if out:
+        return out
+    body = {k: v for k, v in data.items() if k not in ("result_id", "timing")}
+    if data["result_id"] != digest(body):
+        out.append("the result's content does not match its result_id")
+    request = data["request"]
+    if request is None:
+        return out
+    from .request import normalize_request
+    req = normalize_request(request)
+    if canonical_json(req.to_dict()) != canonical_json(request):
+        out.append("the echoed request must be normalized")
+    if req.request_id != data["request_id"]:
+        out.append("the request's content does not match its request_id")
+    mismatch = data["projection"] != req.projection
+    stale_mismatch = status == STALE and data["error"]["code"] == "projection_mismatch"
+    if mismatch != stale_mismatch:
+        out.append("projection differs from the request only for projection_mismatch")
+    if not ran:
+        return out
+    stats, limits = data["stats"], request["limits"]
+    if any(type(value) is not int for value in stats.values()):
+        out.append("stats counters must be integers")
+    if stats["expansions"] > limits["max_expansions"]:
+        out.append("expansions exceed max_expansions")
+    if status == INTERRUPTED:
+        interruption = data["interruption"]
+        reason = interruption["reason"]
+        if type(interruption["expansions"]) is not int or (interruption["limit"] is not None
+                                                         and type(interruption["limit"]) is not int):
+            out.append("interruption counts must be integers")
+        if interruption["expansions"] != stats["expansions"]:
+            out.append("interruption and stats disagree on expansions")
+        limit_key = {"expansion_budget": "max_expansions", "output_limit": "max_results"}.get(reason)
+        if limit_key and (limit_key not in limits or interruption["limit"] != limits[limit_key]):
+            out.append("interruption limit disagrees with the request")
+        if reason == "expansion_budget" and stats["expansions"] != limits["max_expansions"]:
+            out.append("expansion_budget requires an exhausted budget")
+    op = data["operation"]
+    if op in _SET_OPERATIONS:
+        entries = answer[_SET_OPERATIONS[op]]
+        if type(answer["count"]) is not int or any(type(e["depth"]) is not int for e in entries):
+            out.append("answer counts and depths must be integers")
+        names = [e["node"] for e in entries]
+        if names != sorted(set(names)):
+            out.append("answer nodes must be unique and in ascending ID order")
+        if answer["count"] != len(entries) or len(entries) > limits["max_results"]:
+            out.append("answer count must match its entries and fit max_results")
+        if status == INTERRUPTED and data["interruption"]["reason"] == "output_limit" \
+                and len(entries) != limits["max_results"]:
+            out.append("output_limit requires a full output buffer")
+        strict = op == "dependency_impact"
+        seeds = set(request["changed" if strict else "sources"])
+        if strict and answer["changed"] != request["changed"]:
+            out.append("changed must match the request")
+        by_node = {e["node"]: e for e in entries}
+        allowed = {(s["relation"], s["direction"]) for s in request["scope"]}
+        for entry in entries:
+            node, depth, via = entry["node"], entry["depth"], entry["via"]
+            if request["max_depth"] is not None and depth > request["max_depth"]:
+                out.append("answer depth exceeds max_depth")
+            if depth == 0:
+                if node not in seeds:
+                    out.append("a depth-zero node must be a source")
+                continue
+            if (via["relation"], via["direction"]) not in allowed:
+                out.append("a via hop is outside the request's scope")
+            parent = by_node.get(via["from"])
+            # Impact paths end at a changed node at expansion depth zero, even if a cycle also reaches it.
+            if strict and depth == 1:
+                valid_parent = via["from"] in seeds
+            else:
+                valid_parent = parent is not None and parent["depth"] == depth - 1
+            if not valid_parent:
+                out.append("a via chain must decrease depth and end at a requested source")
+        if not strict and status == COMPLETED and any(by_node.get(s, {}).get("depth") != 0 for s in seeds):
+            out.append("a complete reachability answer includes every source at depth zero")
+    elif answer["found"] is True:
+        witness = answer["witness"]
+        hops = witness["hops"]
+        if type(witness["length"]) is not int or witness["length"] != len(hops):
+            out.append("witness length must match its hops")
+        if witness["source"] not in request["sources"]:
+            out.append("a witness must start at a requested source")
+        if request["targets"] is not None and witness["target"] not in request["targets"]:
+            out.append("a witness must end at a requested target")
+        at = witness["source"]
+        for hop in hops:
+            if hop["from"] != at:
+                out.append("witness hops must chain")
+            at = hop["to"]
+        if at != witness["target"]:
+            out.append("witness hops must end at the witness target")
+        if op == "typed_path":
+            if len(hops) != len(request["pattern"]):
+                out.append("a typed witness must match the pattern length")
+            for i, (hop, pos) in enumerate(zip(hops, request["pattern"])):
+                if hop["position"] != i or type(hop["position"]) is not int:
+                    out.append("typed hop positions must be consecutive integers")
+                if {"relation": hop["relation"], "direction": hop["direction"]} not in pos["scope"]:
+                    out.append("a typed hop must match its pattern scope")
+    if op == "shortest_path":
+        out.extend(_cost_problems(request, answer, status))
+    return out
+
+
+def _cost_problems(request: dict, answer: dict, status: str) -> list[str]:
+    out = []
+    (kind, table), = request["costs"].items()
+    rational = any(isinstance(v, float) for v in table.values())
+
+    def number(field):
+        value = answer[field]
+        if not rational:
+            if type(value) is not int or f"{field}_exact" in answer:
+                raise ValueError(f"{field} must be an integer in integer-cost mode")
+            return value
+        exact = answer[f"{field}_exact"]
+        number = Fraction(exact)
+        if str(number) != exact:
+            raise ValueError(f"{field}_exact must be a non-negative rational in lowest terms")
+        try:
+            nearest = float(number)
+        except OverflowError:
+            nearest = None
+        if value != nearest:
+            out.append(f"{field} must be the nearest float to {field}_exact (null on overflow)")
+        return number
+
+    lower = number("lower_bound") if status == INTERRUPTED else None
+    if answer["found"] is not True:
+        return out
+    cost = number("cost")
+    if lower is not None and lower > cost:
+        out.append("lower_bound exceeds the witness cost")
+    total = 0
+    for hop in answer["witness"]["hops"]:
+        if {"relation": hop["relation"], "direction": hop["direction"]} not in request["scope"]:
+            out.append("a shortest path hop must be in scope")
+        expected = table.get(hop["relation"] if kind == "by_relation" else hop["edge"])
+        if expected is None or hop["cost"] != expected or type(hop["cost"]) is not type(expected):
+            out.append("a hop cost must match the request")
+        total += Fraction(hop["cost"]) if rational else hop["cost"]
+    if total != cost:
+        out.append("the witness cost must equal the exact sum of hop costs")
     return out

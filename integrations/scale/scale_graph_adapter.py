@@ -125,10 +125,11 @@ def trace(doc: Mapping, spec: Mapping, plan: Mapping, projection: Projection | N
     and the result's id (its provenance)."""
     pattern = chain(plan, spec)
     p = projection if projection is not None else projection_from_document(doc, spec)
+    current = bindings_of(doc, spec)
     rows = []
     for rid in matched(doc, spec, plan):
         res: Result = execute(p, p.request("typed_path", sources=[rid], pattern=pattern,
-                                           **({"limits": limits} if limits else {})))
+                                           **({"limits": limits} if limits else {})), current_bindings=current)
         links = [h["edge"] for h in res.witness or []]
         rows.append({"record": rid, "status": res.status, "found": res.found, "links": links, "evidence": evidence_of(doc, links), "result_id": res.result_id,
                      **({"error": dict(res.error)} if res.error else {})})

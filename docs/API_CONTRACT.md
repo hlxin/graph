@@ -1,4 +1,4 @@
-# GRAPH contract `graph-runtime/v0`
+# GRAPH contract `graph-runtime/v0.1`
 
 This is the contract the runtime implements (`src/graph_runtime`). It was written on 25 October 2026 from the
 developer note ([GRAPH_Developer_Note_for_Claude.md](GRAPH_Developer_Note_for_Claude.md)). The handoff package the
@@ -7,6 +7,10 @@ Schema of every record is `src/graph_runtime/schemas/graph-runtime-v0.schema.jso
 
 Every operation binds an immutable **projection** and a normalized **request**, and returns a **result**. The
 runtime is exact-only and runs in process, on the CPU, with the standard library.
+
+Revision `v0.1` tightens transport validation, orders node-set answers by ascending ID, counts source search states
+consistently, and requires costs only for edges actually in scope. It supersedes `v0`; readers reject older
+contract tags. The schema retains its original filename. This revision follows `CLAUDE.md`'s contract-version rule.
 
 ## 1. Projections
 
@@ -18,8 +22,8 @@ Projection.build(nodes=..., edges=..., relations=None, node_types=None, bindings
 
 | Input | Form | Rule |
 | --- | --- | --- |
-| `nodes` | an ID, or `{"id", "types": [...]}` | IDs are unique, non-empty strings; types are strings |
-| `edges` | `{"id", "source", "target", "relation"}`; other keys are not read | IDs unique; both ends are nodes; one relation per edge |
+| `nodes` | an iterable of IDs or `{"id", "types": [...]}` records | IDs are unique, non-empty strings; types are strings; a bare string or mapping is not a record collection |
+| `edges` | an iterable of `{"id", "source", "target", "relation"}`; other keys are not read | IDs unique; both ends are nodes; one relation per edge |
 | `relations`, `node_types` | the declared vocabularies | may hold relations or types no record uses; default: those the records use |
 | `bindings` | `{name: text}` | what the projection describes: suggested `source`, `schema`, `policy` |
 
@@ -32,7 +36,8 @@ Projection.build(nodes=..., edges=..., relations=None, node_types=None, bindings
   change in a record, a vocabulary or a binding gives another. The identity can be reproduced from the records
   alone (`tests/test_projection.py`).
 - **Immutable.** No attribute can be set, and no internal container is mutable. The records passed in are only
-  read. `to_dict()` writes a JSON snapshot; `Projection.from_dict()` rebuilds it and checks its identity.
+  read. `to_dict()` writes a JSON snapshot; `Projection.from_dict()` requires every schema field (including identity,
+  bindings and vocabularies), rejects extra fields and malformed containers, rebuilds it and checks its identity.
 - **Source records only.** A record marked as a hypothesis candidate (`kind: hypothesis_candidate`,
   `epistemic_status: unverified`, or a `HypothesisCandidate`) is refused (`ProjectionError`, code
   `candidate_record`). A proposed relation is never a traversable edge.
@@ -55,7 +60,10 @@ A request names its operation, the identity of the projection it was made for, i
 
 Two requests that ask the same thing share one `request_id`.
 
-Common fields: `contract` (`graph-runtime/v0`), `operation`, `mode` (`exact`, the only mode), `projection` (the
+Node-ID sets, scopes, typed patterns and non-null node-type lists must be non-empty. A projection itself may be
+empty; requesting a node it does not contain fails as `unknown_node`.
+
+Common fields: `contract` (`graph-runtime/v0.1`), `operation`, `mode` (`exact`, the only mode), `projection` (the
 identity, required) and `limits`.
 
 **Scope.** A list of `{"relation", "direction"}`. `forward` follows an edge from its source to its target;
@@ -76,6 +84,7 @@ normalized request always states it.
 paths are added as integers, so large costs keep their exact order. When the request gives any float, every cost
 is added as an exact rational. In that rational mode, `cost` is the nearest float (null when the exact value is
 beyond the floats) and `cost_exact` is the exact value, `p/q` or `p`. Every edge in scope must have a cost. A
+declared relation with no in-scope edges needs no cost, for either cost-table form. A
 request whose text is not valid Unicode, or which holds a number too long to write as JSON, fails as
 `invalid_request`.
 
@@ -96,10 +105,15 @@ written as JSON, or a runtime failure is a result that states it. The checks run
    edges, and missing costs.
 5. The search.
 
+`timeout` and `deadline` are finite numbers of seconds (not booleans); a negative value is allowed and may already
+be expired. `clock` is callable and `check_interval` is a positive integer (not a boolean). Invalid execution
+arguments raise `TypeError` or `ValueError`; a failing clock or cancellation callback produces `failed/internal_error`.
+
 **Limits.**
 
-- **Expansion.** One expansion examines every in-scope hop of one search state. A state is a node, or a node at a
-  position of the pattern. `max_expansions` bounds the states expanded.
+- **Expansion.** One expansion starts examining the in-scope hops of one search state. A state is a node, or a node
+  at a position of the pattern. A witness or output limit can end that scan early. `max_expansions` bounds the states
+  expanded; checking a node with no in-scope hops still counts as an expansion.
 - **Output.** `max_results` bounds the nodes a reachability or impact answer lists.
 - **Deadline and cancellation.** A `timeout` (seconds) or `deadline` (a `clock()` time), and a `cancel` (a
   `CancelToken`, a `threading.Event` or a callable), are checked before the first expansion and then every
@@ -113,6 +127,8 @@ whatever its limits: a full answer that fits the limit is complete.
 **Order.**
 
 - Nodes and edges are ordered by ascending original ID (Unicode code point order).
+- Reachability and impact entries are serialized in ascending node ID order. Discovery and output-buffer selection
+  still follow the breadth-first order below; sorting the retained entries does not change their witnesses.
 - A node's hops are its forward-scope edges (it is their source) in ascending edge ID, then its reverse-scope edges
   (it is their target) in ascending edge ID.
 - Breadth-first searches run first in, first out, from the sources in ascending ID.
@@ -151,12 +167,12 @@ gave its edge. Answer: `{"found", "optimal", "cost", ["cost_exact"], "witness"}`
 | `operation`, `mode`, `projection`, `request`, `request_id` | what was asked, normalized, and of which projection |
 | `answer` | the operation's answer; null when the request was not run |
 | `interruption` | `{"reason": "expansion_budget" \| "output_limit" \| "deadline" \| "cancelled", "expansions", "limit"}` |
-| `error` | `{"code", "message", "detail"}` for `unsupported`, `failed` and `stale_snapshot` |
-| `stats` | `expansions`, `edges_examined` and `discovered` (states reached): deterministic counters |
+| `error` | `{"code", "message", ["detail"]}` for `unsupported`, `failed` and `stale_snapshot` |
+| `stats` | `expansions`, `edges_examined` and `discovered`: deterministic counters; discovered counts the source states plus newly retained search states, including changed nodes even when absent from the impact answer |
 | `limitations` | what the answer does not claim, in words |
-| `runtime`, `contract`, `kind` | `scale-graph-runtime` and its version, `graph-runtime/v0`, `graph_runtime.result` |
+| `runtime`, `contract`, `kind` | `scale-graph-runtime` and its version, `graph-runtime/v0.1`, `graph_runtime.result` |
 | `result_id` | the digest of everything but `timing` |
-| `timing` | wall-clock seconds for `bind_s`, `search_s`, `witness_s`, `result_s` and `total_s`; not part of `result_id` |
+| `timing` | wall-clock seconds for `bind_s`, `search_s`, `witness_s`, `result_s` and `total_s`; errors may report only result and total time; not part of `result_id` |
 
 - **Completed.** The answer is complete for this request on this projection. A complete negative (nothing reached,
   `found: false`) is scoped to the requested operation on the declared projection. It is not an absence claim about
@@ -167,12 +183,20 @@ gave its edge. Answer: `{"found", "optimal", "cost", ["cost_exact"], "witness"}`
   answer cannot say.
 - **Interrupted shortest path.** A tentative witness has `optimal: false`. `lower_bound` (with `lower_bound_exact`
   in rational mode) brackets the minimum: if a target is reachable at all, the minimum cost lies in
-  `[lower_bound, cost]`.
+  `[lower_bound, cost]`. In rational mode use the exact fields for this comparison; the displayed floats may round.
 - **Reproducible.** The same runtime, projection and request give the same `result_id`, unless a deadline or a
   cancellation interrupted the search.
-- **Read back.** `Result.from_dict` reads a result's JSON, another backend's included. It checks the `result_id`
-  and the contract's invariants (`graph_runtime.result.contract_problems`). `reachable`, `affected` and `found`
+- **Read back.** `Result.from_dict` reads a result's JSON, another backend's included. It checks the bundled schema's
+  shape rules and the contract's cross-field invariants (`graph_runtime.result.contract_problems`): result and
+  request digests, request normalization, operation/mode/projection binding, status/answer/error consistency,
+  limits, counters, canonical node order, counts, witness chains and exact cost sums and bounds. Only
+  `stale_snapshot/projection_mismatch` may bind a request to a different projection. These checks do not prove
+  completeness or minimality. `reachable`, `affected` and `found`
   give a negative only for a `completed` result.
+
+The schema describes JSON shapes. Digests, sorted sets, cross-field equality, cost arithmetic and membership in
+input records require runtime checks. JSON must contain finite numbers, valid Unicode and string object keys;
+Python integer fields reject booleans and floats even where JSON Schema considers `1.0` an integer.
 
 **Error codes.**
 
@@ -195,10 +219,11 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that shortest-path costs are the exact sum of the hop costs
 
   It does not check completeness or minimality; the oracle tests do.
-- `graph_runtime.conformance.run_conformance(execute)` runs 34 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 49 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
-  match exactly, witness choice aside unless the case names the one optimal witness. An interrupted answer may list
-  only what the full answer holds.
+  match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
+  the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
+  Cases without deadline or cancellation controls are repeated to check `result_id` reproducibility.
 
 ## 7. Not in v0
 

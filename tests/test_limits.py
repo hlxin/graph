@@ -48,7 +48,7 @@ def test_output_limit(small):
     res = run(small, "reachability", sources=["a", "b"], scope=[USES_F], limits={"max_results": 1})
     assert res.status == INTERRUPTED and listed(res) == ["a"]
     res = run(small, "dependency_impact", changed=["d"], scope=[USES_R], limits={"max_results": 3})
-    assert res.status == COMPLETED and listed(res, "affected") == ["c", "b", "a"]
+    assert res.status == COMPLETED and listed(res, "affected") == ["a", "b", "c"]
     res = run(small, "dependency_impact", changed=["d"], scope=[USES_R], limits={"max_results": 2})
     assert res.status == INTERRUPTED and res.affected("a") is None and res.affected("b") is True
     res = run(small, "dependency_impact", changed=["e"], scope=[USES_R], limits={"max_results": 0})

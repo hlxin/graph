@@ -15,7 +15,7 @@ The applications (SCALE, STATES, RATES, Cathanor) keep their scientific definiti
 records and workflows. GRAPH imports none of their vocabularies; each application reaches it through an adapter it
 owns.
 
-Status: **v0 in development** (`0.1.0.dev0`, contract `graph-runtime/v0`). Nothing is published. The distribution
+Status: **v0 in development** (`0.1.0.dev0`, contract `graph-runtime/v0.1`). Nothing is published. The distribution
 name `scale-graph-runtime` and the import name `graph_runtime` are proposals, not yet reserved or checked for
 availability (the bare PyPI name `graph` belongs to another project).
 
@@ -25,7 +25,7 @@ availability (the bare PyPI name `graph` belongs to another project).
 | --- | --- |
 | Projection | An immutable, read-only graph view of the consumer's records: original node and edge IDs kept, parallel edges kept as distinct records, integer remapping inside, and an identity digest bound to the consumer's source, schema and policy |
 | Operations | Exact **reachability**, **typed path** (a finite relation sequence, with optional node types per position), **shortest path** (explicit, finite, non-negative costs, with exact integer and rational arithmetic) and **dependency impact**, each with structural witnesses |
-| Limits | Expansion budget and output limit (part of the request), deadline and cancellation (execution controls). Any of them makes a result `interrupted`, and an interrupted result never certifies a negative |
+| Limits | Expansion budget and output limit (part of the request), deadline and cancellation (execution controls). A limit that prevents completion makes the result `interrupted`; a full answer that fits can complete. An interrupted result never certifies a negative |
 | Results | One contract: `completed`, `interrupted`, `unsupported`, `failed` or `stale_snapshot`, with the normalized request, the projection identity, the answer, statistics, limitations and a reproducible `result_id` |
 | Hypotheses | Candidate records that are always `unverified`, with discriminating proposed tests, calibrated or ordering-only scores, append-only lifecycle and assessment history, and staleness through dependency impact. They are never traversed |
 | Checks | `verify_result` re-checks every witness against the input records; JSON Schemas describe every record; a language-neutral conformance suite any backend must pass |

@@ -1,6 +1,6 @@
 {
- "contract": "graph-runtime/v0",
- "description": "Backend conformance cases: every expectation is written by hand from the graphs. A completed answer must match exactly (witness choice aside, unless witness_edges names the one optimal witness); an interrupted one must list only what the full answer holds, with valid witnesses.",
+ "contract": "graph-runtime/v0.1",
+ "description": "Backend conformance cases: expectations are written by hand from the developer note and graphs. Results bind the case projection and normalized request, retain canonical node order and witnesses, and never certify negatives when interrupted.",
  "graphs": {
   "G1": {
    "nodes": [
@@ -192,6 +192,13 @@
    ],
    "node_types": [],
    "bindings": {}
+  },
+  "EMPTY": {
+   "nodes": [],
+   "edges": [],
+   "relations": [
+    "R"
+   ]
   }
  },
  "cases": [
@@ -722,7 +729,14 @@
    },
    "expect": {
     "status": "completed",
-    "found": true
+    "found": true,
+    "witness_edges": [
+     "e1",
+     "e2",
+     "e4",
+     "e6",
+     "e1"
+    ]
    }
   },
   {
@@ -753,7 +767,10 @@
    },
    "expect": {
     "status": "completed",
-    "found": true
+    "found": true,
+    "witness_edges": [
+     "e4"
+    ]
    }
   },
   {
@@ -957,7 +974,11 @@
    "expect": {
     "status": "completed",
     "found": true,
-    "cost": 3
+    "cost": 3,
+    "witness_edges": [
+     "e3",
+     "e4"
+    ]
    }
   },
   {
@@ -1361,6 +1382,488 @@
    "expect": {
     "status": "failed",
     "error_code": "unknown_relation"
+   }
+  },
+  {
+   "name": "shortest-unused-relation-by-relation",
+   "covers": [
+    "empty scope records",
+    "explicit costs"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     [
+      "MENTIONS",
+      "forward"
+     ]
+    ],
+    "costs": {
+     "by_relation": {}
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": false
+   }
+  },
+  {
+   "name": "shortest-unused-relation-by-edge",
+   "covers": [
+    "empty scope records",
+    "explicit costs"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     [
+      "MENTIONS",
+      "forward"
+     ]
+    ],
+    "costs": {
+     "by_edge": {}
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": false
+   }
+  },
+  {
+   "name": "reachability-zero-output",
+   "covers": [
+    "zero output limit",
+    "discovered sources"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a",
+     "b"
+    ],
+    "scope": [
+     [
+      "USES",
+      "forward"
+     ]
+    ],
+    "limits": {
+     "max_results": 0
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "reached": {
+     "a": 0,
+     "b": 0,
+     "c": 1,
+     "d": 2
+    },
+    "count": 0,
+    "discovered": 2
+   }
+  },
+  {
+   "name": "impact-zero-depth",
+   "covers": [
+    "zero depth",
+    "discovered sources"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "d"
+    ],
+    "scope": [
+     [
+      "USES",
+      "reverse"
+     ]
+    ],
+    "max_depth": 0,
+    "limits": {
+     "max_expansions": 0,
+     "max_results": 0
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "affected": {},
+    "count": 0,
+    "discovered": 1
+   }
+  },
+  {
+   "name": "impact-cycle",
+   "covers": [
+    "cycles",
+    "changed node reached by a cycle"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "a"
+    ],
+    "scope": [
+     [
+      "USES",
+      "forward"
+     ],
+     [
+      "CITES",
+      "forward"
+     ]
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "affected": {
+     "a": 3,
+     "b": 1,
+     "c": 1,
+     "d": 2
+    }
+   }
+  },
+  {
+   "name": "impact-output-fits",
+   "covers": [
+    "a full answer that fits the limit is complete"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "d"
+    ],
+    "scope": [
+     [
+      "USES",
+      "reverse"
+     ]
+    ],
+    "limits": {
+     "max_results": 3
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "affected": {
+     "a": 3,
+     "b": 2,
+     "c": 1
+    },
+    "count": 3
+   }
+  },
+  {
+   "name": "impact-output-exceeded",
+   "covers": [
+    "no certified negative under an output limit"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "d"
+    ],
+    "scope": [
+     [
+      "USES",
+      "reverse"
+     ]
+    ],
+    "limits": {
+     "max_results": 2
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "affected": {
+     "a": 3,
+     "b": 2,
+     "c": 1
+    },
+    "count": 2
+   }
+  },
+  {
+   "name": "shortest-rational-budget",
+   "covers": [
+    "exact arithmetic",
+    "tentative witness bounds"
+   ],
+   "graph": "G3",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     [
+      "R",
+      "forward"
+     ]
+    ],
+    "costs": {
+     "by_edge": {
+      "big": 10.0,
+      "h1": 0.5,
+      "h2": 1
+     }
+    },
+    "limits": {
+     "max_expansions": 1
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "found": true,
+    "cost_exact": "3/2"
+   }
+  },
+  {
+   "name": "empty-projection-unknown-source",
+   "covers": [
+    "empty projection",
+    "explicit inputs"
+   ],
+   "graph": "EMPTY",
+   "request": {
+    "operation": "reachability",
+    "sources": [
+     "a"
+    ],
+    "scope": [
+     [
+      "R",
+      "forward"
+     ]
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "unknown_node"
+   }
+  },
+  {
+   "name": "typed_path-cancelled",
+   "covers": [
+    "cancellation"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "a"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       [
+        "USES",
+        "forward"
+       ]
+      ]
+     }
+    ]
+   },
+   "context": {
+    "cancelled": true
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "cancelled",
+    "found": true
+   }
+  },
+  {
+   "name": "typed_path-deadline",
+   "covers": [
+    "deadline"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "a"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       [
+        "USES",
+        "forward"
+       ]
+      ]
+     }
+    ]
+   },
+   "context": {
+    "timeout": 0
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "deadline",
+    "found": true
+   }
+  },
+  {
+   "name": "shortest_path-cancelled",
+   "covers": [
+    "cancellation"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     [
+      "USES",
+      "forward"
+     ]
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": 1
+     }
+    }
+   },
+   "context": {
+    "cancelled": true
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "cancelled",
+    "found": true,
+    "cost": 3
+   }
+  },
+  {
+   "name": "shortest_path-deadline",
+   "covers": [
+    "deadline"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     [
+      "USES",
+      "forward"
+     ]
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": 1
+     }
+    }
+   },
+   "context": {
+    "timeout": 0
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "deadline",
+    "found": true,
+    "cost": 3
+   }
+  },
+  {
+   "name": "dependency_impact-cancelled",
+   "covers": [
+    "cancellation"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "d"
+    ],
+    "scope": [
+     [
+      "USES",
+      "reverse"
+     ]
+    ]
+   },
+   "context": {
+    "cancelled": true
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "cancelled",
+    "affected": {
+     "a": 3,
+     "b": 2,
+     "c": 1
+    }
+   }
+  },
+  {
+   "name": "dependency_impact-deadline",
+   "covers": [
+    "deadline"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "dependency_impact",
+    "changed": [
+     "d"
+    ],
+    "scope": [
+     [
+      "USES",
+      "reverse"
+     ]
+    ]
+   },
+   "context": {
+    "timeout": 0
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "deadline",
+    "affected": {
+     "a": 3,
+     "b": 2,
+     "c": 1
+    }
    }
   }
  ]

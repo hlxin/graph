@@ -58,22 +58,22 @@
     "count": 5
   },
   "complete": true,
-  "contract": "graph-runtime/v0",
+  "contract": "graph-runtime/v0.1",
   "error": null,
   "interruption": null,
   "kind": "graph_runtime.result",
   "limitations": [
-    "Complete for this request on projection sha256:42258cb4cd481477debeb3914a17ca510034bc5607410e04744109376f4b1ab5: an absence here is an absence in this projection, not in the literature or the physical world.",
+    "Complete for this request on projection sha256:cbda37dbb0dfd3ba0082a6f880d1b60744db28a0b64cd6b708590c0c670f33df: an absence here is an absence in this projection, not in the literature or the physical world.",
     "A witness shows a connection in this projection only; what it means scientifically is for the consuming application to assess."
   ],
   "mode": "exact",
   "operation": "dependency_impact",
-  "projection": "sha256:42258cb4cd481477debeb3914a17ca510034bc5607410e04744109376f4b1ab5",
+  "projection": "sha256:cbda37dbb0dfd3ba0082a6f880d1b60744db28a0b64cd6b708590c0c670f33df",
   "request": {
     "changed": [
       "input:feedstock-table-v1"
     ],
-    "contract": "graph-runtime/v0",
+    "contract": "graph-runtime/v0.1",
     "limits": {
       "max_expansions": 1000000,
       "max_results": 100000
@@ -81,7 +81,7 @@
     "max_depth": null,
     "mode": "exact",
     "operation": "dependency_impact",
-    "projection": "sha256:42258cb4cd481477debeb3914a17ca510034bc5607410e04744109376f4b1ab5",
+    "projection": "sha256:cbda37dbb0dfd3ba0082a6f880d1b60744db28a0b64cd6b708590c0c670f33df",
     "scope": [
       {
         "direction": "reverse",
@@ -89,14 +89,14 @@
       }
     ]
   },
-  "request_id": "sha256:928dfb922564d8c06c8888b375edb4267458d3655286188b48c47677f90f4d0c",
-  "result_id": "sha256:09e515a7fcbf7878c26b0aafdbd828aceafae91697920112e66a13f83a799375",
+  "request_id": "sha256:24686c5169ab8ebe09992772e00838adf501ebb93a76b6e5da1ff1dea800ebb2",
+  "result_id": "sha256:c84bd271876de47076b6b2babcadb31838db0327b85e51a5a2a104fabf4eeaf2",
   "runtime": {
     "name": "scale-graph-runtime",
     "version": "0.1.0.dev0"
   },
   "stats": {
-    "discovered": 5,
+    "discovered": 6,
     "edges_examined": 6,
     "expansions": 6
   },
