@@ -867,7 +867,8 @@ def _pattern_problems(request: dict, answer: dict, status: str, interruption: di
     answer kind and its limits; every row binds every variable and aligns its links with the steps."""
     out = []
     rows, total, exists = answer["rows"], answer["total"], answer["exists"]
-    steps, names = request["steps"], [request["match"]["var"]] + [s["var"] for s in request["steps"]]
+    steps = request["steps"]
+    names = [request["match"]["var"]] + [s["var"] for s in steps if "var" in s]
     edge_vars = [s["edge_var"] for s in steps if s["edge_var"] is not None]
     if answer["count"] != len(rows):
         out.append("count must equal the number of rows")
@@ -875,9 +876,16 @@ def _pattern_problems(request: dict, answer: dict, status: str, interruption: di
         if status != INTERRUPTED or total is not None or rows:
             out.append("an unknown answer (exists null) is an interrupted one, with no total and no rows")
         return out
-    if type(total) is not int or total < 0 or exists is not (total > 0):
+    if total is None:                                   # a cycle's rows were being listed when the search stopped
+        if status != INTERRUPTED or exists is not True or not any("to" in s for s in steps):
+            out.append("an unknown total with rows known to exist is an interrupted answer of a pattern with a cycle")
+        if len(rows) > request["limits"]["max_results"]:
+            out.append("more rows than max_results")
+    elif type(total) is not int or total < 0 or exists is not (total > 0):
         out.append("total is a non-negative integer and exists says whether it is positive")
         return out
+    if total is None:
+        return out + _pattern_rows_problems(rows, names, edge_vars, steps)
     if request["answer"] != "rows" and rows:
         out.append(f"an answer of {request['answer']} lists no rows")
     if request["answer"] == "rows":
@@ -888,6 +896,13 @@ def _pattern_problems(request: dict, answer: dict, status: str, interruption: di
             out.append("an output-limited answer lists max_results rows of a larger total")
     if len(rows) > total:
         out.append("more rows than the total")
+    return out + _pattern_rows_problems(rows, names, edge_vars, steps)
+
+
+def _pattern_rows_problems(rows: list, names: list, edge_vars: list, steps: list) -> list[str]:
+    """Each row binds every variable, every edge variable and one link per step, without repeating another row; a
+    cycle's closing step always has its link."""
+    out = []
     seen = set()
     for n, row in enumerate(rows):
         if set(row["nodes"]) != set(names) or set(row["edges"]) != set(edge_vars) or len(row["links"]) != len(steps):
@@ -897,7 +912,10 @@ def _pattern_problems(request: dict, answer: dict, status: str, interruption: di
             out.append(f"row {n} binds the matched variable")
         for j, s in enumerate(steps):
             unbound = row["links"][j] is None
-            if unbound != (row["nodes"][s["var"]] is None) or (unbound and not s["optional"]):
+            if "to" in s:
+                if unbound:
+                    out.append(f"row {n}: step {j} closes a cycle and always has its link")
+            elif unbound != (row["nodes"][s["var"]] is None) or (unbound and not s["optional"]):
                 out.append(f"row {n}: step {j} binds its variable exactly when it has a link, and only an optional "
                            "step goes unbound")
             if s["edge_var"] is not None and row["edges"][s["edge_var"]] != row["links"][j]:

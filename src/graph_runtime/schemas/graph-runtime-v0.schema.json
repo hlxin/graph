@@ -3218,72 +3218,119 @@
       ]
     },
     "pattern_step": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "from",
-        "var",
-        "scope",
-        "node_types",
-        "nodes",
-        "edges",
-        "edge_var",
-        "optional"
-      ],
-      "properties": {
-        "from": {
-          "$ref": "#/$defs/var"
-        },
-        "var": {
-          "$ref": "#/$defs/var"
-        },
-        "scope": {
-          "$ref": "#/$defs/scope"
-        },
-        "node_types": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/ids"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "nodes": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/ids"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "edges": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/ids"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "edge_var": {
-          "oneOf": [
-            {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "var",
+            "scope",
+            "node_types",
+            "nodes",
+            "edges",
+            "edge_var",
+            "optional"
+          ],
+          "properties": {
+            "from": {
               "$ref": "#/$defs/var"
             },
-            {
-              "type": "null"
+            "var": {
+              "$ref": "#/$defs/var"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "node_types": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nodes": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edges": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edge_var": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/var"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": {
+              "type": "boolean"
             }
-          ]
+          }
         },
-        "optional": {
-          "type": "boolean"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "to",
+            "scope",
+            "edges",
+            "edge_var"
+          ],
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/var"
+            },
+            "to": {
+              "$ref": "#/$defs/var"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "edges": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edge_var": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/var"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "description": "A step that closes a cycle: a hop in its scope from the node bound to from to the node bound to to; it binds no variable."
         }
-      }
+      ]
     },
     "pattern_row": {
       "type": "object",
@@ -3418,7 +3465,7 @@
           ]
         }
       },
-      "description": "exists and total are null only when the search was interrupted before it knew them; total counts every row even when an output limit lists fewer."
+      "description": "exists and total are null only when the search was interrupted before it knew them (a pattern with a cycle counts its rows by listing them, so an interruption may leave its total unknown though rows exist); total counts every row even when an output limit lists fewer."
     },
     "support_entry": {
       "type": "object",

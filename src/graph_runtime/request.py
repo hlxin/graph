@@ -477,8 +477,10 @@ def _node_constraint(raw: Mapping, where: str, fields: tuple[str, ...] = ("node_
 
 
 def _graph_pattern(match: Any, steps: Any) -> tuple[dict, list[dict]]:
-    """A tree pattern: a matched variable, then steps, each from a variable bound before it to a new one. A step from
-    a variable an optional step binds is optional too, so that an unmatched optional part never removes a row."""
+    """A pattern: a matched variable, then steps, each from a variable bound before it to a new one. A step from a
+    variable an optional step binds is optional too, so that an unmatched optional part never removes a row. A step
+    with ``to`` instead of ``var`` closes a cycle: it binds no variable, and needs a hop from one variable bound before
+    it to another (neither bound by an optional step); its normal form is ``{from, to, scope, edges, edge_var}``."""
     if not isinstance(match, Mapping):
         raise _fail("invalid_request", "match is {var, node_types, nodes}")
     stray = sorted(str(k) for k in match if k not in ("var", "node_types", "nodes"))
@@ -496,6 +498,9 @@ def _graph_pattern(match: Any, steps: Any) -> tuple[dict, list[dict]]:
         where = f"steps[{i}]"
         if not isinstance(st, Mapping):
             raise _fail("invalid_request", f"{where} is a mapping")
+        if "to" in st:
+            out.append(_closing_step(st, where, taken, optional_vars, {x.get("edge_var") for x in out}))
+            continue
         stray = sorted(str(k) for k in st if k not in ("from", "var", "scope", "node_types", "nodes", "edges",
                                                          "edge_var", "optional"))
         if stray:
@@ -523,3 +528,33 @@ def _graph_pattern(match: Any, steps: Any) -> tuple[dict, list[dict]]:
             optional_vars.add(step["var"])
         out.append(step)
     return m, out
+
+
+def _closing_step(st: Mapping, where: str, taken: set, optional_vars: set, edge_vars: set) -> dict:
+    """A step that closes a cycle: a hop in its scope (through its edges, when it names them) from the node one bound
+    variable holds to the node another (or the same) holds."""
+    stray = sorted(str(k) for k in st if k not in ("from", "to", "scope", "edges", "edge_var", "optional",
+                                                     "node_types", "nodes"))
+    if stray:
+        raise _fail("invalid_request", f"{where} closes a cycle: it takes from, to, scope, edges and edge_var, not "
+                    f"{stray}")
+    if st.get("optional", False) is not False or st.get("node_types") is not None or st.get("nodes") is not None:
+        raise _fail("invalid_request", f"{where} closes a cycle between bound variables: it is never optional and "
+                    "constrains no node")
+    for field in ("from", "to"):
+        name = st.get(field)
+        if name not in taken or name in edge_vars:
+            raise _fail("invalid_request", f"{where}.{field} names {name!r}, which no earlier step or match binds to "
+                        "a node")
+        if name in optional_vars:
+            raise _fail("invalid_request", f"{where}.{field} names {name!r}, which an optional step binds: a cycle "
+                        "closes between required variables")
+    if st.get("scope") is None:
+        raise _fail("invalid_request", f"{where} needs a scope")
+    step = {"from": st["from"], "to": st["to"], "scope": _scope(st["scope"], f"{where}.scope"), "edges": None,
+            "edge_var": None}
+    if st.get("edges") is not None:
+        step["edges"] = _ids(st["edges"], f"{where}.edges")
+    if st.get("edge_var") is not None:
+        step["edge_var"] = _var(st["edge_var"], f"{where}.edge_var", taken)
+    return step

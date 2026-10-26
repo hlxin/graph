@@ -232,14 +232,16 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
             plan.positions.append((fwd, rev, mask))
     elif op == "pattern":
         m = req["match"]
-        names = [m["var"]] + [st["var"] for st in req["steps"]]
+        names = [m["var"]] + [st["var"] for st in req["steps"] if "var" in st]
         index = {name: i for i, name in enumerate(names)}
         plan.vars, plan.answer = names, req["answer"]
         plan.match = _node_filter(p, m, "match")
         plan.steps = []
+        plan.cyclic = any("to" in st for st in req["steps"])
         for i, st in enumerate(req["steps"]):
             fwd, rev = _scope(p, st["scope"], f"steps[{i}].scope")
-            tmask, nodes = _node_filter(p, st, f"steps[{i}]")
+            closing = "to" in st
+            tmask, nodes = (None, None) if closing else _node_filter(p, st, f"steps[{i}]")
             edges = None
             if st["edges"] is not None:
                 unknown = [e for e in st["edges"] if e not in p._edge_index]
@@ -247,9 +249,10 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
                     raise RequestError(FAILED, "unknown_edge", f"steps[{i}].edges names {len(unknown)} edge(s) the "
                                        f"projection does not hold: {unknown[:10]}", {"edges": unknown[:100]})
                 edges = {p._edge_index[e] for e in st["edges"]}
-            plan.steps.append(SimpleNamespace(parent=index[st["from"]], child=index[st["var"]], fwd=fwd, rev=rev,
-                                              tmask=tmask, nodes=nodes, edges=edges, optional=st["optional"],
-                                              edge_var=st["edge_var"]))
+            plan.steps.append(SimpleNamespace(parent=index[st["from"]], child=index[st["to" if closing else "var"]],
+                                              fwd=fwd, rev=rev, tmask=tmask, nodes=nodes, edges=edges,
+                                              optional=False if closing else st["optional"],
+                                              edge_var=st["edge_var"], closing=closing))
     elif op == "bottleneck_path":
         plan.certificate, plan.objective = req["certificate"], req["objective"]
         plan.sources = _nodes(p, req["sources"], "sources")
@@ -841,6 +844,9 @@ def _search_pattern(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
     mask_of, rel = p._node_mask, p._edge_rel
     examined = 0
     for s in plan.steps:                                     # 1: discover, downward
+        if s.closing:                                        # a cycle's closing step: after the tree is pruned
+            found.append({})
+            continue
         hops: dict[int, list] = {}
         child = cand[s.child]
         edges, tmask, nodes, fwd = s.edges, s.tmask, s.nodes, s.fwd
@@ -869,11 +875,14 @@ def _search_pattern(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
     st.scanned = [len(c) for c in cand]
     for i in range(len(plan.steps) - 1, -1, -1):              # 2: prune parents, upward
         s = plan.steps[i]
-        if not s.optional:
+        if not s.optional and not s.closing:
             child = cand[s.child]
             cand[s.parent] = {u for u in cand[s.parent] if any(w in child for _, w, _ in found[i].get(u, ()))}
     kept_hops: list[dict[int, list]] = []
     for i, s in enumerate(plan.steps):                       # 3: prune children, downward
+        if s.closing:
+            kept_hops.append({})
+            continue
         child, reached, hops = cand[s.child], set(), {}
         for u in cand[s.parent]:
             hs = [h for h in found[i].get(u, ()) if h[1] in child]
@@ -883,7 +892,150 @@ def _search_pattern(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
         kept_hops.append(hops)
     st.kept, st.hops, st.examined = cand, kept_hops, examined
     st.discovered = sum(st.scanned)
+    if plan.cyclic:
+        _enumerate_cycles(p, plan, st, ctl)
     return st
+
+
+class _Stop(Exception):
+    """Ends the enumeration of a cyclic pattern when a limit, a deadline or a cancellation stops it."""
+
+
+def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace, ctl: _Control) -> None:
+    """The rows of a pattern with cycles, by a generic join over the pruned tree (Ngo, Porat, Re and Rudra's worst-
+    case optimal join; Veldhuizen's Leapfrog Triejoin).
+
+    Each closing step is indexed first, over the tree's kept candidates: from each candidate of its ``from`` variable,
+    its hops in scope that land on a candidate of its ``to`` variable, grouped by that node (one expansion per
+    candidate read). Rows are then built step by step in canonical order. When a step binds the later of a closing
+    step's two variables, its candidates are intersected with what that closing step allows, iterating the smallest
+    of the sets involved and restoring the canonical order of the rest; a closing step then lists its hops between
+    the two nodes. Each candidate tried is one expansion. A cycle defeats counting without listing, so every row is
+    enumerated: ``total`` is known only when the enumeration ends."""
+    steps, kept, rel = plan.steps, st.kept, p._edge_rel
+    st.rows_raw, st.total, st.closing_hops = [], None, {}
+    index: dict[int, dict[int, dict[int, list]]] = {}        # closing step -> from node -> to node -> hops
+    back: dict[int, dict[int, set[int]]] = {}                # closing step -> to node -> from nodes
+    examined = st.examined
+    try:
+        for j, s in enumerate(steps):
+            if not s.closing:
+                continue
+            table, rev, targets = {}, {}, kept[s.child]
+            sides = _sides(p, s.fwd, s.rev)
+            for u in sorted(kept[s.parent]):
+                why = ctl.stop()
+                if why:
+                    raise _Stop(why)
+                by_target: dict[int, list] = {}
+                for lists, base, marks, ends, flag in sides:
+                    hs = lists[u]
+                    if hs is None:
+                        hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+                    examined += len(hs)
+                    for ei in hs:
+                        w = ends[ei]
+                        if w in targets and (s.edges is None or ei in s.edges) \
+                                and not (flag and w == u and s.fwd[rel[ei]]):
+                            by_target.setdefault(w, []).append((ei, w, flag))
+                if by_target:
+                    table[u] = by_target
+                    for w in by_target:
+                        rev.setdefault(w, set()).add(u)
+            index[j], back[j] = table, rev
+            st.closing_hops[j] = sum(len(hs) for by in table.values() for hs in by.values())
+    except _Stop as stop:
+        st.interruption, st.examined, st.closing_hops = str(stop), examined, None
+        return
+    st.examined = examined
+    bound_at = {0: -1}                                      # where each variable is bound: the match, or a step
+    for i, s in enumerate(steps):
+        if not s.closing:
+            bound_at[s.child] = i
+    checks: dict[int, list[tuple[int, str]]] = {}          # where a closing step's later variable is bound
+    for j, s in enumerate(steps):
+        if s.closing:
+            a, b = bound_at[s.parent], bound_at[s.child]
+            role = "self" if s.parent == s.child else ("from" if a > b else "to")
+            checks.setdefault(max(a, b), []).append((j, role))
+    val: list = [None] * len(plan.vars)
+    link: list = [None] * len(steps)
+    cap = plan.max_results if plan.answer == "rows" else 0
+    count = 0
+
+    def allowed(j: int, role: str) -> Any:
+        """The nodes closing step j allows the variable being bound, given the other one's node."""
+        s = steps[j]
+        if role == "to":
+            return index[j].get(val[s.parent], {})
+        if role == "from":
+            return back[j].get(val[s.child], ())
+        return {u for u, by in index[j].items() if u in by}
+
+    def admit(hs: list, sets: list) -> list:
+        """The hops whose node every set allows, in their canonical order, iterating the smallest side."""
+        if not sets:
+            return hs
+        smallest = min(sets, key=len)
+        if len(hs) <= len(smallest):
+            return [h for h in hs if all(h[1] in x for x in sets)]
+        position: dict[int, list] = {}
+        for k, h in enumerate(hs):
+            position.setdefault(h[1], []).append(k)
+        picked = [k for w in smallest if w in position and all(w in x for x in sets) for k in position[w]]
+        return [hs[k] for k in sorted(picked)]
+
+    def tick() -> None:
+        why = ctl.stop()
+        if why:
+            raise _Stop(why)
+
+    def extend(i: int) -> None:
+        nonlocal count
+        if i == len(steps):
+            count += 1
+            if len(st.rows_raw) < cap:
+                st.rows_raw.append((tuple(val), tuple(link)))
+            return
+        s = steps[i]
+        if s.closing:
+            for ei, _, _ in index[i].get(val[s.parent], {}).get(val[s.child], ()):
+                tick()
+                link[i] = ei
+                extend(i + 1)
+            link[i] = None
+            return
+        u = val[s.parent]
+        hs = () if u is None else st.hops[i].get(u, ())
+        if checks.get(i):
+            hs = admit(list(hs), [allowed(j, role) for j, role in checks[i]])
+        if not hs:
+            if s.optional:                                   # an optional step: no closing step reaches its variable
+                val[s.child], link[i] = None, None
+                extend(i + 1)
+            return
+        for ei, w, _ in hs:
+            tick()
+            val[s.child], link[i] = w, ei
+            extend(i + 1)
+        val[s.child], link[i] = None, None
+
+    roots = sorted(kept[0])
+    if checks.get(-1):
+        roots = [h[1] for h in admit([(None, u, None) for u in roots], [allowed(j, r) for j, r in checks[-1]])]
+    try:
+        for u in roots:
+            tick()
+            val[0] = u
+            extend(0)
+    except _Stop as stop:
+        st.interruption = str(stop)
+        st.total = None
+        st.found_rows = count
+        return
+    st.total, st.found_rows = count, count
+    if plan.answer == "rows" and count > cap:
+        st.interruption = "output_limit"
 
 
 def _pattern_total(plan: SimpleNamespace, st: SimpleNamespace) -> int:
@@ -905,10 +1057,23 @@ def _answer_pattern(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -
     names = plan.vars
     if st.interruption is not None and st.kept is None:       # stopped while discovering: nothing is known
         return {"exists": None, "total": None, "rows": [], "count": 0, "coverage": None}, []
-    total = _pattern_total(plan, st)
+    if plan.cyclic and getattr(st, "closing_hops", None) is None:     # stopped while indexing the cycles
+        return {"exists": None, "total": None, "rows": [], "count": 0, "coverage": None}, []
     coverage = {"vars": [{"var": names[i], "candidates": st.scanned[i], "kept": len(st.kept[i])}
                          for i in range(len(names))],
-                "steps": [sum(len(h) for h in st.hops[i].values()) for i in range(len(plan.steps))]}
+                "steps": [st.closing_hops[i] if s.closing else sum(len(h) for h in st.hops[i].values())
+                          for i, s in enumerate(plan.steps)]}
+    if plan.cyclic:
+        ids, eids, steps = p._node_ids, p._edge_ids, plan.steps
+        rows = [{"nodes": {names[i]: (None if v is None else ids[v]) for i, v in enumerate(vals)},
+                 "edges": {s.edge_var: (None if links[j] is None else eids[links[j]])
+                           for j, s in enumerate(steps) if s.edge_var is not None},
+                 "links": [None if x is None else eids[x] for x in links]} for vals, links in st.rows_raw]
+        found = getattr(st, "found_rows", 0)
+        exists = (st.total > 0) if st.total is not None else (True if found else None)
+        answer = {"exists": exists, "total": st.total, "rows": rows, "count": len(rows), "coverage": coverage}
+        return answer, ([WITNESS_NOTE] if rows else [])
+    total = _pattern_total(plan, st)
     rows: list[dict] = []
     if plan.answer == "rows":
         cap = plan.max_results
