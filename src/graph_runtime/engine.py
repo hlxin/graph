@@ -43,6 +43,8 @@ WITNESS_NOTE = ("A witness shows a connection in this projection only; what it m
 TENTATIVE_NOTE = ("The witness is a valid path, but its cost is not proven minimal: the minimum cost lies between "
                   "lower_bound and cost.")
 NO_ANSWER_NOTE = "No answer: the request was not run ({code})."
+CERTIFIED_NOTE = ("The certificate proves the answer's negative or bound against the projection's records without a "
+                  "new search: verify_result checks it, and revalidate checks it against an edited projection.")
 
 
 class CancelToken:
@@ -213,6 +215,7 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
         plan.max_depth = req["max_depth"]
     elif op == "typed_path":
+        plan.certificate = req["certificate"]
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = None if req["targets"] is None else set(_nodes(p, req["targets"], "targets"))
         plan.positions = []
@@ -245,6 +248,7 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
         plan.all_of = None if req["all_of"] is None else _types(p, req["all_of"], "all_of")
     else:
+        plan.certificate = req["certificate"]
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = set(_nodes(p, req["targets"], "targets"))
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
@@ -474,7 +478,14 @@ def _search_typed(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simple
 
 def _answer_typed(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
     if st.goal is None:
-        return {"found": None if st.interruption else False, "witness": None}, []
+        certificate = None
+        if plan.certificate and not st.interruption:     # the closed set of states proves there is no witness
+            last, ids = len(plan.positions), p._node_ids
+            states = sorted((k % st.stride, k // st.stride) for k in st.seen if k % st.stride < last)
+            certificate = {"kind": "closed_states",
+                           "states": [{"node": ids[u], "position": i} for i, u in states]}
+        return {"found": None if st.interruption else False, "witness": None, "certificate": certificate}, \
+            ([CERTIFIED_NOTE] if certificate else [])
     hops, k = [], st.goal
     while st.seen[k] is not None:
         pk, ei, flag = st.seen[k]
@@ -484,7 +495,7 @@ def _answer_typed(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> 
     hops.reverse()
     witness = {"source": p._node_ids[k // st.stride], "target": p._node_ids[st.goal // st.stride],
                "length": len(hops), "hops": hops}
-    return {"found": True, "witness": witness}, [WITNESS_NOTE]
+    return {"found": True, "witness": witness, "certificate": None}, [WITNESS_NOTE]
 
 
 # ---------------------------------------------------------------------------------------------- shortest path
@@ -493,7 +504,9 @@ def _search_shortest(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Sim
     settled is the answer: no other target costs less, because every cost is non-negative."""
     dist: dict[int, Any] = {}
     parent: dict[int, tuple[int, int, int]] = {}
-    st = SimpleNamespace(goal=None, dist=dist, parent=parent, lower=None, examined=0, discovered=0, interruption=None)
+    settled: set[int] = set()
+    st = SimpleNamespace(goal=None, dist=dist, parent=parent, settled=settled, lower=None, examined=0, discovered=0,
+                         interruption=None)
     at_zero = [s for s in plan.sources if s in plan.targets]
     if at_zero:                                   # a source that is a target costs nothing to reach
         st.goal = at_zero[0]
@@ -504,7 +517,6 @@ def _search_shortest(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Sim
     for s in plan.sources:
         dist[s] = plan.zero
     heapq.heapify(heap)
-    settled: set[int] = set()
     cost = plan.cost
     examined = 0
     while heap:
@@ -560,18 +572,37 @@ def _answer_shortest(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) 
         hops.reverse()
         return {"source": p._node_ids[v], "target": p._node_ids[t], "length": len(hops), "hops": hops}
 
+    def exact(x: Any) -> Any:
+        return _number(x, True)[1] if plan.rational else x
+
+    def potentials(bound: Any) -> dict | None:
+        """Settled distances below ``bound``: every other node counts ``bound``. No hop in scope lowers them (a node
+        settled at cost d has no hop to a node above d plus its cost), every source counts 0 and every target counts
+        at least ``bound``, so no path from a source to a target costs less than ``bound``."""
+        if not plan.certificate:
+            return None
+        below = sorted(v for v in st.settled if st.dist[v] < bound)
+        return {"kind": "potentials", "bound": exact(bound),
+                "potentials": [{"node": p._node_ids[v], "value": exact(st.dist[v])} for v in below]}
+
     if st.goal is not None:
-        return ({"found": True, "optimal": True, **costed("cost", st.dist[st.goal]), "witness": witness(st.goal)},
-                [WITNESS_NOTE])
+        cert = potentials(st.dist[st.goal])
+        return ({"found": True, "optimal": True, **costed("cost", st.dist[st.goal]), "witness": witness(st.goal),
+                 "certificate": cert}, [WITNESS_NOTE] + ([CERTIFIED_NOTE] if cert else []))
     if st.interruption is None:
-        return {"found": False, "optimal": None, "cost": None, "witness": None}, []
+        cert = ({"kind": "closure", "reached": [p._node_ids[v] for v in sorted(st.dist)]}
+                if plan.certificate else None)                # everything reachable, and no target among it
+        return ({"found": False, "optimal": None, "cost": None, "witness": None, "certificate": cert},
+                [CERTIFIED_NOTE] if cert else [])
     lower = costed("lower_bound", st.lower) if st.lower is not None else {"lower_bound": None}
+    cert = potentials(st.lower) if st.lower is not None else None
+    notes = [CERTIFIED_NOTE] if cert else []
     known = sorted((st.dist[t], t) for t in plan.targets if t in st.dist)
     if not known:
-        return {"found": None, "optimal": None, "cost": None, **lower, "witness": None}, []
+        return {"found": None, "optimal": None, "cost": None, **lower, "witness": None, "certificate": cert}, notes
     c, t = known[0]
-    return ({"found": True, "optimal": False, **costed("cost", c), **lower, "witness": witness(t)},
-            [TENTATIVE_NOTE, WITNESS_NOTE])
+    return ({"found": True, "optimal": False, **costed("cost", c), **lower, "witness": witness(t),
+             "certificate": cert}, [TENTATIVE_NOTE, WITNESS_NOTE] + notes)
 
 
 # ---------------------------------------------------------------------------------------------- pattern

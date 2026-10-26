@@ -3504,6 +3504,205 @@
     "status": "failed",
     "error_code": "unknown_node_type"
    }
+  },
+  {
+   "name": "typed-negative-with-its-certificate",
+   "covers": [
+    "typed_path",
+    "certificate"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "typed_path",
+    "sources": [
+     "a"
+    ],
+    "pattern": [
+     {
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "scope": [
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": false,
+    "certificate": {
+     "kind": "closed_states",
+     "states": [
+      {
+       "node": "a",
+       "position": 0
+      },
+      {
+       "node": "b",
+       "position": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "shortest-optimum-with-its-potentials",
+   "covers": [
+    "shortest_path",
+    "certificate"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": 2
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost": 6,
+    "witness_edges": [
+     "e1",
+     "e2",
+     "e4"
+    ],
+    "certificate": {
+     "kind": "potentials",
+     "bound": 6,
+     "potentials": [
+      {
+       "node": "a",
+       "value": 0
+      },
+      {
+       "node": "b",
+       "value": 2
+      },
+      {
+       "node": "c",
+       "value": 4
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "shortest-negative-with-its-closure",
+   "covers": [
+    "shortest_path",
+    "certificate"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "b"
+    ],
+    "targets": [
+     "a"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": 1
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": false,
+    "certificate": {
+     "kind": "closure",
+     "reached": [
+      "b",
+      "c",
+      "d"
+     ]
+    }
+   }
+  },
+  {
+   "name": "shortest-interrupted-lower-bound-certified",
+   "covers": [
+    "shortest_path",
+    "certificate",
+    "budget"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "USES": 2
+     }
+    },
+    "certificate": true,
+    "limits": {
+     "max_expansions": 2
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "certificate": {
+     "kind": "potentials",
+     "bound": 4,
+     "potentials": [
+      {
+       "node": "a",
+       "value": 0
+      },
+      {
+       "node": "b",
+       "value": 2
+      }
+     ]
+    }
+   }
   }
  ]
 }

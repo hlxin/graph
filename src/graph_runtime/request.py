@@ -10,10 +10,11 @@ Operations (docs/API_CONTRACT.md):
 
 * ``reachability``: ``sources``, ``scope``, ``max_depth`` (null: unbounded); limits ``max_expansions``,
   ``max_results``.
-* ``typed_path``: ``sources``, ``pattern`` (positions ``{scope, node_types}``), ``targets`` (null: any node);
-  limit ``max_expansions``.
+* ``typed_path``: ``sources``, ``pattern`` (positions ``{scope, node_types}``), ``targets`` (null: any node),
+  ``certificate`` (false: no proof of a negative); limit ``max_expansions``.
 * ``shortest_path``: ``sources``, ``targets``, ``scope``, ``costs`` (``{"by_relation": {...}}`` or
-  ``{"by_edge": {...}}``); limit ``max_expansions``.
+  ``{"by_edge": {...}}``), ``certificate`` (false: no proof of optimality or of a negative); limit
+  ``max_expansions``.
 * ``dependency_impact``: ``changed``, ``scope``, ``max_depth``; limits ``max_expansions``, ``max_results``.
 * ``pattern``: ``match`` (``{var, node_types, nodes}``), ``steps``, ``answer`` (``rows``, ``count`` or
   ``exists``); limits ``max_expansions``, ``max_results``.
@@ -52,8 +53,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "support": ("max_expansions", "max_results")}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
-           "typed_path": (("sources", "pattern"), ("targets",)),
-           "shortest_path": (("sources", "targets", "scope", "costs"), ()),
+           "typed_path": (("sources", "pattern"), ("targets", "certificate")),
+           "shortest_path": (("sources", "targets", "scope", "costs"), ("certificate",)),
            "pattern": (("match",), ("steps", "answer")),
            "support": (("failed", "scope"), ("all_of",))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
@@ -174,6 +175,7 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["sources"] = _ids(raw["sources"], "sources")
         data["targets"] = None if raw.get("targets") is None else _ids(raw["targets"], "targets")
         data["pattern"] = _pattern(raw["pattern"])
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "pattern":
         data["match"], data["steps"] = _graph_pattern(raw["match"], raw.get("steps") or [])
         data["answer"] = raw.get("answer", "rows")
@@ -188,6 +190,7 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["targets"] = _ids(raw["targets"], "targets")
         data["scope"] = _scope(raw["scope"], "scope")
         data["costs"] = _costs(raw["costs"])
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     try:
         return Request._make(data)
     except UnicodeEncodeError:
@@ -251,6 +254,12 @@ def _scope(value: Any, field: str) -> list[dict[str, str]]:
     if not seen:
         raise _fail("invalid_request", f"{field} selects no relation: a scope is explicit, there is no wildcard")
     return [{"relation": r, "direction": d} for r, d in sorted(seen)]
+
+
+def _flag(value: Any, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise _fail("invalid_request", f"{field} is true or false, not {value!r}")
+    return value
 
 
 def _depth(value: Any) -> int | None:

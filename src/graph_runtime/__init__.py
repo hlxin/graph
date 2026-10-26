@@ -4,10 +4,12 @@ GRAPH executes graph operations for scientific applications and keeps the comput
 explicit inputs (an immutable :class:`Projection`, with optional type and relation hierarchies, and a normalized
 :class:`Request`), six exact operations (reachability, typed path, shortest path, dependency impact, tree patterns and
 support under failure) with structural witnesses, bounded work, reproducible results, and witnesses that can be
-checked against the input records (:func:`verify_result`). It transports hypothesis candidates
-(:class:`HypothesisCandidate`) without ever turning them into assertions. The optional :mod:`graph_runtime.retrieval`
-(numpy) ranks text items that name a projection's records, so a search can choose where a traversal starts. Scientific
-meaning stays with the applications that own it; GRAPH imports none of their vocabularies.
+checked against the input records (:func:`verify_result`); certificates prove negatives and optima, and a cached
+result is revalidated on an edited projection without a new search (:func:`revalidate`). It transports hypothesis
+candidates (:class:`HypothesisCandidate`) without ever turning them into assertions. The optional
+:mod:`graph_runtime.retrieval` (numpy) ranks text items that name a projection's records, so a search can choose where
+a traversal starts. Scientific meaning stays with the applications that own it; GRAPH imports none of their
+vocabularies.
 
 >>> p = Projection.build(nodes=["a", "b"], edges=[{"id": "e1", "source": "a", "target": "b", "relation": "R"}])
 >>> r = execute(p, p.request("reachability", sources=["a"], scope=[("R", "forward")]))
@@ -23,13 +25,15 @@ from .hypotheses import (HypothesisCandidate, order_candidates, staleness, valid
 from .projection import CONTRACT, FORWARD, REVERSE, EdgeRecord, NodeRecord, Projection
 from .request import OPERATIONS, Request, normalize_request
 from .result import COMPLETED, FAILED, INTERRUPTED, STALE, STATUSES, UNSUPPORTED, Result
+from .revalidate import ProjectionDiff, Revalidation, revalidate, revalidate_all
 from .schemas import json_schema
 from .verify import verify_result
 
 __all__ = [
     "CONTRACT", "OPERATIONS", "STATUSES", "COMPLETED", "INTERRUPTED", "UNSUPPORTED", "FAILED", "STALE", "FORWARD",
     "REVERSE", "Projection", "NodeRecord", "EdgeRecord", "Request", "normalize_request", "execute", "CancelToken",
-    "Result", "verify_result", "HypothesisCandidate", "validate_candidate", "verify_revisions", "staleness",
-    "order_candidates", "witness_refs", "json_schema", "GraphRuntimeError", "ProjectionError", "RequestError",
-    "RetrievalError", "CandidateError", "__version__",
+    "Result", "verify_result", "revalidate", "revalidate_all", "Revalidation", "ProjectionDiff",
+    "HypothesisCandidate", "validate_candidate", "verify_revisions", "staleness", "order_candidates", "witness_refs",
+    "json_schema", "GraphRuntimeError", "ProjectionError", "RequestError", "RetrievalError", "CandidateError",
+    "__version__",
 ]

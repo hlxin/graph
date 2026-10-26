@@ -28,7 +28,9 @@ availability (the bare PyPI name `graph` belongs to another project).
 | Limits | Expansion budget and output limit (part of the request), deadline and cancellation (execution controls). A limit that prevents completion makes the result `interrupted`; a full answer that fits can complete. An interrupted result never certifies a negative |
 | Results | One contract: `completed`, `interrupted`, `unsupported`, `failed` or `stale_snapshot`, with the normalized request, the projection identity, the answer, statistics, limitations and a reproducible `result_id` |
 | Hypotheses | Candidate records that are always `unverified`, with discriminating proposed tests, calibrated or ordering-only scores, append-only lifecycle and assessment history, and staleness through dependency impact. They are never traversed |
-| Checks | `verify_result` re-checks every witness against the input records; JSON Schemas describe every record; a language-neutral conformance suite any backend must pass |
+| Checks | `verify_result` re-checks every witness against the input records, and the closure of every complete reachability and impact answer; JSON Schemas describe every record; a language-neutral conformance suite any backend must pass |
+| Certificates | On request, a typed or shortest path answer proves itself against the records without a second search: closed states or a closure for a negative, potentials for an optimum or an interrupted search's lower bound |
+| Revalidation | Whether a cached result still holds on an edited projection, decided from its answer and certificate (`holds`, `fails` with the edit that refutes it, or `unknown`); with one diff of the projections, in time proportional to the edit (0.1 ms per cached result on a 500,000-edge graph, against about 100 ms to rerun it) |
 | Retrieval (optional, numpy) | `graph_runtime.retrieval`: exact keyword (BM25), hashed-vector, hybrid and rank-fusion search over text items that name records, so a search can choose where a traversal starts and a traversal can restrict a search; indexes with identities, saved with digests ([docs/RETRIEVAL.md](docs/RETRIEVAL.md)) |
 
 ## Quick start

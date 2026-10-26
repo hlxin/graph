@@ -431,6 +431,8 @@ def _contract_problems(data: dict) -> list[str]:
                     out.append("a typed hop goes in a direction its pattern position does not follow")
     if op == "shortest_path":
         out.extend(_cost_problems(request, answer, status))
+    if op in _WITNESS_OPERATIONS:
+        out.extend(_certificate_problems(op, request, answer, status))
     return out
 
 
@@ -527,6 +529,78 @@ def _support_problems(request: dict, answer: dict, status: str, interruption: di
                 out.append(f"{where}: its failing supports are hops in scope from it, one per support")
             if not e["causes"] or e["causes"] != sorted(set(e["causes"])) or not set(e["causes"]) <= failed:
                 out.append(f"{where}: its causes are failed nodes, at least one, in ascending ID order")
+    return out
+
+
+def _exact_value(value: Any, rational: bool) -> Any:
+    """A certificate's number: an integer in integer-cost mode, ``p`` or ``p/q`` in lowest terms in rational mode."""
+    if not rational:
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{value!r} is not a non-negative integer")
+        return value
+    number = Fraction(value)
+    if not isinstance(value, str) or str(number) != value or number < 0:
+        raise ValueError(f"{value!r} is not an exact non-negative rational in lowest terms")
+    return number
+
+
+def _certificate_problems(op: str, request: dict, answer: dict, status: str) -> list[str]:
+    """A certificate appears exactly when the request asks for one and the answer has something to prove: a complete
+    negative, a proven optimum, or an interrupted search's lower bound. Its form is canonical. Whether it proves the
+    answer is checked against the records (:func:`graph_runtime.verify_result`)."""
+    out = []
+    if "certificate" not in answer:
+        return ["a typed or shortest path answer carries its certificate (null when there is none)"]
+    cert, found = answer["certificate"], answer["found"]
+    if op == "typed_path":
+        kind = "closed_states" if request["certificate"] and status == COMPLETED and found is False else None
+    elif not request["certificate"]:
+        kind = None
+    elif status == COMPLETED:
+        kind = "potentials" if found else "closure"
+    else:
+        (_, table), = request["costs"].items()
+        rational = any(isinstance(v, float) for v in table.values())
+        kind = "potentials" if answer.get("lower_bound_exact" if rational else "lower_bound") is not None else None
+    if (cert is None) != (kind is None) or (cert is not None and cert["kind"] != kind):
+        return [f"the certificate is {kind or 'null'} for this request and answer, not "
+                f"{None if cert is None else cert['kind']}"]
+    if cert is None:
+        return out
+    sources = set(request["sources"])
+    targets = None if request.get("targets") is None else set(request["targets"])
+    if kind == "closed_states":
+        states = [(st["position"], st["node"]) for st in cert["states"]]
+        if states != sorted(set(states)) or any(type(i) is not int for i, _ in states):
+            out.append("certificate states are unique, by position then node ID")
+        if any(not 0 <= i < len(request["pattern"]) for i, _ in states):
+            out.append("certificate states are at positions before the pattern's end")
+        if not {(0, s) for s in sources} <= set(states):
+            out.append("certificate states start with every source at position 0")
+        return out
+    if kind == "closure":
+        reached = cert["reached"]
+        if reached != sorted(set(reached)) or not sources <= set(reached) or targets & set(reached):
+            out.append("a closure certificate lists, in ascending ID, what the sources reach: every source and no "
+                       "target")
+        return out
+    (_, table), = request["costs"].items()
+    rational = any(isinstance(v, float) for v in table.values())
+    try:
+        bound = _exact_value(cert["bound"], rational)
+        values = [(e["node"], _exact_value(e["value"], rational)) for e in cert["potentials"]]
+    except (ValueError, TypeError, ZeroDivisionError) as exc:
+        return [f"certificate numbers: {exc}"]
+    claimed = answer["cost_exact" if status == COMPLETED else "lower_bound_exact"] if rational else \
+        answer["cost" if status == COMPLETED else "lower_bound"]
+    if bound != (Fraction(claimed) if rational else claimed):
+        out.append("a potentials certificate bounds the answer's cost (or its lower bound)")
+    names = [n for n, _ in values]
+    if names != sorted(set(names)) or any(not 0 <= v < bound for _, v in values):
+        out.append("potentials are unique, in ascending node ID, each at least 0 and below the bound")
+    at = dict(values)
+    if any(at.get(s, bound) != 0 for s in sources) or any(t in at for t in targets):
+        out.append("potentials give every source 0 and no target less than the bound")
     return out
 
 
