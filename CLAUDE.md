@@ -12,6 +12,7 @@ PYTHONPATH=src python3 examples/synthetic_revision/run.py --check
 python3 benchmarks/bench.py --sizes small,medium     # raw results go to benchmarks/runs/ (ignored)
 PYTHONDONTWRITEBYTECODE=1 ../scale/.venv/bin/python -m pytest integrations/scale -p no:cacheprovider   # SCALE parity
 PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python -m pytest integrations/states -p no:cacheprovider  # STATES parity
+PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python benchmarks/consumers.py states   # both engines, real requests
 ```
 
 ## Layout

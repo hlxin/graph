@@ -45,6 +45,19 @@ def edge_closure(spec: Mapping, edge: str) -> list[str]:
     return sorted(out)
 
 
+_SPEC_DIGESTS: dict[int, tuple[Mapping, str]] = {}
+
+
+def spec_digest(spec: Mapping) -> str:
+    """SCALE's spec digest of a schema object, computed once per object: SCALE's loaders hand out one object per
+    schema version, and treat it as unchanging, as its query engine's reuse of a ``Graph`` does."""
+    from scale import pgraph
+    hit = _SPEC_DIGESTS.get(id(spec))
+    if hit is None or hit[0] is not spec:
+        hit = _SPEC_DIGESTS[id(spec)] = (spec, pgraph.spec_sha256(spec))
+    return hit[1]
+
+
 def bindings_of(doc: Mapping, spec: Mapping, as_of: str | None = None) -> dict[str, str]:
     """What a projection of ``doc`` is built from: the document (its digest, as a query result names it), the schema
     (its version and spec digest) and the policy scope (the document's access level on ``as_of``, default today)."""
@@ -52,7 +65,7 @@ def bindings_of(doc: Mapping, spec: Mapping, as_of: str | None = None) -> dict[s
     day = pgraph_query.embargo_day(as_of, pgraph.embargo_today())
     graph = doc.get("graph") or {}
     return {"source": f"{graph.get('graph_id')} sha256:{passages.graph_sha256(doc)}",
-            "schema": f"scale-catal {spec.get('version')} sha256:{pgraph.spec_sha256(spec)}",
+            "schema": f"scale-catal {spec.get('version')} sha256:{spec_digest(spec)}",
             "policy": pgraph_query.document_access(doc, day)["level"]}
 
 
@@ -124,8 +137,10 @@ def trace(doc: Mapping, spec: Mapping, plan: Mapping, projection: Projection | N
     witness was found (True, False only when complete, None when unknown), the witness's links and their evidence,
     and the result's id (its provenance)."""
     pattern = chain(plan, spec)
+    # a projection handed in may describe another state of the document: its bindings are checked against the
+    # document's current ones; one built here is current by construction
     p = projection if projection is not None else projection_from_document(doc, spec)
-    current = bindings_of(doc, spec)
+    current = bindings_of(doc, spec) if projection is not None else None
     rows = []
     for rid in matched(doc, spec, plan):
         res: Result = execute(p, p.request("typed_path", sources=[rid], pattern=pattern,

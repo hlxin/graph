@@ -123,6 +123,18 @@ class Projection:
         declared_types = _names(node_types, "node_types")
         node_types_of: dict[str, tuple[str, ...]] = {}
         for rec in nodes:
+            if type(rec) is dict and rec.get("kind") != "hypothesis_candidate" \
+                    and rec.get("epistemic_status") != "unverified":
+                # the common record, checked inline with no message built unless a check fails
+                nid, types = rec.get("id"), rec.get("types", ())
+                if type(nid) is str and nid and nid.isascii() and nid not in node_types_of and (
+                        types is None or type(types) in (list, tuple)
+                        and all(type(t) is str and t and t.isascii() for t in types)):
+                    node_types_of[nid] = tuple(sorted(set(types))) if types else ()
+                    continue
+            elif type(rec) is str and rec and rec.isascii() and rec not in node_types_of:
+                node_types_of[rec] = ()
+                continue
             if _is_candidate(rec):
                 raise ProjectionError("candidate_record", "a v0 projection holds source records only; hypothesis "
                                       "candidates stay in their own records and are never traversed")
@@ -153,6 +165,15 @@ class Projection:
         declared_rel = _names(relations, "relations")
         edge_recs: dict[str, tuple[str, str, str]] = {}
         for rec in edges:
+            if type(rec) is dict and rec.get("kind") != "hypothesis_candidate" \
+                    and rec.get("epistemic_status") != "unverified":
+                # the common record, checked inline with no message built unless a check fails
+                eid, src, dst, rel = rec.get("id"), rec.get("source"), rec.get("target"), rec.get("relation")
+                if type(eid) is str and eid and eid.isascii() and eid not in edge_recs \
+                        and src in node_types_of and dst in node_types_of \
+                        and type(rel) is str and rel and rel.isascii():
+                    edge_recs[eid] = (src, dst, rel)
+                    continue
             if _is_candidate(rec):
                 raise ProjectionError("candidate_record", "a v0 projection holds source records only; a proposed "
                                       "relation of a hypothesis candidate is never a traversable edge")
