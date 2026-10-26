@@ -35,7 +35,8 @@ rather than shrink it.
 - **A new operation.** Add it to a family's `ops` in `content.js` (`name`, `title`, `theory`, `algorithm` with its
   reference, `proofLabel` and `proof`). A family slide holds two or three operations; for more, add another family
   entry (it becomes a new slide, in the order of `families`). A family of one operation can carry a picture beside
-  it: set `aside` to a function in `ASIDES` in `build_deck.js` (`rankingSchematic`, `dominatorSchematic`). Then:
+  it: set `aside` to a function in `ASIDES` in `build_deck.js` (`rankingSchematic`, `dominatorSchematic`,
+  `incidenceExample`). Then:
   - raise `meta.operations` (the overview title, the architecture slide and the closing slide use it)
   - add the name to its card in `overview` (six cards fill the 3 × 2 grid: join a related family, as max_flow and
     matching and dominators joined "Structure and flows", rather than add a seventh)

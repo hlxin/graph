@@ -18,7 +18,7 @@ const meta = {
   date: "October 2026",
   version: "0.1.0.dev0",
   contract: "graph-runtime/v0.2",
-  operations: 16, // the request operations (src/graph_runtime/request.py, OPERATIONS)
+  operations: 17, // the request operations (src/graph_runtime/request.py, OPERATIONS)
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -162,6 +162,25 @@ const families = [
     ],
   },
   {
+    key: "incidence",
+    family: "Ranking and algebra",
+    slideTitle: "Incidence: exact rank and conservation laws",
+    lede: "The first operation aimed squarely at RATES: what a reaction network conserves, and what leaves it unchanged.",
+    icon: "LuSigma",
+    source: "docs/API_CONTRACT.md §4: Incidence; git log 05d3ea5; the worked example run on the runtime",
+    aside: "incidenceExample",
+    ops: [
+      {
+        name: "incidence",
+        title: "Exact rank and canonical kernel bases",
+        theory: "The matrix of edge coefficients between row and column nodes. For a stoichiometric matrix the left kernel holds the conservation laws and the right the steady combinations; with the linkage classes the rank gives Feinberg's deficiency (1987). For a Petri net: place and transition invariants.",
+        algorithm: "Exact fraction-free elimination over the integers: the rank and a nonsingular minor, then back elimination only for the kernels asked for. Each basis is canonical: reduced row echelon, primitive integer vectors.",
+        proofLabel: "Certificate proves",
+        proof: "A nonsingular minor (rank at least r), shown by elimination modulo 2⁶¹ − 1 with Bareiss as fallback, and the smaller kernel (rank at most r): the rank and the kernels' completeness follow.",
+      },
+    ],
+  },
+  {
     key: "periodic",
     family: "Periodic",
     slideTitle: "Periodic graphs: crystals as infinite graphs",
@@ -266,7 +285,7 @@ const overview = [
   { family: "Paths", icon: "LuSpline", ops: ["reachability", "dependency_impact", "typed_path", "shortest_path", "bottleneck_path", "regular_path"], answers: "What connects to what, and the best way there." },
   { family: "Reasoning", icon: "LuGitMerge", ops: ["support", "derivation"], answers: "AND/OR rules: what still stands, what can be made." },
   { family: "Patterns", icon: "LuNetwork", ops: ["pattern"], answers: "Multi-step questions: trees counted exactly, cycles by a worst-case optimal join." },
-  { family: "Ranking", icon: "LuBarChart3", ops: ["personalized_pagerank"], answers: "Relevance around chosen nodes, as proven intervals." },
+  { family: "Ranking and algebra", icon: "LuBarChart3", ops: ["personalized_pagerank", "incidence"], answers: "Relevance as proven intervals; exact rank and conservation laws." },
   { family: "Periodic", icon: "LuAtom", ops: ["periodicity"], answers: "Periodic projections: crystals, slabs and polymers searched from one cell." },
   { family: "Structure and flows", icon: "LuSplit", ops: ["components", "biconnectivity", "max_flow", "matching", "dominators"], answers: "Pieces, weak points, throughput, pairings and unavoidable nodes." },
 ];
@@ -279,7 +298,7 @@ const speedTiles = [
   { big: "0.66 s", label: "lightest derivations", context: "AND/OR graph of 60,000 nodes and 105,000 edges", source: "git log eeadc6a" },
   { big: "0.2 s", label: "certified top 10 by PageRank", context: "10k nodes, tolerance 1/1000; 100k nodes to residual 1/100 in 1.6 s", source: "git log 0d4d2b3" },
   { big: "0.36 s", label: "22,086 triangles", context: "Around a 2,500-degree hub, by the worst-case optimal join", source: "git log 7b39f7d" },
-  { big: "1,200", label: "pinned result_ids unchanged", context: "Golden test: the speedups changed no answer", source: "git log f65497b (tests/test_golden.py)" },
+  { big: "2.4 s", label: "exact rank and conservation laws", context: "Random 2000 × 3000 network, verified in 5.4 s (first version: 163 s)", source: "git log 05d3ea5; measured on the owner's machine" },
 ];
 
 // STATES contexts: mean of the 42 benchmark contexts (docs/STATES_INTEGRATION.md, Cost).
@@ -303,31 +322,38 @@ const networkxChart = {
 
 // Revalidation (git log e365fdc; README).
 const revalidation = {
+  lede: "Decided from the answer and its certificate, without searching again; certified operations re-check theirs on the new records.",
+  verdicts: [
+    { word: "holds", body: "Still a correct answer to the same request on the new projection. Components, biconnectivity, flows, matchings, dominators and incidence hold exactly when their certificate still checks." },
+    { word: "fails", body: "Refuted by the edit: a node or witness edge gone, or a claim the new records contradict (`answer_refuted`: a kernel vector no longer zero, a flow beyond a capacity, a cut no longer nearest the sources)." },
+    { word: "unknown", body: "Not decidable without a new search: interrupted, uncertified, or an edit broke the proof without refuting it (`certificate_broken`)." },
+  ],
   fast: "0.1 ms",
   slow: "≈100 ms",
   context: "100,000 nodes, 500,000 edges, after a 40-edge edit (one 0.32 s diff)",
   scale: { labels: ["holds", "fails", "unknown"], values: [312, 23, 10] },
-  source: "git log e365fdc; README.md (Revalidation)",
+  source: "git log e365fdc, 0a58767, 05d3ea5; README.md (Revalidation); docs/API_CONTRACT.md §7",
 };
 
 // Verification counts at the time of the build. Update with every increment.
 const verification = [
-  { big: "521", label: "runtime tests pass" },
-  { big: "148", label: "conformance cases" },
+  { big: "533", label: "runtime tests pass" },
+  { big: "153", label: "conformance cases" },
   { big: "16", label: "SCALE parity tests" },
   { big: "6", label: "STATES parity tests" },
   { big: "73 / 73", label: "real requests agree" },
 ];
 
-// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d). Shown under the checks on the verification slide.
+// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d, 05d3ea5). Shown under the checks on the
+// verification slide.
 const reviews = [
   "Also: an independent fuzzing review (about 50,000 cases), a Codex review of the contract (v0.1), and a golden test of 1,200 pinned result_ids.",
-  "Each increment now gets a Codex adversarial review before commit. It caught a request_id collision and two certificate holes (structure), an unverified interrupted upper bound (flows), and, finding no wrong answer in dominators, a quadratic cycle check in result reading (9 s on a 20,000-node chain, now 0.28 s); all fixed with regressions.",
+  "Codex reviews each increment adversarially before commit. Found and fixed with regressions: a request_id collision and two certificate holes (structure), an unverified interrupted bound (flows), a quadratic cycle check (dominators), and in incidence a float entry that let a false rank verify, a stale nearest cut that revalidated as holding, and contradicted answers left unknown. The second incidence review approved after 10,600 adversarial cases.",
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
 // Development timeline (git log). `when` is local time, -0400.
-const timelineLede = "Twenty-five commits on 25–26 October 2026: from four operations to sixteen.";
+const timelineLede = "Twenty-eight commits on 25–26 October 2026: from four operations to seventeen.";
 const timeline = [
   { day: "25 Oct 2026" },
   { when: "17:17", what: "v0: projections, 4 operations, results; SCALE parity" },
@@ -340,28 +366,29 @@ const timeline = [
   { when: "00:27", what: "`bottleneck_path`" },
   { when: "04:25", what: "Compiled hop lists · `regular_path` · `derivation`" },
   { when: "05:12", what: "`periodicity` · certified PageRank · cyclic patterns" },
-  { when: "10:09", what: "`components` · `biconnectivity`" },
-  { when: "10:15", what: "These slides (updated with each increment)" },
+  { when: "10:09", what: "`components` · `biconnectivity` · these slides" },
   { when: "10:29", what: "`max_flow` · `matching`" },
-  { when: "10:43", what: "`dominators`", latest: true },
+  { when: "10:43", what: "`dominators` · revalidation by certificate" },
+  { when: "11:16", what: "`incidence` (conservation laws)", latest: true },
 ];
 
 // Hand-worked conformance cases after each increment (commit messages; cases.json now).
 const growth = {
-  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators"],
-  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148],
-  operations: "4 → 16",
-  tests: "178 → 521",
+  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators", "incidence"],
+  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148, 153],
+  operations: "4 → 17",
+  tests: "178 → 533",
 };
 
 // ---------------------------------------------------------------------------------------------------------------
 // Roadmap: the next increments (plan.md after the two Codex surveys, codex_literature.md and codex_domains.md).
-const roadmapLede = "From two Codex literature surveys. Structure, flows and dominators are done; revalidating them comes first.";
+const roadmapLede = "From two Codex literature surveys. Done since: structure, flows, dominators, incidence, revalidation by certificate.";
 const roadmap = [
-  { name: "Revalidation for the new operations", icon: "LuRotateCw", answers: "Whether cached structure, flow and dominator answers still hold after an edit.", cert: "Their own certificates, rechecked against the edited projection.", ref: "In progress" },
-  { name: "Exact incidence algebra", icon: "LuSigma", answers: "Exact rank and kernels: conservation laws for RATES, Petri nets.", cert: "Elimination identities, kernel equations; Farkas for infeasibility.", ref: "Feinberg 1987 (deficiency, in adapters)" },
+  { name: "critical_path", icon: "LuGanttChart", answers: "Topological order, longest paths and slack; a cycle witness otherwise.", cert: "Every edge respects the order; tight paths attain the max-plus values.", ref: "Cross-domain survey; networkx as oracle" },
+  { name: "d-separation", icon: "LuGitFork", answers: "Whether conditioning blocks every trail between two sets.", cert: "An active trail proves dependence; a checked closure, separation.", ref: "Shachter 1998; Perković et al. 2015" },
   { name: "Support certificates", icon: "LuShieldCheck", answers: "Support answers checked and revalidated without recomputing.", cert: "Derivation ranks and closure under every rule prove the least fixpoint.", ref: "Dowling–Gallier 1984; McConnell et al. 2011" },
   { name: "k-best paths", icon: "LuListOrdered", answers: "Alternative routes and explanations, not only one optimum.", cert: "Path witnesses; a deviation partition with potentials proves the first k.", ref: "Yen 1971 (k shortest simple paths)" },
+  { name: "Pattern query planning", icon: "LuDatabase", answers: "Faster selective patterns: type postings, a deterministic access path.", cert: "Unchanged: the same rows and result_ids (golden test).", ref: "Selinger et al. 1979 (access paths)" },
   { name: "Incremental repair", icon: "LuRefreshCw", answers: "Repair cached answers that revalidation finds broken.", cert: "A fresh answer with an ordinary certificate on the new projection.", ref: "Gupta et al. 1993; Ramalingam–Reps 1996" },
 ];
 

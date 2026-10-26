@@ -283,7 +283,7 @@ async function motivationSlide() {
   const cards = [
     { x: 6.05, y: TOP, name: "SCALE", what: "Scientific claims and evidence", uses: "typed paths, impact, patterns, support, retrieval", status: "parity-tested", fill: C.accent1 },
     { x: 9.68, y: TOP, name: "STATES", what: "Atomistic structures, crystal graphs", uses: "periodic reachability, periodicity", status: "parity-tested", fill: C.accent1 },
-    { x: 6.05, y: 5.3, name: "RATES", what: "Reaction kinetics", uses: "derivation, bottleneck paths", status: "planned", fill: C.accent6 },
+    { x: 6.05, y: 5.3, name: "RATES", what: "Reaction kinetics", uses: "incidence, derivation, bottleneck paths", status: "planned", fill: C.accent6 },
     { x: 9.68, y: 5.3, name: "Cathanor", what: "Catalysis knowledge", uses: null, status: "planned", fill: C.accent6 },
   ];
   const cw = 3.05, ch = 1.5;
@@ -643,6 +643,37 @@ const ASIDES = {
     check("dominator schematic note", ny - y + height(note, w - 0.6, 14), h - 0.1);
     text(s, note, { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.1, fontSize: 14, color: C.text1 });
   },
+  // A worked example: A + B ⇄ C → D, its stoichiometric matrix and what incidence answers for it (run on the runtime).
+  incidenceExample(s, x, y, w, h) {
+    card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "incidence example" });
+    text(s, [
+      { text: "WORKED EXAMPLE", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1, breakLine: true } },
+      { text: "R1: A + B → C    R2: C → A + B    R3: C → D", options: { fontSize: 15, bold: true, color: C.text1 } },
+    ], { x: x + 0.3, y: y + 0.25, w: w - 0.6, h: 0.65 });
+    // The stoichiometric matrix N (species by reactions).
+    const N = { A: [-1, 1, 0], B: [-1, 1, 0], C: [1, -1, -1], D: [0, 0, 1] };
+    const cell = (t, o = {}) => ({ text: t, options: { fontFace: MONO, fontSize: 14, align: "center", color: C.text1, ...o } });
+    const head = (t) => cell(t, { bold: true, color: C.accent1, fill: { color: C.background2 } });
+    const rows = [[head("N"), head("R1"), head("R2"), head("R3")]];
+    for (const [sp, v] of Object.entries(N)) rows.push([head(sp), ...v.map((c) => cell(c > 0 ? `+${c}` : String(c), c === 0 ? { color: C.accent6 } : {}))]);
+    const tw = 3.0, ty = y + 1.0;
+    s.addTable(rows, { x: x + (w - tw) / 2, y: ty, w: tw, colW: [0.75, 0.75, 0.75, 0.75], rowH: 0.34, valign: "middle", margin: [0.02, 0.04, 0.02, 0.04], border: { type: "solid", color: HEX.lt2, pt: 1 } });
+    const ry = ty + 5 * 0.34 + 0.25;
+    const results = [
+      ["rank", "2: two independent reactions"],
+      ["left kernel", "B − A and A + C + D: the conservation laws"],
+      ["right kernel", "R1 + R2: a combination that changes nothing"],
+      ["deficiency", "3 complexes − 1 linkage class − rank 2 = 0 (the adapter counts complexes and classes)"],
+    ];
+    const runs = [];
+    results.forEach(([k, v], i) => {
+      runs.push({ text: `${k}  `, options: { fontSize: 14, bold: true, color: C.accent1 } });
+      runs.push({ text: v, options: { fontSize: 14, color: C.text1, paraSpaceAfter: 6, breakLine: i < results.length - 1 } });
+    });
+    const need = results.reduce((a, [k, v]) => a + height(`${k}  ${v}`, w - 0.6, 14) + 0.08, 0);
+    check("incidence example results", ry - y + need, h - 0.1);
+    text(s, runs, { x: x + 0.3, y: ry, w: w - 0.6, h: y + h - ry - 0.15 });
+  },
 };
 
 const FOOTERS = {
@@ -666,24 +697,24 @@ const FOOTERS = {
 async function revalidationSlide() {
   pres.addSection({ title: "Trust and results" });
   const R = K.revalidation;
-  const s = contentSlide("Trust and results", "Revalidation: is a cached answer still right?",
-    "Decided from the answer and its certificate, in time proportional to the edit, without searching again.");
-  const verdicts = [
-    ["LuCheckCircle2", C.accent1, "holds", "Still a correct answer to the same request on the new projection."],
-    ["LuXCircle", C.accent4, "fails", "Refuted, with the edit that refutes it: a witness edge gone, or a hop to a node the answer does not list."],
-    ["LuHelpCircle", C.accent2, "unknown", "Not decidable without a new search: interrupted, uncertified, or an edit broke the proof without refuting it."],
-  ];
-  const lw = 5.55, vh = (BOTTOM - TOP - 2 * 0.25) / 3;
-  for (let i = 0; i < verdicts.length; i++) {
-    const [ic, fill, word, body] = verdicts[i];
-    const y = TOP + i * (vh + 0.25);
-    card(s, MX, y, lw, vh, { name: `verdict ${word}` });
-    await iconCircle(s, ic, MX + 0.25, y + (vh - 0.62) / 2, 0.62, { fill, label: word });
-    check(`verdict ${word}`, 0.35 + height(body, lw - 1.35, 14), vh - 0.2);
+  const s = contentSlide("Trust and results", "Revalidation: is a cached answer still right?", R.lede);
+  const look = { holds: ["LuCheckCircle2", C.accent1], fails: ["LuXCircle", C.accent4], unknown: ["LuHelpCircle", C.accent2] };
+  const lw = 6.35, gapV = 0.2, tw = lw - 1.3;
+  const need = R.verdicts.map((v) => 0.36 + height(v.body, tw, 14) + 0.26);
+  const spare = (BOTTOM - TOP - gapV * (R.verdicts.length - 1)) - need.reduce((a2, b2) => a2 + b2, 0);
+  check("revalidation verdicts", BOTTOM - TOP - spare, BOTTOM - TOP);
+  let vy = TOP;
+  for (let i = 0; i < R.verdicts.length; i++) {
+    const { word, body } = R.verdicts[i];
+    const [ic, fill] = look[word];
+    const vh = need[i] + Math.max(0, spare) / R.verdicts.length;
+    card(s, MX, vy, lw, vh, { name: `verdict ${word}` });
+    await iconCircle(s, ic, MX + 0.25, vy + (vh - 0.62) / 2, 0.62, { fill, label: word });
     text(s, [
       { text: word, options: { fontFace: MONO, fontSize: 18, bold: true, color: fill, breakLine: true, paraSpaceAfter: 2 } },
-      { text: body, options: { fontSize: 14, color: C.text1 } },
-    ], { x: MX + 1.1, y: y + 0.12, w: lw - 1.3, h: vh - 0.2, valign: "middle" });
+      ...rich(body, { fontSize: 14, color: C.text1 }),
+    ], { x: MX + 1.1, y: vy + 0.1, w: tw, h: vh - 0.2, valign: "middle" });
+    vy += vh + gapV;
   }
   const x0 = MX + lw + 0.45, w = CW - lw - 0.45;
   // The two numbers.
@@ -691,7 +722,7 @@ async function revalidationSlide() {
   [[R.fast, "per cached result, checked against a diff", C.accent1], [R.slow, "to rerun the same request", C.accent6]].forEach(([big, label, color], i) => {
     const x = x0 + i * (half + 0.3);
     text(s, [
-      { text: big, options: { fontSize: 44, bold: true, color, fontFace: "Cambria", breakLine: true } },
+      { text: big, options: { fontSize: 40, bold: true, color, fontFace: "Cambria", breakLine: true } },
       { text: label, options: { fontSize: 14, color: C.text1 } },
     ], { x, y: TOP, w: half, h: 1.3 });
   });
@@ -705,7 +736,7 @@ async function revalidationSlide() {
     objectName: "SCALE verdicts chart",
   });
   text(s, "Each verdict confirmed by a fresh run.", { x: x0, y: BOTTOM - 0.3, w, h: 0.3, fontSize: 12, color: C.accent6, italic: true });
-  s.addNotes(`Sources: ${R.source}; docs/API_CONTRACT.md §7 (verdicts and reasons). With one diff of the projections, each result is checked in time proportional to the edit (binary search in the answer's canonical lists). On 700 random edits the diff and full checks give the same record and every 'holds' matches a fresh run. Measured on a heavily loaded machine.`);
+  s.addNotes(`Sources: ${R.source} (verdicts and reasons). With one diff of the projections, each result is checked in time proportional to the edit (binary search in the answer's canonical lists). On 700 random edits the diff and full checks give the same record and every 'holds' matches a fresh run. Measured on a heavily loaded machine. Revalidation by certificate (0a58767, extended in 05d3ea5): components, biconnectivity, max_flow, matching, dominators and incidence are always checked in full: a node or edge the answer names that is gone refutes it (node_gone, witness_gone); a claim the new records contradict refutes it (answer_refuted); otherwise it holds exactly when the certificate still checks (as verify_result checks it), and is unknown (certificate_broken) when it does not, or (no_certificate) when it has none. Tested on 600 random edits: whenever a result holds, a fresh run gives the same canonical answer.`);
 }
 
 async function verificationSlide() {
@@ -732,10 +763,10 @@ async function verificationSlide() {
     const [ic, head, body] = methods[i];
     const x = MX + i * (mw + 0.3);
     card(s, x, my, mw, mh, { name: head });
-    await iconCircle(s, ic, x + 0.22, my + 0.22, 0.5, { label: head });
-    text(s, head, { x: x + 0.22, y: my + 0.85, w: mw - 0.44, h: 0.32, fontSize: 16, bold: true, color: C.text1 });
-    check(`method ${head}`, 1.25 + height(body, mw - 0.44, 14), mh - 0.1);
-    text(s, rich(body, { fontSize: 14, color: C.text1 }), { x: x + 0.22, y: my + 1.25, w: mw - 0.44, h: mh - 1.35 });
+    await iconCircle(s, ic, x + 0.22, my + 0.2, 0.5, { label: head });
+    text(s, head, { x: x + 0.86, y: my + 0.15, w: mw - 1.0, h: 0.6, fontSize: 16, bold: true, color: C.text1, valign: "middle" });
+    check(`method ${head}`, 0.9 + height(body, mw - 0.44, 14), mh - 0.1);
+    text(s, rich(body, { fontSize: 14, color: C.text1 }), { x: x + 0.22, y: my + 0.9, w: mw - 0.44, h: mh - 1.0 });
   }
   text(s, K.reviews.map((t, i) => ({ text: t, options: { fontSize: 12, color: C.accent6, italic: true, paraSpaceAfter: 3, breakLine: i < K.reviews.length - 1 } })), { x: MX, y: BOTTOM - reviewH, w: reviewW, h: reviewH, valign: "bottom" });
   s.addNotes("Counts as of this build: python3 -m pytest (514 pass), src/graph_runtime/conformance/cases.json (143 cases), SCALE parity (16 tests) and STATES parity (6 tests) in their environments; 73 of 73 real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: git log 8917563, 7ff04db; Codex adversarial reviews before commit: git log 99fb868 (a request field named kind was overwritten by the digest's record kind, now connectivity; unlisted groups and stray trees in the components certificate) and 573ce2b (an interrupted max flow's upper bound was not verified).");
