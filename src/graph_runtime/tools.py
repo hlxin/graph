@@ -94,7 +94,8 @@ TOOLS: list[dict] = [
     {
         "name": "graph_execute",
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
-                       "derivation, personalized_pagerank, dependency_impact, pattern, support, or on a periodic "
+                       "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
+                       "biconnectivity, or on a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
                        "regular_path takes a path expression "
@@ -462,6 +463,16 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
     elif op == "personalized_pagerank":
         summary = {"count": a["count"], "certified_top": a["certified_top"], "residual": a["residual"],
                    **head(a["ranked"], ("node", "lower", "upper"))}
+    elif op == "components":
+        summary = {"count": a["count"], "total": a["total"], "components": [
+            {"size": c["size"], "nodes": c["nodes"][:limit], **{k: c[k] for k in ("edges", "cyclic", "initial",
+                                                                                   "terminal") if k in c}}
+            for c in a["components"][:limit]], "more": a["count"] > limit, "certificate": kind(a["certificate"])}
+    elif op == "biconnectivity":
+        summary = {"components": a["components"], "articulation_points": len(a["articulation_points"]),
+                   "bridges": len(a["bridges"]), "blocks": None if a["blocks"] is None else len(a["blocks"]),
+                   **head(a["articulation_points"], ("node", "splits")),
+                   "bridge_edges": [b["edge"] for b in a["bridges"][:limit]], "certificate": kind(a["certificate"])}
     elif op == "periodicity":
         summary = {"count": a["count"], "components": [
             {"seeds": c["seeds"][:limit], "rank": c["rank"], "basis": c["basis"], "copies": c["copies"],

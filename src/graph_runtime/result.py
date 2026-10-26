@@ -432,6 +432,10 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_periodicity_problems(request, answer, status))
     elif op == "personalized_pagerank":
         out.extend(_pagerank_problems(request, answer))
+    elif op == "components":
+        out.extend(_components_problems(request, answer, status, data.get("interruption")))
+    elif op == "biconnectivity":
+        out.extend(_biconnectivity_problems(request, answer, status))
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -599,6 +603,88 @@ def _pagerank_problems(request: dict, answer: dict) -> list[str]:
             out.append("certificate estimates are unique, nonzero, in ascending node ID order")
         if any(values.get(n, Fraction(0)) != lo for lo, _, n in ranked):
             out.append("each listed lower bound is the node's estimate")
+    return out
+
+
+def _components_problems(request: dict, answer: dict, status: str, interruption: dict | None) -> list[str]:
+    """A components answer's own consistency, read without the records: components disjoint, each its nodes unique and
+    ascending, listed by first node, at least ``min_size`` of them and holding a requested node when nodes are named,
+    within ``max_results``; a strong component of two nodes or more is cyclic; ``total`` known exactly when complete;
+    a certificate exactly when asked for, whose groups (each with its trees) include every listed component. Whether they are the components is checked against the records
+    (:func:`graph_runtime.verify_result`)."""
+    out = []
+    comps, want, strong = answer["components"], request["nodes"], request["connectivity"] == "strong"
+    if answer["count"] != len(comps) or len(comps) > request["limits"]["max_results"]:
+        out.append("count must match the components and fit max_results")
+    if interruption is not None and interruption["reason"] == "output_limit" \
+            and len(comps) != request["limits"]["max_results"]:
+        out.append("output_limit requires a full output buffer")
+    seen: set = set()
+    for c in comps:
+        nodes = c["nodes"]
+        if nodes != sorted(set(nodes)) or c["size"] != len(nodes) or seen.intersection(nodes):
+            out.append("a component's nodes are unique, ascending, its size their number, and in no other component")
+        seen.update(nodes)
+        if len(nodes) < request["min_size"] or (want is not None and not set(want).intersection(nodes)):
+            out.append("a listed component has min_size nodes or more, and holds a requested node when nodes are named")
+        flags = {"cyclic", "initial", "terminal"} & set(c)
+        if flags != ({"cyclic", "initial", "terminal"} if strong else set()) \
+                or (strong and len(nodes) > 1 and c["cyclic"] is not True):
+            out.append("strong components (only) say whether they are cyclic, initial and terminal; one of two nodes "
+                       "or more is cyclic")
+    firsts = [c["nodes"][0] for c in comps if c["nodes"]]
+    if firsts != sorted(firsts):
+        out.append("components are listed in ascending order of their first node")
+    total = answer["total"]
+    if (total is None) != (status != COMPLETED) or (total is not None and (type(total) is not int
+                                                                           or total < len(comps))):
+        out.append("total is known (and at least count) exactly when the answer is complete")
+    cert = answer["certificate"]
+    if (cert is not None) != bool(request["certificate"]):
+        out.append("a certificate comes exactly when asked for")
+    elif cert is not None:
+        if any((g["in"] is None) == strong for g in cert["groups"]):
+            out.append("every group of the certificate has a tree out of its first node (strong: and one into it)")
+        groups = {tuple(g["nodes"]) for g in cert["groups"]}
+        if any(tuple(c["nodes"]) not in groups for c in comps):
+            out.append("every listed component is one of the certificate's groups")
+    return out
+
+
+def _biconnectivity_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A biconnectivity answer's own consistency, read without the records: articulation points unique, ascending,
+    each splitting its component into two pieces or more; bridges unique and ascending; blocks (exactly when asked
+    for) with ascending unique nodes and edges, no edge in two blocks, listed by first edge, every bridge a block of
+    its own; the number of components known exactly when complete; a certificate exactly when asked for. Whether they
+    hold is checked against the records (:func:`graph_runtime.verify_result`)."""
+    out = []
+    points = [x["node"] for x in answer["articulation_points"]]
+    if points != sorted(set(points)) or any(type(x["splits"]) is not int or x["splits"] < 2
+                                            for x in answer["articulation_points"]):
+        out.append("articulation points are unique, ascending, each splitting its component into two pieces or more")
+    bridges = [b["edge"] for b in answer["bridges"]]
+    if bridges != sorted(set(bridges)):
+        out.append("bridges are unique and in ascending edge ID order")
+    blocks = answer["blocks"]
+    if (blocks is not None) != bool(request["blocks"]):
+        out.append("blocks are listed exactly when asked for")
+    elif blocks is not None:
+        used: set = set()
+        for b in blocks:
+            if not b["edges"] or b["edges"] != sorted(set(b["edges"])) or b["nodes"] != sorted(set(b["nodes"])) \
+                    or used.intersection(b["edges"]):
+                out.append("a block has edges, its nodes and edges unique and ascending, no edge in another block")
+            used.update(b["edges"])
+        if [b["edges"][0] for b in blocks if b["edges"]] != sorted(b["edges"][0] for b in blocks if b["edges"]):
+            out.append("blocks are listed in ascending order of their first edge")
+        singles = {b["edges"][0] for b in blocks if len(b["edges"]) == 1}
+        if status == COMPLETED and not set(bridges) <= singles:
+            out.append("every bridge is a block of its own")
+    count = answer["components"]
+    if (count is None) != (status != COMPLETED) or (count is not None and type(count) is not int):
+        out.append("components is counted exactly when the answer is complete")
+    if (answer["certificate"] is not None) != bool(request["certificate"]):
+        out.append("a certificate comes exactly when asked for")
     return out
 
 

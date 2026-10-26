@@ -4,23 +4,1080 @@
   "title": "GRAPH contract graph-runtime/v0.2",
   "description": "Requests, results, hypothesis candidates and projection snapshots of GRAPH (Graph Runtime for Analysis, Provenance, Hypotheses). Each is a definition under $defs; graph_runtime.json_schema(name) gives a schema for one of them.",
   "$defs": {
-    "id": {
-      "type": "string",
-      "minLength": 1,
-      "description": "An original ID, relation or type, as the consumer gave it."
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "stance",
+        "evidence",
+        "conditions",
+        "assessor",
+        "at",
+        "note"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/text"
+        },
+        "stance": {
+          "enum": [
+            "supporting",
+            "opposing",
+            "inconclusive"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "conditions": {
+          "$ref": "#/$defs/text"
+        },
+        "assessor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/text"
+            },
+            "version": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/text"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "note": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     },
-    "text": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "\\S"
+    "biconnectivity_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "articulation_points",
+        "bridges",
+        "blocks",
+        "components",
+        "certificate"
+      ],
+      "properties": {
+        "articulation_points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "splits"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "splits": {
+                "type": "integer",
+                "minimum": 2
+              }
+            }
+          }
+        },
+        "bridges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "edge",
+              "relation",
+              "source",
+              "target"
+            ],
+            "properties": {
+              "edge": {
+                "$ref": "#/$defs/id"
+              },
+              "relation": {
+                "$ref": "#/$defs/id"
+              },
+              "source": {
+                "$ref": "#/$defs/id"
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        "blocks": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "nodes",
+                  "edges"
+                ],
+                "properties": {
+                  "nodes": {
+                    "$ref": "#/$defs/ids"
+                  },
+                  "edges": {
+                    "$ref": "#/$defs/ids"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "components": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "forest"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "dfs"
+                },
+                "forest": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "pre",
+                      "via"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "pre": {
+                        "$ref": "#/$defs/count"
+                      },
+                      "via": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/id"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "biconnectivity: articulation points (with the number of pieces their removal leaves of their component), bridges, and on request blocks (each with its nodes and edges); components: the connected components searched, null when interrupted. The dfs certificate is the depth-first forest: each node's preorder number and the edge to its parent."
+    },
+    "bottleneck_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "found",
+        "optimal",
+        "value",
+        "witness",
+        "certificate"
+      ],
+      "properties": {
+        "found": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "optimal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/weight"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bound": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/weight"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "witness": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "target",
+                "length",
+                "hops"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/id"
+                },
+                "target": {
+                  "$ref": "#/$defs/id"
+                },
+                "length": {
+                  "$ref": "#/$defs/count"
+                },
+                "hops": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/weighted_hop"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "threshold",
+                "reached"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "threshold"
+                },
+                "threshold": {
+                  "$ref": "#/$defs/weight"
+                },
+                "reached": {
+                  "$ref": "#/$defs/ids"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "reached"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "closure"
+                },
+                "reached": {
+                  "$ref": "#/$defs/ids"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "found": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "witness": {
+                "type": "object"
+              },
+              "optimal": {
+                "type": "boolean"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "witness": {
+                "type": "null"
+              },
+              "value": {
+                "type": "null"
+              },
+              "optimal": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "description": "value: the witness's weakest hop weight (max_min) or its highest (min_max), null for a path with no hop. bound (interrupted only): no path to a target is strictly better. threshold: what the sources reach by hops strictly better than it holds no target."
+    },
+    "certificate_number": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/count"
+        },
+        {
+          "$ref": "#/$defs/exact"
+        }
+      ],
+      "description": "An integer in integer-cost mode; p or p/q in lowest terms in rational mode."
+    },
+    "components_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "components",
+        "count",
+        "total",
+        "certificate"
+      ],
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "nodes",
+              "size",
+              "edges"
+            ],
+            "properties": {
+              "nodes": {
+                "$ref": "#/$defs/ids"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "edges": {
+                "$ref": "#/$defs/count"
+              },
+              "cyclic": {
+                "type": "boolean"
+              },
+              "initial": {
+                "type": "boolean"
+              },
+              "terminal": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "total": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "groups"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "partition"
+                },
+                "groups": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "nodes",
+                      "out",
+                      "in"
+                    ],
+                    "properties": {
+                      "nodes": {
+                        "$ref": "#/$defs/ids"
+                      },
+                      "out": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "node",
+                            "via"
+                          ],
+                          "properties": {
+                            "node": {
+                              "$ref": "#/$defs/id"
+                            },
+                            "via": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "edge",
+                                "relation",
+                                "direction",
+                                "from"
+                              ],
+                              "properties": {
+                                "edge": {
+                                  "$ref": "#/$defs/id"
+                                },
+                                "relation": {
+                                  "$ref": "#/$defs/id"
+                                },
+                                "direction": {
+                                  "$ref": "#/$defs/direction"
+                                },
+                                "from": {
+                                  "$ref": "#/$defs/id"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "in": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "node",
+                                "via"
+                              ],
+                              "properties": {
+                                "node": {
+                                  "$ref": "#/$defs/id"
+                                },
+                                "via": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "edge",
+                                    "relation",
+                                    "direction",
+                                    "to"
+                                  ],
+                                  "properties": {
+                                    "edge": {
+                                      "$ref": "#/$defs/id"
+                                    },
+                                    "relation": {
+                                      "$ref": "#/$defs/id"
+                                    },
+                                    "direction": {
+                                      "$ref": "#/$defs/direction"
+                                    },
+                                    "to": {
+                                      "$ref": "#/$defs/id"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "components: the listed components by first node, each with its nodes, size and the edges in scope between them (strong: whether a walk inside returns to its start, whether no hop enters it, whether none leaves it); total: the components of the selection, null when interrupted. The partition certificate lists every component the search finished (strong: in topological order), each with a spanning tree out of its first node (strong: and one into it)."
+    },
+    "cost": {
+      "type": "number",
+      "minimum": 0
+    },
+    "costed_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "relation",
+        "direction",
+        "from",
+        "to",
+        "cost"
+      ],
+      "properties": {
+        "edge": {
+          "$ref": "#/$defs/id"
+        },
+        "relation": {
+          "$ref": "#/$defs/id"
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "cost": {
+          "$ref": "#/$defs/cost"
+        }
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "derivation_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "derived",
+        "underived",
+        "derivation",
+        "certificate"
+      ],
+      "properties": {
+        "derived": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/derivation_value"
+          }
+        },
+        "underived": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "bound": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/weight"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bound_exact": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/exact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "derivation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "rule",
+              "value",
+              "uses"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "rule": {
+                "enum": [
+                  "given",
+                  "all",
+                  "one"
+                ]
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/weight"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "value_exact": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/exact"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "uses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "edge",
+                    "relation",
+                    "direction",
+                    "from",
+                    "to",
+                    "cost"
+                  ],
+                  "properties": {
+                    "edge": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "relation": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "direction": {
+                      "$ref": "#/$defs/direction"
+                    },
+                    "from": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "to": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "cost": {
+                      "$ref": "#/$defs/weight"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "bound",
+                "values"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "values"
+                },
+                "bound": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/weight"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bound_exact": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/exact"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/derivation_value"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "derived: each derived target with its best value; underived (complete only): targets with no derivation; bound (interrupted only): no unsettled target has a better derivation (null: nothing known); derivation: every node the derived targets' derivations use, given (a ground), all (every input) or one (one input), with its value and the hops it uses. A value is a number, exact as value_exact in rational mode; for min_max and max_min, null is a given node's (no hop). The values certificate: values no derivation beats, the bound for every node it leaves unlisted (null: no derivation at all)."
+    },
+    "derivation_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "value"
+      ],
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/id"
+        },
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/weight"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value_exact": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/exact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     },
     "digest": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$(?![\\s\\S])"
     },
-    "count": {
-      "type": "integer",
-      "minimum": 0
+    "direction": {
+      "enum": [
+        "forward",
+        "reverse"
+      ]
+    },
+    "exact": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(/[1-9][0-9]*)?$(?![\\s\\S])",
+      "description": "An exact non-negative rational, p or p/q in lowest terms."
+    },
+    "hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "relation",
+        "direction",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "edge": {
+          "$ref": "#/$defs/id"
+        },
+        "relation": {
+          "$ref": "#/$defs/id"
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "hypothesis_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contract",
+        "id",
+        "revision",
+        "previous",
+        "epistemic_status",
+        "statement",
+        "scope",
+        "projection",
+        "producer",
+        "basis",
+        "dependencies",
+        "assumptions",
+        "proposed_tests",
+        "proposed_relations",
+        "scores",
+        "lifecycle",
+        "assessments",
+        "extensions",
+        "record_digest"
+      ],
+      "properties": {
+        "kind": {
+          "const": "hypothesis_candidate"
+        },
+        "contract": {
+          "const": "graph-runtime/v0.2"
+        },
+        "id": {
+          "$ref": "#/$defs/text"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previous": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "epistemic_status": {
+          "const": "unverified"
+        },
+        "statement": {
+          "$ref": "#/$defs/text"
+        },
+        "scope": {
+          "$ref": "#/$defs/text"
+        },
+        "projection": {
+          "$ref": "#/$defs/digest"
+        },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/text"
+            },
+            "version": {
+              "$ref": "#/$defs/text"
+            }
+          }
+        },
+        "basis": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "proposed_tests": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/proposed_test"
+          }
+        },
+        "proposed_relations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "target",
+              "relation"
+            ],
+            "properties": {
+              "source": {
+                "$ref": "#/$defs/text"
+              },
+              "target": {
+                "$ref": "#/$defs/text"
+              },
+              "relation": {
+                "$ref": "#/$defs/text"
+              }
+            }
+          }
+        },
+        "scores": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/score"
+          }
+        },
+        "lifecycle": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/lifecycle_event"
+                },
+                {
+                  "properties": {
+                    "state": {
+                      "const": "active"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/lifecycle_event"
+              },
+              {
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "withdrawn",
+                      "superseded"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "assessments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assessment"
+          }
+        },
+        "extensions": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "record_digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "revision": {
+                "const": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "previous": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "previous": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      ],
+      "description": "A hypothesis candidate record. What JSON Schema cannot check (the digests, a generated id, unique test and assessment ids, a revision history) graph_runtime.validate_candidate and verify_revisions check. Calendar validity, chronology, distinct observations and plain JSON extension keys are also checked by the runtime."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "An original ID, relation or type, as the consumer gave it."
     },
     "ids": {
       "type": "array",
@@ -30,48 +1087,160 @@
         "$ref": "#/$defs/id"
       }
     },
-    "direction": {
-      "enum": [
-        "forward",
-        "reverse"
-      ]
-    },
-    "scope": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "relation",
-          "direction"
-        ],
-        "properties": {
-          "relation": {
-            "$ref": "#/$defs/id"
-          },
-          "direction": {
-            "$ref": "#/$defs/direction"
+    "impact_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "affected",
+        "count"
+      ],
+      "properties": {
+        "changed": {
+          "$ref": "#/$defs/ids"
+        },
+        "affected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "depth",
+              "via"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "depth": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "via": {
+                "$ref": "#/$defs/via"
+              }
+            }
           }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
         }
       }
     },
-    "max_depth": {
-      "type": [
-        "integer",
-        "null"
+    "lifecycle_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "at",
+        "reason",
+        "superseded_by"
       ],
-      "minimum": 0
+      "properties": {
+        "state": {
+          "enum": [
+            "active",
+            "withdrawn",
+            "superseded"
+          ]
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "superseded_by": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "superseded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "superseded_by": {
+                "$ref": "#/$defs/text"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "superseded_by": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "withdrawn",
+                  "superseded"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "$ref": "#/$defs/text"
+              }
+            }
+          }
+        }
+      ]
     },
-    "cost": {
-      "type": "number",
-      "minimum": 0
+    "limits_paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_expansions"
+      ],
+      "properties": {
+        "max_expansions": {
+          "$ref": "#/$defs/count"
+        }
+      }
     },
-    "exact": {
-      "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)(/[1-9][0-9]*)?$(?![\\s\\S])",
-      "description": "An exact non-negative rational, p or p/q in lowest terms."
+    "limits_pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_expansions",
+        "max_results"
+      ],
+      "properties": {
+        "max_expansions": {
+          "$ref": "#/$defs/count"
+        },
+        "max_results": {
+          "$ref": "#/$defs/count"
+        }
+      }
     },
     "limits_sets": {
       "type": "object",
@@ -89,17 +1258,1337 @@
         }
       }
     },
-    "limits_paths": {
+    "max_depth": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "pagerank_answer": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "max_expansions"
+        "ranked",
+        "count",
+        "certified_top",
+        "residual",
+        "residual_exact",
+        "certificate"
       ],
       "properties": {
-        "max_expansions": {
+        "ranked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "lower",
+              "lower_exact",
+              "upper",
+              "upper_exact"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "lower": {
+                "type": "number",
+                "minimum": 0
+              },
+              "lower_exact": {
+                "$ref": "#/$defs/exact"
+              },
+              "upper": {
+                "type": "number",
+                "minimum": 0
+              },
+              "upper_exact": {
+                "$ref": "#/$defs/exact"
+              }
+            }
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "certified_top": {
+          "$ref": "#/$defs/count"
+        },
+        "residual": {
+          "type": "number",
+          "minimum": 0
+        },
+        "residual_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "values"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "estimates"
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "value",
+                      "value_exact"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "value": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "value_exact": {
+                        "$ref": "#/$defs/exact"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "personalized_pagerank: the top nodes by lower bound, each with an interval proven to hold its personalized PageRank (exact in _exact, nearest floats beside); certified_top: how many leading entries are proven the top ones; residual: the probability mass the push left unplaced; the estimates certificate lets a checker recompute every residual exactly."
+    },
+    "path_certificate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "bound",
+            "states"
+          ],
+          "properties": {
+            "kind": {
+              "const": "product_states"
+            },
+            "bound": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "states": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "state",
+                  "length"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "state": {
+                    "$ref": "#/$defs/count"
+                  },
+                  "length": {
+                    "$ref": "#/$defs/count"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Every product state (node, automaton state) the sources reach with fewer than bound hops (all of them when bound is null), by state then node, each with its fewest hops: from a listed state with fewer than bound - 1 hops, every move leads to a listed state at most one hop further, and no listed state ends a match at a target. So no matching walk to a target is shorter than bound (exists at all, when null), and reached lengths are least."
+    },
+    "path_expression": {
+      "description": "A regular path expression in normal form (graph_runtime.paths): a step matches one hop in its scope landing on a node of its node types (any when null); seq and alt hold at least two items (alt de-duplicated and sorted by canonical JSON); repeat matches its item min to max times (max null: no bound; never min 1 and max 1).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "scope",
+            "node_types"
+          ],
+          "properties": {
+            "op": {
+              "const": "step"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "node_types": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "items"
+          ],
+          "properties": {
+            "op": {
+              "enum": [
+                "seq",
+                "alt"
+              ]
+            },
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "$ref": "#/$defs/path_expression"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "item",
+            "min",
+            "max"
+          ],
+          "properties": {
+            "op": {
+              "const": "repeat"
+            },
+            "item": {
+              "$ref": "#/$defs/path_expression"
+            },
+            "min": {
+              "$ref": "#/$defs/count"
+            },
+            "max": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "path_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "relation",
+        "direction",
+        "from",
+        "to",
+        "state"
+      ],
+      "properties": {
+        "edge": {
+          "$ref": "#/$defs/id"
+        },
+        "relation": {
+          "$ref": "#/$defs/id"
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "state": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "description": "A hop of a regular path witness; state: the automaton state it moves to (the step it matched)."
+    },
+    "pattern_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exists",
+        "total",
+        "rows",
+        "count",
+        "coverage"
+      ],
+      "properties": {
+        "exists": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "total": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pattern_row"
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "coverage": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "vars",
+                "steps"
+              ],
+              "properties": {
+                "vars": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "var",
+                      "candidates",
+                      "kept"
+                    ],
+                    "properties": {
+                      "var": {
+                        "$ref": "#/$defs/var"
+                      },
+                      "candidates": {
+                        "$ref": "#/$defs/count"
+                      },
+                      "kept": {
+                        "$ref": "#/$defs/count"
+                      }
+                    }
+                  }
+                },
+                "steps": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "exists and total are null only when the search was interrupted before it knew them (a pattern with a cycle counts its rows by listing them, so an interruption may leave its total unknown though rows exist); total counts every row even when an output limit lists fewer."
+    },
+    "pattern_match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "var",
+        "node_types",
+        "nodes"
+      ],
+      "properties": {
+        "var": {
+          "$ref": "#/$defs/var"
+        },
+        "node_types": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ids"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nodes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ids"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "node_types": {
+              "$ref": "#/$defs/ids"
+            }
+          }
+        },
+        {
+          "properties": {
+            "nodes": {
+              "$ref": "#/$defs/ids"
+            }
+          }
+        }
+      ]
+    },
+    "pattern_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "edges",
+        "links"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "edges": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "pattern_step": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "var",
+            "scope",
+            "node_types",
+            "nodes",
+            "edges",
+            "edge_var",
+            "optional"
+          ],
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/var"
+            },
+            "var": {
+              "$ref": "#/$defs/var"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "node_types": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nodes": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edges": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edge_var": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/var"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "to",
+            "scope",
+            "edges",
+            "edge_var"
+          ],
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/var"
+            },
+            "to": {
+              "$ref": "#/$defs/var"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "edges": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edge_var": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/var"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "description": "A step that closes a cycle: a hop in its scope from the node bound to from to the node bound to to; it binds no variable."
+        }
+      ]
+    },
+    "periodic_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contract",
+        "identity",
+        "bindings",
+        "relations",
+        "node_types",
+        "nodes",
+        "edges",
+        "type_parents",
+        "relation_parents",
+        "dimensions",
+        "periodic"
+      ],
+      "properties": {
+        "kind": {
+          "const": "graph_runtime.periodic_projection"
+        },
+        "contract": {
+          "const": "graph-runtime/v0.2"
+        },
+        "identity": {
+          "$ref": "#/$defs/digest"
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/id"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "node_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "types"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "types": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/id"
+                }
+              }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "source",
+              "target",
+              "relation",
+              "shift"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "source": {
+                "$ref": "#/$defs/id"
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              },
+              "relation": {
+                "$ref": "#/$defs/id"
+              },
+              "shift": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "type_parents": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
+        },
+        "relation_parents": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
+        },
+        "dimensions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "periodic": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "boolean"
+          }
+        }
+      },
+      "description": "A periodic projection snapshot (PeriodicProjection.to_dict): a cell's records, each edge with its image shift; its identity is recomputed from the records on reading."
+    },
+    "periodicity_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "components",
+        "count"
+      ],
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "seeds",
+              "nodes",
+              "rank",
+              "basis",
+              "copies",
+              "cycles",
+              "witnesses"
+            ],
+            "properties": {
+              "seeds": {
+                "$ref": "#/$defs/ids"
+              },
+              "nodes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "node",
+                    "image",
+                    "via"
+                  ],
+                  "properties": {
+                    "node": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "image": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "via": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/via"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "rank": {
+                "$ref": "#/$defs/count"
+              },
+              "basis": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "cycles": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "edge",
+                    "net"
+                  ],
+                  "properties": {
+                    "edge": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "net": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              },
+              "witnesses": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "edge",
+                      "times"
+                    ],
+                    "properties": {
+                      "edge": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "times": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              },
+              "copies": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      },
+      "description": "periodicity: for each component of the requested images (in the infinite graph), the cell's nodes it meets, each with the image a spanning tree reaches and the hop it follows; the cycles that edges outside the tree close and their net shifts; the translation lattice they generate, as its Hermite normal form (basis) and rank (0 finite, 1 a chain, 2 a layer, 3 a framework); copies, the lattice's index in the integer vectors of its span (how many translated copies of the component run through the same space: a framework's degree of interpenetration); and each basis row written as a combination of the cycles (witnesses)."
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contract",
+        "identity",
+        "bindings",
+        "relations",
+        "node_types",
+        "nodes",
+        "edges",
+        "type_parents",
+        "relation_parents"
+      ],
+      "properties": {
+        "kind": {
+          "const": "graph_runtime.projection"
+        },
+        "contract": {
+          "const": "graph-runtime/v0.2"
+        },
+        "identity": {
+          "$ref": "#/$defs/digest"
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/id"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "node_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "types"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "types": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/id"
+                }
+              }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "source",
+              "target",
+              "relation"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "source": {
+                "$ref": "#/$defs/id"
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              },
+              "relation": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        "type_parents": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
+        },
+        "relation_parents": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
+        }
+      },
+      "description": "A projection snapshot (Projection.to_dict); its identity is recomputed from the records on reading."
+    },
+    "proposed_test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "outcomes"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/text"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "outcomes": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "observation",
+              "bearing"
+            ],
+            "properties": {
+              "observation": {
+                "$ref": "#/$defs/text"
+              },
+              "bearing": {
+                "enum": [
+                  "supports",
+                  "opposes",
+                  "inconclusive"
+                ]
+              }
+            }
+          },
+          "allOf": [
+            {
+              "contains": {
+                "properties": {
+                  "bearing": {
+                    "const": "supports"
+                  }
+                }
+              }
+            },
+            {
+              "contains": {
+                "properties": {
+                  "bearing": {
+                    "const": "opposes"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "reachability_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reached",
+        "count"
+      ],
+      "properties": {
+        "reached": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "depth",
+              "via"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "depth": {
+                "$ref": "#/$defs/count"
+              },
+              "via": {
+                "description": "null at depth 0, else the hop that first reached the node (the allOf below says which)"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "depth": {
+                      "const": 0
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "via": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "via": {
+                      "$ref": "#/$defs/via"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "count": {
           "$ref": "#/$defs/count"
         }
       }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "ref"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "node",
+            "edge",
+            "result",
+            "external"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "result"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "regular_reached_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reached",
+        "count",
+        "tree",
+        "certificate"
+      ],
+      "properties": {
+        "reached": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "length",
+              "state"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "length": {
+                "$ref": "#/$defs/count"
+              },
+              "state": {
+                "$ref": "#/$defs/count"
+              }
+            }
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "tree": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "state",
+              "length",
+              "via"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/id"
+              },
+              "state": {
+                "$ref": "#/$defs/count"
+              },
+              "length": {
+                "$ref": "#/$defs/count"
+              },
+              "via": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "edge",
+                      "relation",
+                      "direction",
+                      "from",
+                      "from_state"
+                    ],
+                    "properties": {
+                      "edge": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "relation": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "direction": {
+                        "$ref": "#/$defs/direction"
+                      },
+                      "from": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "from_state": {
+                        "$ref": "#/$defs/count"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "certificate": {
+          "$ref": "#/$defs/path_certificate"
+        }
+      },
+      "description": "answer reached: every node (among the targets) a matching walk from a source ends at, with its fewest hops and the accepting state that gives them; tree: the product states on their witnesses, by node then state, each with the hop it was first reached by."
+    },
+    "regular_witness_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "found",
+        "witness",
+        "certificate"
+      ],
+      "properties": {
+        "found": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "witness": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "target",
+                "length",
+                "hops"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/id"
+                },
+                "target": {
+                  "$ref": "#/$defs/id"
+                },
+                "length": {
+                  "$ref": "#/$defs/count"
+                },
+                "hops": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/path_hop"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "$ref": "#/$defs/path_certificate"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "found": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "witness": {
+                "type": "object"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "witness": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "description": "answer witness: one matching walk with the fewest hops from a source to a target."
     },
     "request": {
       "description": "A normalized request, as graph_runtime.normalize_request writes it and a result echoes it. An input request may leave out contract, mode, limits (or any limit), max_depth and a typed path's targets, which normalization fills.",
@@ -749,450 +3238,120 @@
             }
           },
           "description": "personalized_pagerank: alpha (the probability of stopping at each step) and tolerance (the residual to reach) are exact fractions strictly between 0 and 1."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "scope",
+            "connectivity",
+            "nodes",
+            "min_size",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "components"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_sets"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "nodes": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "min_size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "certificate": {
+              "type": "boolean"
+            },
+            "connectivity": {
+              "enum": [
+                "weak",
+                "strong"
+              ]
+            }
+          },
+          "description": "components: connectivity weak (hops in scope followed either way) or strong (a walk each way); nodes: only the components holding these (null: every component); min_size: the fewest nodes a listed component has."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "scope",
+            "nodes",
+            "blocks",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "biconnectivity"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "nodes": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ids"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "blocks": {
+              "type": "boolean"
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "biconnectivity: every edge in scope (in either direction) is a link between its ends; nodes: only the components holding these (null: all); blocks: list the blocks too."
         }
       ]
-    },
-    "via": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "edge",
-        "relation",
-        "direction",
-        "from"
-      ],
-      "properties": {
-        "edge": {
-          "$ref": "#/$defs/id"
-        },
-        "relation": {
-          "$ref": "#/$defs/id"
-        },
-        "direction": {
-          "$ref": "#/$defs/direction"
-        },
-        "from": {
-          "$ref": "#/$defs/id"
-        }
-      }
-    },
-    "hop": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "edge",
-        "relation",
-        "direction",
-        "from",
-        "to"
-      ],
-      "properties": {
-        "edge": {
-          "$ref": "#/$defs/id"
-        },
-        "relation": {
-          "$ref": "#/$defs/id"
-        },
-        "direction": {
-          "$ref": "#/$defs/direction"
-        },
-        "from": {
-          "$ref": "#/$defs/id"
-        },
-        "to": {
-          "$ref": "#/$defs/id"
-        }
-      }
-    },
-    "typed_hop": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "position",
-        "edge",
-        "relation",
-        "direction",
-        "from",
-        "to"
-      ],
-      "properties": {
-        "position": {
-          "$ref": "#/$defs/count"
-        },
-        "edge": {
-          "$ref": "#/$defs/id"
-        },
-        "relation": {
-          "$ref": "#/$defs/id"
-        },
-        "direction": {
-          "$ref": "#/$defs/direction"
-        },
-        "from": {
-          "$ref": "#/$defs/id"
-        },
-        "to": {
-          "$ref": "#/$defs/id"
-        }
-      }
-    },
-    "costed_hop": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "edge",
-        "relation",
-        "direction",
-        "from",
-        "to",
-        "cost"
-      ],
-      "properties": {
-        "edge": {
-          "$ref": "#/$defs/id"
-        },
-        "relation": {
-          "$ref": "#/$defs/id"
-        },
-        "direction": {
-          "$ref": "#/$defs/direction"
-        },
-        "from": {
-          "$ref": "#/$defs/id"
-        },
-        "to": {
-          "$ref": "#/$defs/id"
-        },
-        "cost": {
-          "$ref": "#/$defs/cost"
-        }
-      }
-    },
-    "reachability_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "reached",
-        "count"
-      ],
-      "properties": {
-        "reached": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "node",
-              "depth",
-              "via"
-            ],
-            "properties": {
-              "node": {
-                "$ref": "#/$defs/id"
-              },
-              "depth": {
-                "$ref": "#/$defs/count"
-              },
-              "via": {
-                "description": "null at depth 0, else the hop that first reached the node (the allOf below says which)"
-              }
-            },
-            "allOf": [
-              {
-                "if": {
-                  "properties": {
-                    "depth": {
-                      "const": 0
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "via": {
-                      "type": "null"
-                    }
-                  }
-                },
-                "else": {
-                  "properties": {
-                    "via": {
-                      "$ref": "#/$defs/via"
-                    }
-                  }
-                }
-              }
-            ]
-          }
-        },
-        "count": {
-          "$ref": "#/$defs/count"
-        }
-      }
-    },
-    "impact_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "changed",
-        "affected",
-        "count"
-      ],
-      "properties": {
-        "changed": {
-          "$ref": "#/$defs/ids"
-        },
-        "affected": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "node",
-              "depth",
-              "via"
-            ],
-            "properties": {
-              "node": {
-                "$ref": "#/$defs/id"
-              },
-              "depth": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "via": {
-                "$ref": "#/$defs/via"
-              }
-            }
-          }
-        },
-        "count": {
-          "$ref": "#/$defs/count"
-        }
-      }
-    },
-    "typed_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "found",
-        "witness",
-        "certificate"
-      ],
-      "properties": {
-        "found": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "witness": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "source",
-                "target",
-                "length",
-                "hops"
-              ],
-              "properties": {
-                "source": {
-                  "$ref": "#/$defs/id"
-                },
-                "target": {
-                  "$ref": "#/$defs/id"
-                },
-                "length": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "hops": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "$ref": "#/$defs/typed_hop"
-                  }
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "certificate": {
-          "$ref": "#/$defs/typed_certificate"
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "found": {
-                "const": true
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "witness": {
-                "type": "object"
-              }
-            }
-          },
-          "else": {
-            "properties": {
-              "witness": {
-                "type": "null"
-              }
-            }
-          }
-        }
-      ]
-    },
-    "shortest_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "found",
-        "optimal",
-        "cost",
-        "witness",
-        "certificate"
-      ],
-      "properties": {
-        "found": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "optimal": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "cost": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/cost"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "cost_exact": {
-          "$ref": "#/$defs/exact"
-        },
-        "lower_bound": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/cost"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "lower_bound_exact": {
-          "$ref": "#/$defs/exact"
-        },
-        "witness": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "source",
-                "target",
-                "length",
-                "hops"
-              ],
-              "properties": {
-                "source": {
-                  "$ref": "#/$defs/id"
-                },
-                "target": {
-                  "$ref": "#/$defs/id"
-                },
-                "length": {
-                  "$ref": "#/$defs/count"
-                },
-                "hops": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/costed_hop"
-                  }
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "certificate": {
-          "$ref": "#/$defs/shortest_certificate"
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "found": {
-                "const": true
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "witness": {
-                "type": "object"
-              },
-              "optimal": {
-                "type": "boolean"
-              }
-            },
-            "anyOf": [
-              {
-                "properties": {
-                  "cost": {
-                    "$ref": "#/$defs/cost"
-                  }
-                }
-              },
-              {
-                "required": [
-                  "cost_exact"
-                ],
-                "properties": {
-                  "cost": {
-                    "type": "null"
-                  }
-                }
-              }
-            ]
-          },
-          "else": {
-            "properties": {
-              "witness": {
-                "type": "null"
-              },
-              "cost": {
-                "type": "null"
-              },
-              "optimal": {
-                "type": "null"
-              },
-              "cost_exact": false
-            }
-          }
-        }
-      ],
-      "description": "cost_exact and lower_bound_exact appear when the request's costs include a float (rational mode); there, cost and lower_bound are the nearest floats, or null when the exact value is beyond the floats. lower_bound appears in an interrupted answer."
     },
     "result": {
       "type": "object",
@@ -1735,7 +3894,9 @@
                   "regular_path",
                   "derivation",
                   "periodicity",
-                  "personalized_pagerank"
+                  "personalized_pagerank",
+                  "components",
+                  "biconnectivity"
                 ]
               }
             }
@@ -2472,112 +4633,114 @@
               }
             }
           }
-        }
-      ],
-      "description": "The runtime additionally checks digests, normalized request identity and binding, counts, limits, exact arithmetic, and witness structure. verify_result checks witnesses against input records; it does not prove completeness or minimality."
-    },
-    "time": {
-      "type": "string",
-      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9](\\.[0-9]+)?)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?$(?![\\s\\S])",
-      "description": "ISO 8601 date or date-time; real calendar dates and chronology are checked by the runtime."
-    },
-    "reference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "ref"
-      ],
-      "properties": {
-        "type": {
-          "enum": [
-            "node",
-            "edge",
-            "result",
-            "external"
-          ]
         },
-        "ref": {
-          "$ref": "#/$defs/text"
-        }
-      },
-      "allOf": [
         {
           "if": {
+            "required": [
+              "answer"
+            ],
             "properties": {
-              "type": {
-                "const": "result"
+              "operation": {
+                "const": "components"
+              },
+              "answer": {
+                "type": "object"
               }
             }
           },
           "then": {
             "properties": {
-              "ref": {
-                "$ref": "#/$defs/digest"
+              "answer": {
+                "$ref": "#/$defs/components_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "components"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "components"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "biconnectivity"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/biconnectivity_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "biconnectivity"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "biconnectivity"
               }
             }
           }
         }
-      ]
-    },
-    "proposed_test": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "description",
-        "outcomes"
       ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/text"
-        },
-        "description": {
-          "$ref": "#/$defs/text"
-        },
-        "outcomes": {
-          "type": "array",
-          "minItems": 2,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "observation",
-              "bearing"
-            ],
-            "properties": {
-              "observation": {
-                "$ref": "#/$defs/text"
-              },
-              "bearing": {
-                "enum": [
-                  "supports",
-                  "opposes",
-                  "inconclusive"
-                ]
-              }
-            }
+      "description": "The runtime additionally checks digests, normalized request identity and binding, counts, limits, exact arithmetic, and witness structure. verify_result checks witnesses against input records; it does not prove completeness or minimality."
+    },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "relation",
+          "direction"
+        ],
+        "properties": {
+          "relation": {
+            "$ref": "#/$defs/id"
           },
-          "allOf": [
-            {
-              "contains": {
-                "properties": {
-                  "bearing": {
-                    "const": "supports"
-                  }
-                }
-              }
-            },
-            {
-              "contains": {
-                "properties": {
-                  "bearing": {
-                    "const": "opposes"
-                  }
-                }
-              }
-            }
-          ]
+          "direction": {
+            "$ref": "#/$defs/direction"
+          }
         }
       }
     },
@@ -2652,809 +4815,80 @@
         }
       ]
     },
-    "lifecycle_event": {
+    "shortest_answer": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "state",
-        "at",
-        "reason",
-        "superseded_by"
+        "found",
+        "optimal",
+        "cost",
+        "witness",
+        "certificate"
       ],
       "properties": {
-        "state": {
-          "enum": [
-            "active",
-            "withdrawn",
-            "superseded"
-          ]
-        },
-        "at": {
-          "$ref": "#/$defs/time"
-        },
-        "reason": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/text"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "superseded_by": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/text"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "state": {
-                "const": "superseded"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "superseded_by": {
-                "$ref": "#/$defs/text"
-              }
-            }
-          },
-          "else": {
-            "properties": {
-              "superseded_by": {
-                "type": "null"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "state": {
-                "enum": [
-                  "withdrawn",
-                  "superseded"
-                ]
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "reason": {
-                "$ref": "#/$defs/text"
-              }
-            }
-          }
-        }
-      ]
-    },
-    "assessment": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "stance",
-        "evidence",
-        "conditions",
-        "assessor",
-        "at",
-        "note"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/text"
-        },
-        "stance": {
-          "enum": [
-            "supporting",
-            "opposing",
-            "inconclusive"
-          ]
-        },
-        "evidence": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/reference"
-          }
-        },
-        "conditions": {
-          "$ref": "#/$defs/text"
-        },
-        "assessor": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "name",
-            "version"
-          ],
-          "properties": {
-            "name": {
-              "$ref": "#/$defs/text"
-            },
-            "version": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/text"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          }
-        },
-        "at": {
-          "$ref": "#/$defs/time"
-        },
-        "note": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/text"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "hypothesis_candidate": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "contract",
-        "id",
-        "revision",
-        "previous",
-        "epistemic_status",
-        "statement",
-        "scope",
-        "projection",
-        "producer",
-        "basis",
-        "dependencies",
-        "assumptions",
-        "proposed_tests",
-        "proposed_relations",
-        "scores",
-        "lifecycle",
-        "assessments",
-        "extensions",
-        "record_digest"
-      ],
-      "properties": {
-        "kind": {
-          "const": "hypothesis_candidate"
-        },
-        "contract": {
-          "const": "graph-runtime/v0.2"
-        },
-        "id": {
-          "$ref": "#/$defs/text"
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "previous": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/digest"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "epistemic_status": {
-          "const": "unverified"
-        },
-        "statement": {
-          "$ref": "#/$defs/text"
-        },
-        "scope": {
-          "$ref": "#/$defs/text"
-        },
-        "projection": {
-          "$ref": "#/$defs/digest"
-        },
-        "producer": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "name",
-            "version"
-          ],
-          "properties": {
-            "name": {
-              "$ref": "#/$defs/text"
-            },
-            "version": {
-              "$ref": "#/$defs/text"
-            }
-          }
-        },
-        "basis": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/reference"
-          }
-        },
-        "dependencies": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/reference"
-          }
-        },
-        "assumptions": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/text"
-          }
-        },
-        "proposed_tests": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/proposed_test"
-          }
-        },
-        "proposed_relations": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "source",
-              "target",
-              "relation"
-            ],
-            "properties": {
-              "source": {
-                "$ref": "#/$defs/text"
-              },
-              "target": {
-                "$ref": "#/$defs/text"
-              },
-              "relation": {
-                "$ref": "#/$defs/text"
-              }
-            }
-          }
-        },
-        "scores": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/score"
-          }
-        },
-        "lifecycle": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 2,
-          "prefixItems": [
-            {
-              "allOf": [
-                {
-                  "$ref": "#/$defs/lifecycle_event"
-                },
-                {
-                  "properties": {
-                    "state": {
-                      "const": "active"
-                    }
-                  }
-                }
-              ]
-            }
-          ],
-          "items": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/lifecycle_event"
-              },
-              {
-                "properties": {
-                  "state": {
-                    "enum": [
-                      "withdrawn",
-                      "superseded"
-                    ]
-                  }
-                }
-              }
-            ]
-          }
-        },
-        "assessments": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/assessment"
-          }
-        },
-        "extensions": {
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "record_digest": {
-          "$ref": "#/$defs/digest"
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "revision": {
-                "const": 1
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "previous": {
-                "type": "null"
-              }
-            }
-          },
-          "else": {
-            "properties": {
-              "previous": {
-                "$ref": "#/$defs/digest"
-              }
-            }
-          }
-        }
-      ],
-      "description": "A hypothesis candidate record. What JSON Schema cannot check (the digests, a generated id, unique test and assessment ids, a revision history) graph_runtime.validate_candidate and verify_revisions check. Calendar validity, chronology, distinct observations and plain JSON extension keys are also checked by the runtime."
-    },
-    "projection": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "contract",
-        "identity",
-        "bindings",
-        "relations",
-        "node_types",
-        "nodes",
-        "edges",
-        "type_parents",
-        "relation_parents"
-      ],
-      "properties": {
-        "kind": {
-          "const": "graph_runtime.projection"
-        },
-        "contract": {
-          "const": "graph-runtime/v0.2"
-        },
-        "identity": {
-          "$ref": "#/$defs/digest"
-        },
-        "bindings": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/id"
-          },
-          "propertyNames": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "relations": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "node_types": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "nodes": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "types"
-            ],
-            "properties": {
-              "id": {
-                "$ref": "#/$defs/id"
-              },
-              "types": {
-                "type": "array",
-                "uniqueItems": true,
-                "items": {
-                  "$ref": "#/$defs/id"
-                }
-              }
-            }
-          }
-        },
-        "edges": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "source",
-              "target",
-              "relation"
-            ],
-            "properties": {
-              "id": {
-                "$ref": "#/$defs/id"
-              },
-              "source": {
-                "$ref": "#/$defs/id"
-              },
-              "target": {
-                "$ref": "#/$defs/id"
-              },
-              "relation": {
-                "$ref": "#/$defs/id"
-              }
-            }
-          }
-        },
-        "type_parents": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "$ref": "#/$defs/id"
-            }
-          },
-          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
-        },
-        "relation_parents": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "$ref": "#/$defs/id"
-            }
-          },
-          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
-        }
-      },
-      "description": "A projection snapshot (Projection.to_dict); its identity is recomputed from the records on reading."
-    },
-    "var": {
-      "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-    },
-    "limits_pattern": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "max_expansions",
-        "max_results"
-      ],
-      "properties": {
-        "max_expansions": {
-          "$ref": "#/$defs/count"
-        },
-        "max_results": {
-          "$ref": "#/$defs/count"
-        }
-      }
-    },
-    "pattern_match": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "var",
-        "node_types",
-        "nodes"
-      ],
-      "properties": {
-        "var": {
-          "$ref": "#/$defs/var"
-        },
-        "node_types": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/ids"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "nodes": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/ids"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "anyOf": [
-        {
-          "properties": {
-            "node_types": {
-              "$ref": "#/$defs/ids"
-            }
-          }
-        },
-        {
-          "properties": {
-            "nodes": {
-              "$ref": "#/$defs/ids"
-            }
-          }
-        }
-      ]
-    },
-    "pattern_step": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "from",
-            "var",
-            "scope",
-            "node_types",
-            "nodes",
-            "edges",
-            "edge_var",
-            "optional"
-          ],
-          "properties": {
-            "from": {
-              "$ref": "#/$defs/var"
-            },
-            "var": {
-              "$ref": "#/$defs/var"
-            },
-            "scope": {
-              "$ref": "#/$defs/scope"
-            },
-            "node_types": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/ids"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "nodes": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/ids"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "edges": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/ids"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "edge_var": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/var"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "optional": {
-              "type": "boolean"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "from",
-            "to",
-            "scope",
-            "edges",
-            "edge_var"
-          ],
-          "properties": {
-            "from": {
-              "$ref": "#/$defs/var"
-            },
-            "to": {
-              "$ref": "#/$defs/var"
-            },
-            "scope": {
-              "$ref": "#/$defs/scope"
-            },
-            "edges": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/ids"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "edge_var": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/var"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "description": "A step that closes a cycle: a hop in its scope from the node bound to from to the node bound to to; it binds no variable."
-        }
-      ]
-    },
-    "pattern_row": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "nodes",
-        "edges",
-        "links"
-      ],
-      "properties": {
-        "nodes": {
-          "type": "object",
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "$ref": "#/$defs/id"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "edges": {
-          "type": "object",
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "$ref": "#/$defs/id"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "links": {
-          "type": "array",
-          "items": {
-            "oneOf": [
-              {
-                "$ref": "#/$defs/id"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      }
-    },
-    "pattern_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "exists",
-        "total",
-        "rows",
-        "count",
-        "coverage"
-      ],
-      "properties": {
-        "exists": {
+        "found": {
           "type": [
             "boolean",
             "null"
           ]
         },
-        "total": {
+        "optimal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cost": {
           "oneOf": [
             {
-              "$ref": "#/$defs/count"
+              "$ref": "#/$defs/cost"
             },
             {
               "type": "null"
             }
           ]
         },
-        "rows": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pattern_row"
-          }
+        "cost_exact": {
+          "$ref": "#/$defs/exact"
         },
-        "count": {
-          "$ref": "#/$defs/count"
+        "lower_bound": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/cost"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "coverage": {
+        "lower_bound_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "witness": {
           "oneOf": [
             {
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "vars",
-                "steps"
+                "source",
+                "target",
+                "length",
+                "hops"
               ],
               "properties": {
-                "vars": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "var",
-                      "candidates",
-                      "kept"
-                    ],
-                    "properties": {
-                      "var": {
-                        "$ref": "#/$defs/var"
-                      },
-                      "candidates": {
-                        "$ref": "#/$defs/count"
-                      },
-                      "kept": {
-                        "$ref": "#/$defs/count"
-                      }
-                    }
-                  }
+                "source": {
+                  "$ref": "#/$defs/id"
                 },
-                "steps": {
+                "target": {
+                  "$ref": "#/$defs/id"
+                },
+                "length": {
+                  "$ref": "#/$defs/count"
+                },
+                "hops": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/count"
+                    "$ref": "#/$defs/costed_hop"
                   }
                 }
               }
@@ -3463,43 +4897,126 @@
               "type": "null"
             }
           ]
+        },
+        "certificate": {
+          "$ref": "#/$defs/shortest_certificate"
         }
       },
-      "description": "exists and total are null only when the search was interrupted before it knew them (a pattern with a cycle counts its rows by listing them, so an interruption may leave its total unknown though rows exist); total counts every row even when an output limit lists fewer."
-    },
-    "support_entry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "node",
-        "supports",
-        "standing",
-        "failing",
-        "causes"
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "found": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "witness": {
+                "type": "object"
+              },
+              "optimal": {
+                "type": "boolean"
+              }
+            },
+            "anyOf": [
+              {
+                "properties": {
+                  "cost": {
+                    "$ref": "#/$defs/cost"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "cost_exact"
+                ],
+                "properties": {
+                  "cost": {
+                    "type": "null"
+                  }
+                }
+              }
+            ]
+          },
+          "else": {
+            "properties": {
+              "witness": {
+                "type": "null"
+              },
+              "cost": {
+                "type": "null"
+              },
+              "optimal": {
+                "type": "null"
+              },
+              "cost_exact": false
+            }
+          }
+        }
       ],
-      "properties": {
-        "node": {
-          "$ref": "#/$defs/id"
-        },
-        "supports": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "standing": {
-          "$ref": "#/$defs/count"
-        },
-        "failing": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/hop"
+      "description": "cost_exact and lower_bound_exact appear when the request's costs include a float (rational mode); there, cost and lower_bound are the nearest floats, or null when the exact value is beyond the floats. lower_bound appears in an interrupted answer."
+    },
+    "shortest_certificate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "bound",
+            "potentials"
+          ],
+          "properties": {
+            "kind": {
+              "const": "potentials"
+            },
+            "bound": {
+              "$ref": "#/$defs/certificate_number"
+            },
+            "potentials": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "value"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/certificate_number"
+                  }
+                }
+              }
+            }
           }
         },
-        "causes": {
-          "$ref": "#/$defs/ids"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reached"
+          ],
+          "properties": {
+            "kind": {
+              "const": "closure"
+            },
+            "reached": {
+              "$ref": "#/$defs/ids"
+            }
+          }
+        },
+        {
+          "type": "null"
         }
-      },
-      "description": "A node that lost support: how many supports it has, how many still stand, the hops to the supports that stood before and do not now, and the failed nodes it rests on through them."
+      ],
+      "description": "potentials: a value per node (the bound when unlisted) that no hop in scope lowers by more than its cost, 0 at every source and at least the bound at every target, so no path costs less than the bound. closure: everything the sources reach, with no target among it."
     },
     "support_answer": {
       "type": "object",
@@ -3570,16 +5087,130 @@
       },
       "description": "lost: nodes that stood before the failure and do not now; weakened: nodes that still stand but lost a support. lost, weakened and counts are null only when the analysis was interrupted before its end; counts are exact even when an output limit lists fewer nodes."
     },
-    "certificate_number": {
-      "oneOf": [
-        {
+    "support_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "supports",
+        "standing",
+        "failing",
+        "causes"
+      ],
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/id"
+        },
+        "supports": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "standing": {
           "$ref": "#/$defs/count"
         },
-        {
-          "$ref": "#/$defs/exact"
+        "failing": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/hop"
+          }
+        },
+        "causes": {
+          "$ref": "#/$defs/ids"
         }
+      },
+      "description": "A node that lost support: how many supports it has, how many still stand, the hops to the supports that stood before and do not now, and the failed nodes it rests on through them."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9](\\.[0-9]+)?)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?$(?![\\s\\S])",
+      "description": "ISO 8601 date or date-time; real calendar dates and chronology are checked by the runtime."
+    },
+    "typed_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "found",
+        "witness",
+        "certificate"
       ],
-      "description": "An integer in integer-cost mode; p or p/q in lowest terms in rational mode."
+      "properties": {
+        "found": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "witness": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "target",
+                "length",
+                "hops"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/id"
+                },
+                "target": {
+                  "$ref": "#/$defs/id"
+                },
+                "length": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "hops": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/typed_hop"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "$ref": "#/$defs/typed_certificate"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "found": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "witness": {
+                "type": "object"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "witness": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
     },
     "typed_certificate": {
       "oneOf": [
@@ -3622,65 +5253,65 @@
       ],
       "description": "The states (node, position) the sources reach before the pattern's last hop: closed under the pattern's hops, with no last hop to a target, so no witness exists."
     },
-    "shortest_certificate": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "bound",
-            "potentials"
-          ],
-          "properties": {
-            "kind": {
-              "const": "potentials"
-            },
-            "bound": {
-              "$ref": "#/$defs/certificate_number"
-            },
-            "potentials": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "node",
-                  "value"
-                ],
-                "properties": {
-                  "node": {
-                    "$ref": "#/$defs/id"
-                  },
-                  "value": {
-                    "$ref": "#/$defs/certificate_number"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "reached"
-          ],
-          "properties": {
-            "kind": {
-              "const": "closure"
-            },
-            "reached": {
-              "$ref": "#/$defs/ids"
-            }
-          }
-        },
-        {
-          "type": "null"
-        }
+    "typed_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "edge",
+        "relation",
+        "direction",
+        "from",
+        "to"
       ],
-      "description": "potentials: a value per node (the bound when unlisted) that no hop in scope lowers by more than its cost, 0 at every source and at least the bound at every target, so no path costs less than the bound. closure: everything the sources reach, with no target among it."
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/count"
+        },
+        "edge": {
+          "$ref": "#/$defs/id"
+        },
+        "relation": {
+          "$ref": "#/$defs/id"
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "var": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "via": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "relation",
+        "direction",
+        "from"
+      ],
+      "properties": {
+        "edge": {
+          "$ref": "#/$defs/id"
+        },
+        "relation": {
+          "$ref": "#/$defs/id"
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        }
+      }
     },
     "weight": {
       "type": "number",
@@ -3717,1107 +5348,6 @@
           "$ref": "#/$defs/weight"
         }
       }
-    },
-    "bottleneck_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "found",
-        "optimal",
-        "value",
-        "witness",
-        "certificate"
-      ],
-      "properties": {
-        "found": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "optimal": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "value": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/weight"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "bound": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/weight"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "witness": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "source",
-                "target",
-                "length",
-                "hops"
-              ],
-              "properties": {
-                "source": {
-                  "$ref": "#/$defs/id"
-                },
-                "target": {
-                  "$ref": "#/$defs/id"
-                },
-                "length": {
-                  "$ref": "#/$defs/count"
-                },
-                "hops": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/weighted_hop"
-                  }
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "certificate": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "kind",
-                "threshold",
-                "reached"
-              ],
-              "properties": {
-                "kind": {
-                  "const": "threshold"
-                },
-                "threshold": {
-                  "$ref": "#/$defs/weight"
-                },
-                "reached": {
-                  "$ref": "#/$defs/ids"
-                }
-              }
-            },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "kind",
-                "reached"
-              ],
-              "properties": {
-                "kind": {
-                  "const": "closure"
-                },
-                "reached": {
-                  "$ref": "#/$defs/ids"
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "found": {
-                "const": true
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "witness": {
-                "type": "object"
-              },
-              "optimal": {
-                "type": "boolean"
-              }
-            }
-          },
-          "else": {
-            "properties": {
-              "witness": {
-                "type": "null"
-              },
-              "value": {
-                "type": "null"
-              },
-              "optimal": {
-                "type": "null"
-              }
-            }
-          }
-        }
-      ],
-      "description": "value: the witness's weakest hop weight (max_min) or its highest (min_max), null for a path with no hop. bound (interrupted only): no path to a target is strictly better. threshold: what the sources reach by hops strictly better than it holds no target."
-    },
-    "path_expression": {
-      "description": "A regular path expression in normal form (graph_runtime.paths): a step matches one hop in its scope landing on a node of its node types (any when null); seq and alt hold at least two items (alt de-duplicated and sorted by canonical JSON); repeat matches its item min to max times (max null: no bound; never min 1 and max 1).",
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "op",
-            "scope",
-            "node_types"
-          ],
-          "properties": {
-            "op": {
-              "const": "step"
-            },
-            "scope": {
-              "$ref": "#/$defs/scope"
-            },
-            "node_types": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/ids"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "op",
-            "items"
-          ],
-          "properties": {
-            "op": {
-              "enum": [
-                "seq",
-                "alt"
-              ]
-            },
-            "items": {
-              "type": "array",
-              "minItems": 2,
-              "items": {
-                "$ref": "#/$defs/path_expression"
-              }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "op",
-            "item",
-            "min",
-            "max"
-          ],
-          "properties": {
-            "op": {
-              "const": "repeat"
-            },
-            "item": {
-              "$ref": "#/$defs/path_expression"
-            },
-            "min": {
-              "$ref": "#/$defs/count"
-            },
-            "max": {
-              "oneOf": [
-                {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    "path_hop": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "edge",
-        "relation",
-        "direction",
-        "from",
-        "to",
-        "state"
-      ],
-      "properties": {
-        "edge": {
-          "$ref": "#/$defs/id"
-        },
-        "relation": {
-          "$ref": "#/$defs/id"
-        },
-        "direction": {
-          "$ref": "#/$defs/direction"
-        },
-        "from": {
-          "$ref": "#/$defs/id"
-        },
-        "to": {
-          "$ref": "#/$defs/id"
-        },
-        "state": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "description": "A hop of a regular path witness; state: the automaton state it moves to (the step it matched)."
-    },
-    "path_certificate": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "bound",
-            "states"
-          ],
-          "properties": {
-            "kind": {
-              "const": "product_states"
-            },
-            "bound": {
-              "oneOf": [
-                {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "states": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "node",
-                  "state",
-                  "length"
-                ],
-                "properties": {
-                  "node": {
-                    "$ref": "#/$defs/id"
-                  },
-                  "state": {
-                    "$ref": "#/$defs/count"
-                  },
-                  "length": {
-                    "$ref": "#/$defs/count"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Every product state (node, automaton state) the sources reach with fewer than bound hops (all of them when bound is null), by state then node, each with its fewest hops: from a listed state with fewer than bound - 1 hops, every move leads to a listed state at most one hop further, and no listed state ends a match at a target. So no matching walk to a target is shorter than bound (exists at all, when null), and reached lengths are least."
-    },
-    "regular_witness_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "found",
-        "witness",
-        "certificate"
-      ],
-      "properties": {
-        "found": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "witness": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "source",
-                "target",
-                "length",
-                "hops"
-              ],
-              "properties": {
-                "source": {
-                  "$ref": "#/$defs/id"
-                },
-                "target": {
-                  "$ref": "#/$defs/id"
-                },
-                "length": {
-                  "$ref": "#/$defs/count"
-                },
-                "hops": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/path_hop"
-                  }
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "certificate": {
-          "$ref": "#/$defs/path_certificate"
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "found": {
-                "const": true
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "witness": {
-                "type": "object"
-              }
-            }
-          },
-          "else": {
-            "properties": {
-              "witness": {
-                "type": "null"
-              }
-            }
-          }
-        }
-      ],
-      "description": "answer witness: one matching walk with the fewest hops from a source to a target."
-    },
-    "regular_reached_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "reached",
-        "count",
-        "tree",
-        "certificate"
-      ],
-      "properties": {
-        "reached": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "node",
-              "length",
-              "state"
-            ],
-            "properties": {
-              "node": {
-                "$ref": "#/$defs/id"
-              },
-              "length": {
-                "$ref": "#/$defs/count"
-              },
-              "state": {
-                "$ref": "#/$defs/count"
-              }
-            }
-          }
-        },
-        "count": {
-          "$ref": "#/$defs/count"
-        },
-        "tree": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "node",
-              "state",
-              "length",
-              "via"
-            ],
-            "properties": {
-              "node": {
-                "$ref": "#/$defs/id"
-              },
-              "state": {
-                "$ref": "#/$defs/count"
-              },
-              "length": {
-                "$ref": "#/$defs/count"
-              },
-              "via": {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "edge",
-                      "relation",
-                      "direction",
-                      "from",
-                      "from_state"
-                    ],
-                    "properties": {
-                      "edge": {
-                        "$ref": "#/$defs/id"
-                      },
-                      "relation": {
-                        "$ref": "#/$defs/id"
-                      },
-                      "direction": {
-                        "$ref": "#/$defs/direction"
-                      },
-                      "from": {
-                        "$ref": "#/$defs/id"
-                      },
-                      "from_state": {
-                        "$ref": "#/$defs/count"
-                      }
-                    }
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "certificate": {
-          "$ref": "#/$defs/path_certificate"
-        }
-      },
-      "description": "answer reached: every node (among the targets) a matching walk from a source ends at, with its fewest hops and the accepting state that gives them; tree: the product states on their witnesses, by node then state, each with the hop it was first reached by."
-    },
-    "derivation_value": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "node",
-        "value"
-      ],
-      "properties": {
-        "node": {
-          "$ref": "#/$defs/id"
-        },
-        "value": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/weight"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "value_exact": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/exact"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "derivation_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "derived",
-        "underived",
-        "derivation",
-        "certificate"
-      ],
-      "properties": {
-        "derived": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/derivation_value"
-          }
-        },
-        "underived": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "bound": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/weight"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "bound_exact": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/exact"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "derivation": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "node",
-              "rule",
-              "value",
-              "uses"
-            ],
-            "properties": {
-              "node": {
-                "$ref": "#/$defs/id"
-              },
-              "rule": {
-                "enum": [
-                  "given",
-                  "all",
-                  "one"
-                ]
-              },
-              "value": {
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/weight"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "value_exact": {
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/exact"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "uses": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "edge",
-                    "relation",
-                    "direction",
-                    "from",
-                    "to",
-                    "cost"
-                  ],
-                  "properties": {
-                    "edge": {
-                      "$ref": "#/$defs/id"
-                    },
-                    "relation": {
-                      "$ref": "#/$defs/id"
-                    },
-                    "direction": {
-                      "$ref": "#/$defs/direction"
-                    },
-                    "from": {
-                      "$ref": "#/$defs/id"
-                    },
-                    "to": {
-                      "$ref": "#/$defs/id"
-                    },
-                    "cost": {
-                      "$ref": "#/$defs/weight"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "certificate": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "kind",
-                "bound",
-                "values"
-              ],
-              "properties": {
-                "kind": {
-                  "const": "values"
-                },
-                "bound": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/$defs/weight"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "bound_exact": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/$defs/exact"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "values": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/derivation_value"
-                  }
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "description": "derived: each derived target with its best value; underived (complete only): targets with no derivation; bound (interrupted only): no unsettled target has a better derivation (null: nothing known); derivation: every node the derived targets' derivations use, given (a ground), all (every input) or one (one input), with its value and the hops it uses. A value is a number, exact as value_exact in rational mode; for min_max and max_min, null is a given node's (no hop). The values certificate: values no derivation beats, the bound for every node it leaves unlisted (null: no derivation at all)."
-    },
-    "periodic_projection": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "contract",
-        "identity",
-        "bindings",
-        "relations",
-        "node_types",
-        "nodes",
-        "edges",
-        "type_parents",
-        "relation_parents",
-        "dimensions",
-        "periodic"
-      ],
-      "properties": {
-        "kind": {
-          "const": "graph_runtime.periodic_projection"
-        },
-        "contract": {
-          "const": "graph-runtime/v0.2"
-        },
-        "identity": {
-          "$ref": "#/$defs/digest"
-        },
-        "bindings": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/id"
-          },
-          "propertyNames": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "relations": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "node_types": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/id"
-          }
-        },
-        "nodes": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "types"
-            ],
-            "properties": {
-              "id": {
-                "$ref": "#/$defs/id"
-              },
-              "types": {
-                "type": "array",
-                "uniqueItems": true,
-                "items": {
-                  "$ref": "#/$defs/id"
-                }
-              }
-            }
-          }
-        },
-        "edges": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "source",
-              "target",
-              "relation",
-              "shift"
-            ],
-            "properties": {
-              "id": {
-                "$ref": "#/$defs/id"
-              },
-              "source": {
-                "$ref": "#/$defs/id"
-              },
-              "target": {
-                "$ref": "#/$defs/id"
-              },
-              "relation": {
-                "$ref": "#/$defs/id"
-              },
-              "shift": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "type": "integer"
-                }
-              }
-            }
-          }
-        },
-        "type_parents": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "$ref": "#/$defs/id"
-            }
-          },
-          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
-        },
-        "relation_parents": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "$ref": "#/$defs/id"
-            }
-          },
-          "description": "A hierarchy: each name's parents (acyclic); names without parents are left out."
-        },
-        "dimensions": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "periodic": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "boolean"
-          }
-        }
-      },
-      "description": "A periodic projection snapshot (PeriodicProjection.to_dict): a cell's records, each edge with its image shift; its identity is recomputed from the records on reading."
-    },
-    "periodicity_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "components",
-        "count"
-      ],
-      "properties": {
-        "count": {
-          "$ref": "#/$defs/count"
-        },
-        "components": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "seeds",
-              "nodes",
-              "rank",
-              "basis",
-              "copies",
-              "cycles",
-              "witnesses"
-            ],
-            "properties": {
-              "seeds": {
-                "$ref": "#/$defs/ids"
-              },
-              "nodes": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "node",
-                    "image",
-                    "via"
-                  ],
-                  "properties": {
-                    "node": {
-                      "$ref": "#/$defs/id"
-                    },
-                    "image": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "via": {
-                      "oneOf": [
-                        {
-                          "$ref": "#/$defs/via"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  }
-                }
-              },
-              "rank": {
-                "$ref": "#/$defs/count"
-              },
-              "basis": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              },
-              "cycles": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "edge",
-                    "net"
-                  ],
-                  "properties": {
-                    "edge": {
-                      "$ref": "#/$defs/id"
-                    },
-                    "net": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                }
-              },
-              "witnesses": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "edge",
-                      "times"
-                    ],
-                    "properties": {
-                      "edge": {
-                        "$ref": "#/$defs/id"
-                      },
-                      "times": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                }
-              },
-              "copies": {
-                "type": "integer",
-                "minimum": 1
-              }
-            }
-          }
-        }
-      },
-      "description": "periodicity: for each component of the requested images (in the infinite graph), the cell's nodes it meets, each with the image a spanning tree reaches and the hop it follows; the cycles that edges outside the tree close and their net shifts; the translation lattice they generate, as its Hermite normal form (basis) and rank (0 finite, 1 a chain, 2 a layer, 3 a framework); copies, the lattice's index in the integer vectors of its span (how many translated copies of the component run through the same space: a framework's degree of interpenetration); and each basis row written as a combination of the cycles (witnesses)."
-    },
-    "pagerank_answer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "ranked",
-        "count",
-        "certified_top",
-        "residual",
-        "residual_exact",
-        "certificate"
-      ],
-      "properties": {
-        "ranked": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "node",
-              "lower",
-              "lower_exact",
-              "upper",
-              "upper_exact"
-            ],
-            "properties": {
-              "node": {
-                "$ref": "#/$defs/id"
-              },
-              "lower": {
-                "type": "number",
-                "minimum": 0
-              },
-              "lower_exact": {
-                "$ref": "#/$defs/exact"
-              },
-              "upper": {
-                "type": "number",
-                "minimum": 0
-              },
-              "upper_exact": {
-                "$ref": "#/$defs/exact"
-              }
-            }
-          }
-        },
-        "count": {
-          "$ref": "#/$defs/count"
-        },
-        "certified_top": {
-          "$ref": "#/$defs/count"
-        },
-        "residual": {
-          "type": "number",
-          "minimum": 0
-        },
-        "residual_exact": {
-          "$ref": "#/$defs/exact"
-        },
-        "certificate": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "kind",
-                "values"
-              ],
-              "properties": {
-                "kind": {
-                  "const": "estimates"
-                },
-                "values": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "node",
-                      "value",
-                      "value_exact"
-                    ],
-                    "properties": {
-                      "node": {
-                        "$ref": "#/$defs/id"
-                      },
-                      "value": {
-                        "type": "number",
-                        "minimum": 0
-                      },
-                      "value_exact": {
-                        "$ref": "#/$defs/exact"
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "description": "personalized_pagerank: the top nodes by lower bound, each with an interval proven to hold its personalized PageRank (exact in _exact, nearest floats beside); certified_top: how many leading entries are proven the top ones; residual: the probability mass the push left unplaced; the estimates certificate lets a checker recompute every residual exactly."
     }
   }
 }

@@ -1301,6 +1301,88 @@
      "relation": "R"
     }
    ]
+  },
+  "G14": {
+   "nodes": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i"
+   ],
+   "edges": [
+    {
+     "id": "e01",
+     "source": "a",
+     "target": "b",
+     "relation": "R"
+    },
+    {
+     "id": "e02",
+     "source": "b",
+     "target": "c",
+     "relation": "R"
+    },
+    {
+     "id": "e03",
+     "source": "c",
+     "target": "a",
+     "relation": "R"
+    },
+    {
+     "id": "e04",
+     "source": "c",
+     "target": "d",
+     "relation": "R"
+    },
+    {
+     "id": "e05",
+     "source": "d",
+     "target": "e",
+     "relation": "R"
+    },
+    {
+     "id": "e06",
+     "source": "e",
+     "target": "d",
+     "relation": "R"
+    },
+    {
+     "id": "e07",
+     "source": "e",
+     "target": "f",
+     "relation": "R"
+    },
+    {
+     "id": "e08",
+     "source": "f",
+     "target": "f",
+     "relation": "R"
+    },
+    {
+     "id": "e09",
+     "source": "g",
+     "target": "h",
+     "relation": "S"
+    },
+    {
+     "id": "e10",
+     "source": "g",
+     "target": "h",
+     "relation": "R"
+    }
+   ],
+   "relations": [
+    "R",
+    "S"
+   ],
+   "bindings": {
+    "source": "conformance-g14@1"
+   }
   }
  },
  "cases": [
@@ -6666,6 +6748,536 @@
    "expect": {
     "status": "failed",
     "error_code": "invalid_request"
+   }
+  },
+  {
+   "name": "components-strong-flags",
+   "covers": [
+    "strong components",
+    "initial, terminal and cyclic",
+    "a self-loop is a cycle"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true,
+    "connectivity": "strong"
+   },
+   "expect": {
+    "status": "completed",
+    "component_sets": [
+     [
+      "a",
+      "b",
+      "c"
+     ],
+     [
+      "d",
+      "e"
+     ],
+     [
+      "f"
+     ],
+     [
+      "g"
+     ],
+     [
+      "h"
+     ],
+     [
+      "i"
+     ]
+    ],
+    "total": 6,
+    "count": 6,
+    "component_edges": {
+     "a": 3,
+     "d": 2,
+     "f": 1,
+     "g": 0,
+     "h": 0,
+     "i": 0
+    },
+    "component_flags": {
+     "a": [
+      true,
+      true,
+      false
+     ],
+     "d": [
+      true,
+      false,
+      false
+     ],
+     "f": [
+      true,
+      false,
+      true
+     ],
+     "g": [
+      false,
+      true,
+      false
+     ],
+     "h": [
+      false,
+      false,
+      true
+     ],
+     "i": [
+      false,
+      true,
+      true
+     ]
+    }
+   }
+  },
+  {
+   "name": "components-strong-reverse-scope",
+   "covers": [
+    "direction of a strong scope"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "reverse"
+     }
+    ],
+    "connectivity": "strong"
+   },
+   "expect": {
+    "status": "completed",
+    "component_sets": [
+     [
+      "a",
+      "b",
+      "c"
+     ],
+     [
+      "d",
+      "e"
+     ],
+     [
+      "f"
+     ],
+     [
+      "g"
+     ],
+     [
+      "h"
+     ],
+     [
+      "i"
+     ]
+    ],
+    "total": 6,
+    "component_flags": {
+     "a": [
+      true,
+      false,
+      true
+     ],
+     "d": [
+      true,
+      false,
+      false
+     ],
+     "f": [
+      true,
+      true,
+      false
+     ],
+     "g": [
+      false,
+      false,
+      true
+     ],
+     "h": [
+      false,
+      true,
+      false
+     ],
+     "i": [
+      false,
+      true,
+      true
+     ]
+    }
+   }
+  },
+  {
+   "name": "components-strong-nontrivial",
+   "covers": [
+    "min_size"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "min_size": 2,
+    "connectivity": "strong"
+   },
+   "expect": {
+    "status": "completed",
+    "component_sets": [
+     [
+      "a",
+      "b",
+      "c"
+     ],
+     [
+      "d",
+      "e"
+     ]
+    ],
+    "total": 6,
+    "count": 2
+   }
+  },
+  {
+   "name": "components-strong-named",
+   "covers": [
+    "the component holding a node"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "nodes": [
+     "e"
+    ],
+    "certificate": true,
+    "connectivity": "strong"
+   },
+   "expect": {
+    "status": "completed",
+    "component_sets": [
+     [
+      "d",
+      "e"
+     ]
+    ],
+    "total": 1,
+    "count": 1
+   }
+  },
+  {
+   "name": "components-weak",
+   "covers": [
+    "weak components",
+    "edges counted once"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "component_sets": [
+     [
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f"
+     ],
+     [
+      "g",
+      "h"
+     ],
+     [
+      "i"
+     ]
+    ],
+    "total": 3,
+    "count": 3,
+    "component_edges": {
+     "a": 8,
+     "g": 1,
+     "i": 0
+    }
+   }
+  },
+  {
+   "name": "components-weak-named-two-relations",
+   "covers": [
+    "weak components",
+    "parallel edges"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     },
+     {
+      "relation": "S",
+      "direction": "forward"
+     }
+    ],
+    "nodes": [
+     "h"
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "component_sets": [
+     [
+      "g",
+      "h"
+     ]
+    ],
+    "total": 1,
+    "count": 1,
+    "component_edges": {
+     "g": 2
+    }
+   }
+  },
+  {
+   "name": "components-output-limit",
+   "covers": [
+    "output limit"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "limits": {
+     "max_results": 1
+    },
+    "connectivity": "strong"
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "component_sets": [
+     [
+      "a",
+      "b",
+      "c"
+     ],
+     [
+      "d",
+      "e"
+     ],
+     [
+      "f"
+     ],
+     [
+      "g"
+     ],
+     [
+      "h"
+     ],
+     [
+      "i"
+     ]
+    ],
+    "count": 1
+   }
+  },
+  {
+   "name": "components-unknown-node",
+   "covers": [
+    "unknown node refused"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "nodes": [
+     "zz"
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "unknown_node"
+   }
+  },
+  {
+   "name": "components-on-a-periodic-cell",
+   "covers": [
+    "finite operations refused on a periodic projection"
+   ],
+   "graph": "P1",
+   "request": {
+    "operation": "components",
+    "scope": [
+     {
+      "relation": "neighbor",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "unsupported",
+    "error_code": "unsupported_operation"
+   }
+  },
+  {
+   "name": "biconnectivity-blocks",
+   "covers": [
+    "articulation points",
+    "bridges",
+    "blocks",
+    "parallel edges are no bridges",
+    "self-loops link nothing"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "biconnectivity",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "blocks": true,
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "articulation": {
+     "c": 2,
+     "d": 2,
+     "e": 2
+    },
+    "bridge_edges": [
+     "e04",
+     "e07",
+     "e10"
+    ],
+    "block_edges": [
+     [
+      "e01",
+      "e02",
+      "e03"
+     ],
+     [
+      "e04"
+     ],
+     [
+      "e05",
+      "e06"
+     ],
+     [
+      "e07"
+     ],
+     [
+      "e10"
+     ]
+    ],
+    "component_count": 3
+   }
+  },
+  {
+   "name": "biconnectivity-named-two-relations",
+   "covers": [
+    "parallel edges of two relations"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "biconnectivity",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     },
+     {
+      "relation": "S",
+      "direction": "forward"
+     }
+    ],
+    "nodes": [
+     "h"
+    ],
+    "blocks": true
+   },
+   "expect": {
+    "status": "completed",
+    "articulation": {},
+    "bridge_edges": [],
+    "block_edges": [
+     [
+      "e09",
+      "e10"
+     ]
+    ],
+    "component_count": 1
+   }
+  },
+  {
+   "name": "biconnectivity-expansion-budget",
+   "covers": [
+    "what an interrupted search finished"
+   ],
+   "graph": "G14",
+   "request": {
+    "operation": "biconnectivity",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "limits": {
+     "max_expansions": 6
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "articulation": {
+     "c": 2,
+     "d": 2,
+     "e": 2
+    },
+    "bridge_edges": [
+     "e04",
+     "e07",
+     "e10"
+    ]
    }
   }
  ]

@@ -159,6 +159,28 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             problems.append(f"ranked intervals {got} do not hold the PageRanks {exp['pagerank']}")
     if "certified_top" in exp and answer.get("certified_top") != exp["certified_top"]:
         problems.append(f"certified_top {answer.get('certified_top')}, expected {exp['certified_top']}")
+    if "component_sets" in exp:                             # components: exact, or what an interrupted search finished
+        got = [list(x["nodes"]) for x in answer.get("components") or []]
+        if (got != exp["component_sets"]) if done else any(g not in exp["component_sets"] for g in got):
+            problems.append(f"components {got}, expected {exp['component_sets']}")
+    for key, field in (("component_edges", ("edges",)), ("component_flags", ("cyclic", "initial", "terminal"))):
+        if key in exp and done:
+            entries = {x["nodes"][0]: x for x in answer.get("components") or []}
+            got = {n: (entries[n][field[0]] if len(field) == 1 else [entries[n].get(f) for f in field])
+                   if n in entries else None for n in exp[key]}
+            if got != exp[key]:
+                problems.append(f"{key} {got}, expected {exp[key]}")
+    if "articulation" in exp:                               # biconnectivity: exact, or some of them when interrupted
+        got = {x["node"]: x["splits"] for x in answer.get("articulation_points") or []}
+        if (got != exp["articulation"]) if done else any(exp["articulation"].get(n) != k for n, k in got.items()):
+            problems.append(f"articulation points {got}, expected {exp['articulation']}")
+    for key, field in (("bridge_edges", "bridges"), ("block_edges", "blocks")):
+        if key in exp:
+            got = [x["edge"] if key == "bridge_edges" else list(x["edges"]) for x in answer.get(field) or []]
+            if (got != exp[key]) if done else any(g not in exp[key] for g in got):
+                problems.append(f"{field} {got}, expected {exp[key]}")
+    if "component_count" in exp and done and answer.get("components") != exp["component_count"]:
+        problems.append(f"components {answer.get('components')}, expected {exp['component_count']}")
     if "count" in exp and answer.get("count") != exp["count"]:
         problems.append(f"count {answer.get('count')}, expected {exp['count']}")
     if "discovered" in exp and data["stats"]["discovered"] != exp["discovered"]:

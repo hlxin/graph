@@ -35,6 +35,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - periodic projections: one cell of an infinite periodic graph, with image shifts on its edges, searched by
   reachability and dependency impact without lifting it (section 1), and the `periodicity` operation: each
   component's translation lattice (rank, Hermite normal form basis, interpenetration), witnessed (section 4)
+- the `components` operation: weak or strong components, strong ones flagged initial, terminal and cyclic, certified
+  by spanning trees and an ordered, closed partition (section 4)
+- the `biconnectivity` operation: articulation points (with the pieces each leaves), bridges and blocks, certified by
+  the depth-first forest from which a checker recomputes every low point (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -140,6 +144,8 @@ no wildcard: a scope lists what it follows.
 | `regular_path` | `sources`, `path` (a path expression: text, a list or a tree, normalized to the tree), `targets` (null: any node), `answer` (`witness`, the default, or `reached`), `certificate` (default false) | `max_expansions`, `max_results` |
 | `personalized_pagerank` | `sources`, `scope` (the hops a walk follows), `alpha` (the probability of stopping at each step, strictly between 0 and 1; a number or `p/q`, normalized to `p/q`; default `3/20`), `tolerance` (the residual to reach, the same way; default `1/10000`), `top` (nodes listed; default 20), `certificate` (default false) | `max_expansions` |
 | `periodicity` | `nodes` (images of a periodic projection's nodes), `scope` (every relation in both directions: it is followed both ways) | `max_expansions` |
+| `components` | `scope`, `connectivity` (`weak`, the default: hops followed either way; `strong`: a walk each way), `nodes` (only the components holding these; null: every component), `min_size` (the fewest nodes a listed component has; default 1), `certificate` (default false) | `max_expansions`, `max_results` (components listed) |
+| `biconnectivity` | `scope` (each edge in it, in either direction, a link between its ends), `nodes` (only the components holding these; null: all), `blocks` (list the blocks too; default false), `certificate` (default false) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
@@ -450,6 +456,59 @@ Answer: `{"components": [{"seeds", "nodes": [{"node", "image", "via"}], "rank", 
 [{"edge", "net"}], "witnesses": [[{"edge", "times"}]]}], "count"}`. An interrupted analysis lists the components it
 finished.
 
+**Components.** How the nodes fall into pieces (Tarjan, 1972). `weak`: two nodes are together when hops in scope,
+each followed either way, join them: the pieces a structure or a corpus falls into. `strong`: when a walk of hops leads
+from each to the other: feedback loops, circular derivations, the communicating classes of a Markov chain. Every node
+is in exactly one component; a node alone is a component of one.
+
+- **Selection.** Every component, or with `nodes` only those holding one of these nodes. `min_size` leaves out
+  smaller components (2 lists the nontrivial ones). They are listed in ascending order of their first node, each with
+  its `nodes`, `size` and `edges` (the edges in scope with both ends in it, each once). `total` counts the components
+  of the selection, whatever their size (the number of pieces, or of linkage classes).
+- **Strong flags.** A strong component is `cyclic` when a walk inside it returns to its start (two nodes or more, or a
+  hop from a node to itself), `initial` when no hop enters it from outside, `terminal` when none leaves it: a terminal
+  component is what a walk that enters it can never leave (a recurrent class of a Markov chain, a terminal linkage
+  class of a reaction network).
+- **Search.** Breadth-first (weak) or Tarjan's depth-first search (strong), each node one expansion, from the
+  selection's nodes in ascending order; a strong search from named nodes explores everything they reach. Linear.
+- **Certificate.** With `certificate: true`, `{"kind": "partition", "groups": [{"nodes", "out": [{"node", "via"}],
+  "in"}]}`. `groups` holds every component the search finished, strong ones in topological order (no hop leads from a
+  group to an earlier one), weak ones in the order found; no hop leads out of the groups, and (weak) no link joins two
+  of them. Each group has a spanning tree from its first node: `out`, the hop that reaches each other node (`via` with
+  `from`; a weak tree may follow an edge either way); and for strong components `in`, the hop that leads from each
+  other node toward the first (`via` with `to`; null for weak ones). The trees prove a group connected; closure and
+  order prove nothing outside it belongs with it (a walk that left a strong group could never return to it). So every
+  group is a component, listed or not, and `total` is proven with the list.
+- **Limits.** An interrupted search lists only components it finished, each exact; `total` is then null. More
+  listed components than `max_results` is an `output_limit` interruption.
+
+Answer: `{"components": [{"nodes", "size", "edges", "cyclic", "initial", "terminal"}], "count", "total",
+"certificate"}` (the three flags for strong components only).
+
+**Biconnectivity.** Where one failure would split a component (Hopcroft and Tarjan, 1973). Every edge in scope, in
+either direction, is a link between its two ends, whichever way it points; parallel edges are distinct links, so two
+of them between the same nodes are never bridges; an edge from a node to itself links nothing and is in no block.
+
+- **Answer.** `articulation_points`: each node whose removal splits its component, with `splits`, the number of pieces
+  that removal leaves of it (2 or more); `bridges`: each edge whose removal splits its component, with its relation,
+  source and target; with `blocks: true`, `blocks`: the maximal pieces without an articulation point, each with its
+  `nodes` and `edges` (every two of its edges lie on a common cycle; a bridge is a block of its own), listed by first
+  edge; `components`: the connected components searched. With `nodes`, only the components holding them are searched.
+- **Search.** One depth-first search from the selection's nodes in ascending order, each node one expansion, reading
+  links in canonical order. `low(u)` is the least preorder number a link from u's subtree reaches, other than u's own
+  link to its parent (a parallel link to the parent counts). A child c of q with `low(c) >= pre(q)` is separated by
+  q, its subtree's links forming a block with the link to c; with `low(c) > pre(q)` that link is a bridge. Linear.
+- **Certificate.** With `certificate: true`, `{"kind": "dfs", "forest": [{"node", "pre", "via"}]}`: each searched
+  node, by node ID, with its preorder number and the edge to its parent (null for a root; with `nodes`, every root is
+  one of them). A checker confirms it is a depth-first forest (each `via` a link to a node numbered earlier, the
+  numbers a preorder of the forest, no link between two nodes neither above the other) and recomputes every low point
+  from the records; each claim follows.
+- **Limits.** An interrupted search lists what it finished: an articulation point once its subtree is done, a bridge
+  or a block once the subtree below it is; each is exact. `components` is then null.
+
+Answer: `{"articulation_points": [{"node", "splits"}], "bridges": [{"edge", "relation", "source", "target"}],
+"blocks": [{"nodes", "edges"}] or null, "components", "certificate"}`.
+
 **Support.** What stops standing when the `failed` nodes fail, and what stands on less than before. It generalizes
 SCALE's "rests on a retraction, all or in part". A hop in `scope` leads from a node to one of its supports, for
 example from a claim to its evidence items, or from an item to the source it cites.
@@ -546,6 +605,13 @@ The result contract reports how an execution ended. It carries no scientific ans
     certificate's conditions at every node of the targets' region, which it finds from the records
   - for personalized PageRank, from its certificate: every residual recomputed exactly from the estimates and the
     records' hops, none negative, and the intervals, residual and certified prefix exactly those they prove
+  - for components, every listed component's edge count and flags recounted from the records; and from a certificate,
+    each group's tree hops (a spanning tree of the group from its first node), the groups disjoint, closed and
+    (strong) in an order no hop goes back in, each listed component one of them, and a complete answer's groups
+    covering the selection, with every group of `min_size` nodes or more listed and `total` their number
+  - for biconnectivity, every bridge against its record; and from a certificate, the forest as a depth-first forest of
+    the records' links, the low points recomputed from them, and the articulation points (with their splits),
+    bridges and blocks exactly those they prove (an interrupted answer: some of them)
   - for periodicity, against the cell's records: the tree's hops, every hop from a listed node's image leading to a
     listed node by a lattice vector, and the cycles being exactly the edges with a nonzero net, with those nets
   - for a regular path, every hop of a witness or of the tree against the path's automaton, which it builds itself
@@ -555,7 +621,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 121 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 133 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -594,7 +660,7 @@ The verdict is one of three:
 | --- | --- | --- |
 | `holds` | the answer is still a correct answer to the same request on the new projection. A new search might choose other witnesses among equally good ones | none |
 | `fails` | it is not | `node_gone`, `witness_gone`, `type_changed`, `rule_changed` (a derivation's ground is no longer one, or an `all_of` node's inputs changed), `reaches_unlisted` (a hop from an expanded node to a node the answer does not list), `reaches_shallower`, `unanswerable` (the request names a node, relation, type or edge the new projection lacks, or an edge in scope has no cost) |
-| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
+| `unknown` | neither can be shown without a new search | `not_complete` (an interrupted or unanswered result), `not_certified` (pattern, support, components, biconnectivity), `no_certificate` (a negative, an optimum, a fewest-hop witness or a reached set without one), `certificate_broken` (an edit broke the proof without refuting the answer) |
 
 Each reason names the edge or node concerned. The record is `{"kind": "graph_runtime.revalidation", "contract",
 "operation", "result_id", "request_id", "from_projection", "to_projection", "verdict", "reasons", "reason_count",

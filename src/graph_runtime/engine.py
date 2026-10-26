@@ -26,7 +26,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import paths, ranking
+from . import paths, ranking, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -279,6 +279,14 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
         plan.alpha, plan.tolerance = Fraction(req["alpha"]), Fraction(req["tolerance"])
+    elif op in ("components", "biconnectivity"):
+        plan.certificate = req["certificate"]
+        plan.nodes = None if req["nodes"] is None else _nodes(p, req["nodes"], "nodes")
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        if op == "components":
+            plan.connectivity, plan.min_size = req["connectivity"], req["min_size"]
+        else:
+            plan.blocks = req["blocks"]
     elif op == "periodicity":
         raise RequestError("unsupported", "unsupported_operation", "periodicity runs on a periodic projection: the "
                            "translation lattice of a component of an infinite periodic graph",
@@ -1778,4 +1786,8 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "regular_path": (_search_regular, _answer_regular),
                "derivation": (_search_derivation, _answer_derivation),
                "personalized_pagerank": (lambda p, plan, ctl: ranking.search(p, plan, ctl),
-                                         lambda p, plan, st: ranking.answer(p, plan, st))}
+                                         lambda p, plan, st: ranking.answer(p, plan, st)),
+               "components": (lambda p, plan, ctl: structure.search_components(p, plan, ctl),
+                              lambda p, plan, st: structure.answer_components(p, plan, st)),
+               "biconnectivity": (lambda p, plan, ctl: structure.search_biconnectivity(p, plan, ctl),
+                                  lambda p, plan, st: structure.answer_biconnectivity(p, plan, st))}
