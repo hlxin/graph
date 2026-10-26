@@ -35,6 +35,15 @@ Operations (docs/API_CONTRACT.md):
   null: every node needs one), ``grounds`` (nodes given; null: every node with no input), ``costs`` (as a shortest
   path's; null: every hop costs 1), ``objective`` (``min_sum``: the least total cost; ``min_max``: the least highest
   cost; ``max_min``: the greatest lowest), ``certificate``; limit ``max_expansions``.
+* ``components``: ``scope``, ``connectivity`` (``weak``: hops followed either way; ``strong``: walks each way), ``nodes``
+  (only the components holding these; null: every component), ``min_size`` (default 1), ``certificate``; limits
+  ``max_expansions``, ``max_results`` (components listed).
+* ``biconnectivity``: ``scope`` (each edge in it a link between its ends, either way), ``nodes`` (only the
+  components holding these; null: all), ``blocks`` (list the blocks too; default false), ``certificate``; limit
+  ``max_expansions``.
+
+No operation takes a field named ``kind``: a request's identity digests its fields with ``kind`` naming the record
+kind (``graph_runtime.request``).
 
 A scope is a list of ``{relation, direction}`` (``forward``: from an edge's source to its target; ``reverse``: from
 its target to its source); there is no wildcard.
@@ -55,11 +64,13 @@ from .errors import RequestError
 from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
-              "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank")
+              "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
+              "biconnectivity")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
 DERIVATION_OBJECTIVES = ("min_sum", "min_max", "max_min")
+CONNECTIVITIES = ("weak", "strong")
 MODES = ("exact",)
 FAILED, UNSUPPORTED = "failed", "unsupported"
 REQUEST_KIND = "graph_runtime.request"
@@ -75,7 +86,9 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "regular_path": ("max_expansions", "max_results"),
            "derivation": ("max_expansions",),
            "periodicity": ("max_expansions",),
-           "personalized_pagerank": ("max_expansions",)}
+           "personalized_pagerank": ("max_expansions",),
+           "components": ("max_expansions", "max_results"),
+           "biconnectivity": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -86,7 +99,9 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "regular_path": (("sources", "path"), ("targets", "answer", "certificate")),
            "derivation": (("targets", "scope"), ("all_of", "grounds", "costs", "objective", "certificate")),
            "periodicity": (("nodes", "scope"), ()),
-           "personalized_pagerank": (("sources", "scope"), ("alpha", "tolerance", "top", "certificate"))}
+           "personalized_pagerank": (("sources", "scope"), ("alpha", "tolerance", "top", "certificate")),
+           "components": (("scope",), ("connectivity", "nodes", "min_size", "certificate")),
+           "biconnectivity": (("scope",), ("nodes", "blocks", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -253,6 +268,23 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         if isinstance(top, bool) or not isinstance(top, int) or top < 1:
             raise _fail("invalid_request", f"top is a positive integer, not {top!r}")
         data["top"] = top
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "components":
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["connectivity"] = raw.get("connectivity", "weak")
+        if data["connectivity"] not in CONNECTIVITIES:
+            raise _fail("invalid_request", f"connectivity is one of {list(CONNECTIVITIES)}, not "
+                        f"{data['connectivity']!r}")
+        data["nodes"] = None if raw.get("nodes") is None else _ids(raw["nodes"], "nodes")
+        size = raw.get("min_size", 1)
+        if isinstance(size, bool) or not isinstance(size, int) or size < 1:
+            raise _fail("invalid_request", f"min_size is a positive integer, not {size!r}")
+        data["min_size"] = size
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "biconnectivity":
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["nodes"] = None if raw.get("nodes") is None else _ids(raw["nodes"], "nodes")
+        data["blocks"] = _flag(raw.get("blocks", False), "blocks")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "periodicity":
         data["nodes"] = _ids(raw["nodes"], "nodes")

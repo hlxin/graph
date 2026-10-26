@@ -81,6 +81,10 @@ def verify_result(result: Result | Mapping, *, nodes: Iterable[Any], edges: Iter
             check.periodicity(request, answer)
         elif op == "personalized_pagerank":
             check.pagerank(request, answer)
+        elif op == "components":
+            check.components(request, answer, status)
+        elif op == "biconnectivity":
+            check.biconnectivity(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -917,6 +921,252 @@ class _Checker:
             low = Fraction(low) if rational and low is not None else low
             if low is None or low > reported:
                 self.bad("an unproven witness comes with a lower bound no greater than its cost")
+
+    def links(self, u: Any, allowed: set) -> list[tuple[str, Any, str]]:
+        """(edge, the other end, its relation) for every edge at ``u`` whose relation is in scope in either direction:
+        an undirected reading of the scope (an edge from u to itself is listed once, with u as its other end)."""
+        both = allowed | {(r, "reverse" if d == "forward" else "forward") for r, d in allowed}
+        hops = self.hops_from(u, both)
+        seen, out = set(), []
+        for eid, v, rel in hops:
+            if eid not in seen:
+                seen.add(eid)
+                out.append((eid, v, rel))
+        return out
+
+    def hops_into(self, u: Any, allowed: set) -> list[tuple[str, Any, str]]:
+        """(edge, the node whose hop it is, its relation) for every hop in scope that leads to ``u``."""
+        flipped = {(r, "reverse" if d == "forward" else "forward") for r, d in allowed}
+        return self.hops_from(u, flipped)
+
+    def components(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """Components against the records: each listed component's edge count and flags recounted; and, from the
+        partition certificate, a proof that every group is a component: its tree (strong: two trees) shows it
+        connected, and the groups show nothing outside it belongs with it, being disjoint, closed (no hop leads out of
+        them; weak: no link joins two of them) and, for strong components, in an order no hop goes back in. Each
+        listed component is a group; a complete answer's groups cover the selection, any group of min_size nodes or
+        more that the selection holds is listed, and total counts the selection's groups."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        strong = request["connectivity"] == "strong"
+        both = allowed | {(r, "reverse" if d == "forward" else "forward") for r, d in allowed}
+        step = (lambda u: self.hops_from(u, allowed)) if strong else (lambda u: self.links(u, allowed))
+        comps = answer.get("components") or []
+        for c in comps:
+            if any(n not in self.types_of for n in c["nodes"]):
+                self.bad(f"component {c['nodes'][:3]}: names a node that is not an input node")
+                return
+        for c in comps:
+            member, where = set(c["nodes"]), f"component from {c['nodes'][0]!r}"
+            inside, leaves, loop = set(), False, False
+            for u in c["nodes"]:
+                for eid, v, _ in step(u):
+                    if v in member:
+                        inside.add(eid)
+                        loop = loop or v == u
+                    else:
+                        leaves = True
+            if c["edges"] != len(inside):
+                self.bad(f"{where}: {len(inside)} edges in scope join its nodes, not {c['edges']}")
+            if strong:
+                enters = any(v not in member for u in c["nodes"] for _, v, _ in self.hops_into(u, allowed))
+                want = {"cyclic": len(member) > 1 or loop, "initial": not enters, "terminal": not leaves}
+                for flag, value in want.items():
+                    if c[flag] is not value:
+                        self.bad(f"{where}: {flag} is {value}, not {c[flag]}")
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+        groups = [g["nodes"] for g in cert["groups"]]
+        group_of: dict = {}
+        for i, g in enumerate(groups):
+            for n in g:
+                if n not in self.types_of or n in group_of:
+                    self.bad(f"certificate: {n!r} is not an input node, or is in two groups")
+                    return
+                group_of[n] = i
+        for i, g in enumerate(groups):
+            for u in g:
+                for eid, v, _ in step(u):
+                    j = group_of.get(v)
+                    if j is None or (j < i if strong else j != i):
+                        self.bad(f"certificate: edge {eid} leads from group {i} to "
+                                 f"{'no group' if j is None else f'group {j}'}: the groups are not "
+                                 f"{'closed' if j is None else 'in topological order' if strong else 'separate'}")
+                        return
+        for c in comps:
+            i = group_of.get(c["nodes"][0])
+            if i is None or list(groups[i]) != list(c["nodes"]):
+                self.bad(f"component from {c['nodes'][0]!r} is not one of the certificate's groups")
+        want = request["nodes"]
+        if status == COMPLETED:
+            selection = set(self.types_of) if want is None else set(want)
+            if not selection <= set(group_of):
+                self.bad("certificate: the groups of a complete answer cover the selection")
+            chosen = [g for g in groups if want is None or set(want).intersection(g)]
+            listed = {tuple(c["nodes"]) for c in comps}
+            if any(len(g) >= request["min_size"] and tuple(g) not in listed for g in chosen):
+                self.bad("a group of min_size nodes or more in the selection is not listed")
+            if answer["total"] != len(chosen):
+                self.bad(f"total is {len(chosen)} groups, not {answer['total']}")
+        for t in cert["groups"]:
+            member, root = set(t["nodes"]), t["nodes"][0]
+            for key, end in (("out", "from"), ("in", "to")):
+                entries = t[key]
+                if entries is None:
+                    if strong or key == "out":
+                        self.bad(f"group from {root!r}: no {key} tree")
+                    continue
+                where = f"group from {root!r}: the {key} tree"
+                parent = {}
+                for e in entries:
+                    node, h = e["node"], e["via"]
+                    if node in parent or node == root or node not in member or h[end] not in member:
+                        self.bad(f"{where}: {node!r} is listed twice, is the root, or leaves the component")
+                        continue
+                    frm, to = (h["from"], node) if end == "from" else (node, h["to"])
+                    self.hop(where, frm, to, h["edge"], h["relation"], h["direction"], allowed if strong else both)
+                    parent[node] = h[end]
+                if set(parent) != member - {root}:
+                    self.bad(f"{where} does not span the component")
+                for k in parent:                            # every chain ends at the root: the tree has no cycle
+                    at, steps = k, 0
+                    while at in parent and steps <= len(parent):
+                        at, steps = parent[at], steps + 1
+                    if at != root:
+                        self.bad(f"{where} is circular or detached")
+                        break
+
+    def biconnectivity(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """Biconnectivity against the records: bridges name their edges' records, links of the scope; and, from the
+        depth-first forest, every claim. The forest is checked as a depth-first search (each node's edge to its parent
+        a link, preorder numbers a preorder of the forest, no link between two nodes of which neither is the other's
+        ancestor); a node is finished when every link of its subtree leads into the forest. Low points are recomputed
+        from the records for finished nodes, and from them the articulation points (with their splits), bridges and
+        blocks: a complete answer lists exactly these, an interrupted one some of them."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+
+        def links(u: Any) -> list:
+            return [(eid, v) for eid, v, _ in self.links(u, allowed) if v != u]
+        for b in answer.get("bridges") or []:
+            rec = self.edge_of.get(b["edge"])
+            if rec is None or rec != (b["source"], b["target"], b["relation"]) or rec[0] == rec[1] or not (
+                    self.in_scope(rec[2], "forward", allowed) or self.in_scope(rec[2], "reverse", allowed)):
+                self.bad(f"bridge {b['edge']!r} is not an input edge with these ends and relation, linking two nodes "
+                         "in scope")
+        cert = answer.get("certificate")
+        if cert is None:
+            return
+        pre: dict = {}
+        via: dict = {}
+        for f in cert["forest"]:
+            if f["node"] not in self.types_of or f["node"] in pre or not _is_int(f["pre"]):
+                self.bad(f"certificate: {f['node']!r} is not an input node, or is listed twice")
+                return
+            pre[f["node"]], via[f["node"]] = f["pre"], f["via"]
+        if sorted(pre.values()) != list(range(len(pre))):
+            self.bad("certificate: preorder numbers are 0, 1, 2, ... once each")
+            return
+        parent: dict = {}
+        children: dict = {u: [] for u in pre}
+        for u, eid in via.items():
+            if eid is None:
+                continue
+            rec = self.edge_of.get(eid)
+            if rec is None or u not in rec[:2] or rec[0] == rec[1] or not (
+                    self.in_scope(rec[2], "forward", allowed) or self.in_scope(rec[2], "reverse", allowed)):
+                self.bad(f"certificate: {u!r} hangs from {eid!r}, which is no link at it")
+                return
+            q = rec[1] if rec[0] == u else rec[0]
+            if q not in pre or pre[q] >= pre[u]:
+                self.bad(f"certificate: {u!r} hangs from {q!r}, which is not in the forest before it")
+                return
+            parent[u] = q
+            children[q].append(u)
+        want = request["nodes"]
+        if want is not None and any(u not in parent and u not in want for u in pre):
+            self.bad("certificate: a tree of the forest grows from a node the request does not name")
+            return
+        order = []                                         # the forest's own preorder: it must be the numbering
+        for root in sorted((u for u in pre if u not in parent), key=pre.get):
+            todo = [root]
+            while todo:
+                u = todo.pop()
+                order.append(u)
+                todo.extend(sorted(children[u], key=pre.get, reverse=True))
+        if [pre[u] for u in order] != list(range(len(order))) or len(order) != len(pre):
+            self.bad("certificate: the numbers are not a preorder of the forest")
+            return
+        size = {u: 1 for u in pre}
+        for u in reversed(order):
+            if u in parent:
+                size[parent[u]] += size[u]
+
+        def above(a: Any, d: Any) -> bool:                 # a is d or an ancestor of d
+            return pre[a] <= pre[d] < pre[a] + size[a]
+        done, low = {}, {}
+        for u in reversed(order):
+            ends = links(u)
+            for eid, w in ends:
+                if w in pre and not (above(u, w) or above(w, u)):
+                    self.bad(f"certificate: link {eid} joins {u!r} and {w!r}, neither above the other: no "
+                             "depth-first search leaves such a link")
+                    return
+            done[u] = all(w in pre for _, w in ends) and all(done[c] for c in children[u])
+            if done[u]:
+                low[u] = min([pre[u]] + [pre[w] for eid, w in ends if eid != via[u]] +
+                             [low[c] for c in children[u]])
+        points, bridges = {}, set()
+        for u in pre:
+            if not done[u]:
+                continue
+            if u not in parent:
+                if len(children[u]) > 1:
+                    points[u] = len(children[u])
+            else:
+                s = sum(1 for c in children[u] if low[c] >= pre[u])
+                if s:
+                    points[u] = s + 1
+                if low[u] > pre[parent[u]]:
+                    bridges.add(via[u])
+        claimed = {x["node"]: x["splits"] for x in answer.get("articulation_points") or []}
+        claimed_bridges = {b["edge"] for b in answer.get("bridges") or []}
+        complete = status == COMPLETED
+        if any(points.get(u) != k for u, k in claimed.items()) or (complete and claimed != points):
+            self.bad(f"articulation points {claimed}, but the forest proves {points}")
+        if not claimed_bridges <= bridges or (complete and claimed_bridges != bridges):
+            self.bad(f"bridges {sorted(claimed_bridges)}, but the forest proves {sorted(bridges)}")
+        if complete:
+            if not all(done.values()) or not (set(self.types_of) if want is None else set(want)) <= set(pre):
+                self.bad("certificate: the forest of a complete answer is finished and covers the selection")
+            if answer.get("components") != len(pre) - len(parent):
+                self.bad(f"components is {len(pre) - len(parent)} trees, not {answer.get('components')}")
+        if answer.get("blocks") is None:
+            return
+        head: dict = {}
+        for u in order:                                     # the separated child each node's links hang under
+            if u in parent:
+                head[u] = u if done[u] and low[u] >= pre[parent[u]] else head.get(parent[u])
+        blocks: dict = {}
+        seen: set = set()
+        for u in pre:
+            for eid, w in links(u):
+                if eid in seen or w not in pre:
+                    continue
+                seen.add(eid)
+                d = u if pre[u] > pre[w] else w
+                h = head.get(d)
+                if h is not None and done[h]:
+                    blocks.setdefault(h, set()).add(eid)
+        expected = {tuple(sorted(b)) for b in blocks.values()}
+        listed = {tuple(b["edges"]) for b in answer["blocks"]}
+        if not listed <= expected or (complete and listed != expected):
+            self.bad("the blocks are not those the forest proves")
+        for b in answer["blocks"]:
+            ends = set()
+            for eid in b["edges"]:
+                ends.update((self.edge_of.get(eid) or ("?", "?"))[:2])
+            if sorted(ends) != list(b["nodes"]):
+                self.bad(f"block from {b['edges'][0]!r}: its nodes are its edges' ends")
 
 
 class _PeriodicChecker(_Checker):

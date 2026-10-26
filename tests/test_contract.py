@@ -320,6 +320,58 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             for seeds, rank, basis, copies in exp['components']:
                 want, reached = lattice_oracle(names, graph['edges'], graph['dimensions'], seeds[0], 12)
                 assert [list(r) for r in want] == basis and set(seeds) <= reached, case['name']
+        elif op in ('components', 'biconnectivity'):
+            import networkx as nx
+            pairs = {(s['relation'], s['direction']) for s in r['scope']}
+            names = [node_id(n) for n in g['nodes']]
+            hops = nx.MultiDiGraph()
+            hops.add_nodes_from(names)
+            for e in g['edges']:
+                if (e['relation'], 'forward') in pairs:
+                    hops.add_edge(e['source'], e['target'], key=e['id'])
+                if (e['relation'], 'reverse') in pairs:
+                    hops.add_edge(e['target'], e['source'], key=e['id'])
+            links = [e for e in g['edges'] if (e['relation'], 'forward') in pairs or (e['relation'], 'reverse') in pairs]
+            if op == 'components':
+                parts = sorted(sorted(c) for c in (nx.strongly_connected_components(hops) if r.get('connectivity') == 'strong'
+                                                   else nx.weakly_connected_components(hops)))
+                chosen = [c for c in parts if not r.get('nodes') or set(r['nodes']) & set(c)]
+                assert exp['component_sets'] == [c for c in chosen if len(c) >= r.get('min_size', 1)], case['name']
+                if exp['status'] == 'completed':
+                    assert exp['total'] == len(chosen), case['name']
+                for first, flags in exp.get('component_flags', {}).items():
+                    c = set(next(x for x in parts if x[0] == first))
+                    assert flags == [len(c) > 1 or any(hops.has_edge(u, u) for u in c),
+                                     all(u in c for v in c for u in hops.predecessors(v)),
+                                     all(v in c for u in c for v in hops.successors(u))], case['name']
+                for first, count in exp.get('component_edges', {}).items():
+                    c = set(next(x for x in parts if x[0] == first))
+                    assert count == len({k for u, v, k in hops.edges(keys=True) if u in c and v in c}), case['name']
+            else:
+                def pieces(skip=None, without=None):
+                    h = nx.MultiGraph()
+                    h.add_nodes_from(n for n in names if n != without)
+                    h.add_edges_from((e['source'], e['target']) for e in links
+                                     if e is not skip and without not in (e['source'], e['target']))
+                    return nx.number_connected_components(h)
+                base, whole = pieces(), nx.MultiGraph(hops.to_undirected())
+                region = set(names) if not r.get('nodes') else set().union(
+                    *(nx.node_connected_component(whole, n) for n in r['nodes']))
+                points = {v: pieces(without=v) - base + 1 for v in sorted(region) if pieces(without=v) - base + 1 > 1}
+                assert exp['articulation'] == points, case['name']
+                assert exp['bridge_edges'] == sorted(e['id'] for e in links if e['source'] in region
+                                                     and e['source'] != e['target'] and pieces(skip=e) > base)
+                if 'component_count' in exp:
+                    assert exp['component_count'] == len({frozenset(nx.node_connected_component(whole, n))
+                                                          for n in region}), case['name']
+                if 'block_edges' in exp:
+                    simple = nx.Graph((e['source'], e['target']) for e in links if e['source'] != e['target'])
+                    owner = {frozenset(uv): i for i, b in enumerate(nx.biconnected_component_edges(simple)) for uv in b}
+                    blocks: dict = {}
+                    for e in links:
+                        if e['source'] != e['target'] and e['source'] in region:
+                            blocks.setdefault(owner[frozenset((e['source'], e['target']))], []).append(e['id'])
+                    assert exp['block_edges'] == sorted(sorted(b) for b in blocks.values()), case['name']
         elif op == 'pattern':
             raw = case['request']             # the brute force expands the hierarchies itself
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],
