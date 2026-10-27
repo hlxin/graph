@@ -386,7 +386,7 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = set(_nodes(p, req["targets"], "targets"))
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
-        plan.k = req["k"]
+        plan.k, plan.certificate = req["k"], req["certificate"]
         if req["costs"] is None:
             plan.rational, plan.cost, plan.given, plan.exact = False, (lambda ei: 1), (lambda ei: 1), (lambda x: x)
         else:

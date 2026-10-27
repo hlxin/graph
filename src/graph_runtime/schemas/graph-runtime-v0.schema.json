@@ -4965,7 +4965,8 @@
             "targets",
             "scope",
             "costs",
-            "k"
+            "k",
+            "certificate"
           ],
           "properties": {
             "contract": {
@@ -5029,9 +5030,12 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 1000000
+            },
+            "certificate": {
+              "type": "boolean"
             }
           },
-          "description": "k_shortest_paths: simple paths from a source to a target, in the order of (cost, hops, start node and edge IDs); costs as a shortest path's (null: every hop 1)."
+          "description": "k_shortest_paths: simple paths from a source to a target, in the order of (cost, hops, start node and edge IDs); costs as a shortest path's (null: every hop 1); certificate: prove the ranking (complete answers only)."
         },
         {
           "type": "object",
@@ -8940,7 +8944,8 @@
       "required": [
         "paths",
         "count",
-        "exhausted"
+        "exhausted",
+        "certificate"
       ],
       "properties": {
         "paths": {
@@ -8992,9 +8997,120 @@
             "boolean",
             "null"
           ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "potentials",
+                "explored"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "deviations"
+                },
+                "potentials": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "cost",
+                      "hops"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "cost": {
+                        "$ref": "#/$defs/certificate_number"
+                      },
+                      "hops": {
+                        "$ref": "#/$defs/count"
+                      }
+                    }
+                  }
+                },
+                "explored": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "path",
+                      "at",
+                      "labels"
+                    ],
+                    "properties": {
+                      "path": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/count"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "at": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/count"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "labels": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "node",
+                            "cost",
+                            "hops",
+                            "side"
+                          ],
+                          "properties": {
+                            "node": {
+                              "$ref": "#/$defs/id"
+                            },
+                            "cost": {
+                              "$ref": "#/$defs/certificate_number"
+                            },
+                            "hops": {
+                              "$ref": "#/$defs/count"
+                            },
+                            "side": {
+                              "enum": [
+                                "before",
+                                "after",
+                                null
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "deviations (with certificate: true, on a complete answer): potentials, for every node that reaches a target, a lower bound on the (cost, hops) of reaching one; and, for the start (path and at null) and each prefix of the listed paths (the first at hops of path path, where that prefix first appears) whose leaving walks the potentials do not already put at or after the last path, every node those walks reach before it, with its least (cost, hops) and side: on a tie of cost and hops, whether the walk's IDs come before the last path's or after them (null when fewer than k paths exist and every path counts)."
         }
       },
-      "description": "The paths in order, their number, and whether fewer than k exist (null when interrupted)."
+      "description": "The paths in order, their number, and whether fewer than k exist (null when interrupted), and the certificate that proves the ranking when asked for."
     },
     "mincost_answer": {
       "type": "object",

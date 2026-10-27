@@ -12,8 +12,8 @@ certificate (requested with ``certificate: true``) must prove its typed or short
 no last hop to a target, a closure with no target, or potentials that no hop in scope lowers by more than its cost,
 0 at every source and at least the bound at every target. A support answer is recomputed from the records (by
 re-evaluating each node's rule until nothing changes, not by the engine's counting), and every listed node, count
-and cause is compared with it. Patterns and uncertified negatives are left to the tests' independent oracles. A
-malformed result is reported as a problem, never raised.
+and cause is compared with it. Patterns, uncertified negatives and a k shortest paths ranking without its
+certificate are left to the tests' independent oracles. A malformed result is reported as a problem, never raised.
 """
 
 from __future__ import annotations
@@ -269,6 +269,7 @@ class _Checker:
     def __init__(self, problems: list[str], edge_of: Mapping, types_of: Mapping, relation_up: dict):
         self.problems, self.edge_of, self.types_of, self.relation_up = problems, edge_of, types_of, relation_up
         self._ends: tuple[dict, dict] | None = None
+        self._flipped: tuple[set, set] | None = None
         self.proofs = True                     # False: check what the answer claims, not its certificate
 
     def proof(self, answer: Mapping) -> Any:
@@ -879,8 +880,9 @@ class _Checker:
         """Each path against the records: hops in scope chaining from a source to a target, no node twice, each hop at
         the cost the request gives its edge and the path at their exact sum; the paths distinct and in the strict
         order of (cost, hops, start node and edge IDs); no more than k, and exactly k unless the answer says fewer
-        exist. That no simple path missing from the list comes before its last is not checked here (Yen's theorem;
-        the oracle tests)."""
+        exist. That no simple path missing from the list comes before its last is proven by the certificate, when
+        the answer carries one (:meth:`k_paths_certificate`); without it, it is Yen's theorem, left to the oracle
+        tests."""
         allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
         costs = request["costs"]
         kind, table = next(iter(costs.items())) if costs else (None, None)
@@ -909,6 +911,146 @@ class _Checker:
         exhausted = answer.get("exhausted")
         if count > k or (status == COMPLETED and exhausted is not (count < k)):
             self.bad(f"a complete answer lists k paths, or fewer when that is all there are (exhausted)")
+        cert = self.proof(answer)
+        if cert is not None and status == COMPLETED and not self.problems:
+            self.k_paths_certificate(request, answer["paths"], keys, cert)
+
+    def k_paths_certificate(self, request: Mapping, paths: list, keys: list, cert: Mapping) -> None:
+        """The ranking's proof. Potentials: every target listed at (0, 0) or below, no hop in scope from a listed node
+        lowering them by more than its (cost, 1), and every hop in scope into a listed node from a listed node (so an
+        unlisted node reaches no target). Then the tree of the listed paths' prefixes: every simple path not listed
+        leaves it at a prefix (or, at the start, from a source no listed path starts at) by a hop no listed path with
+        that prefix takes, since a prefix that ends at a target is listed (it comes before the paths it starts). For
+        each prefix, every such hop, and every hop from a node its labels list, that avoids the prefix's nodes leads
+        to a node whose potential puts it at or after the last path (or that reaches no target), or to a labelled node
+        no later than the hop brings it; and no labelled node is a target. A walk before the last path would carry
+        labels to its target, so none exists: the listed paths are the first ones."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        costs = request["costs"]
+        kind, table = next(iter(costs.items())) if costs else (None, None)
+        rational = table is not None and any(isinstance(x, float) for x in table.values())
+        sources, targets = set(request["sources"]), set(request["targets"])
+
+        def number(x: Any) -> Any:
+            if rational and isinstance(x, str):
+                return Fraction(x)
+            if not rational and _is_int(x):
+                return x
+            raise ValueError(f"{x!r} is not a cost as this request writes them")
+
+        def price(eid: str, rel: str) -> Any:
+            if table is None:
+                return 1
+            c = table.get(rel if kind == "by_relation" else eid)
+            if c is None:
+                raise ValueError(f"the hop {eid} in scope has no cost in the request")
+            return Fraction(c) if rational else c
+
+        pi: dict = {}
+        for e in cert["potentials"]:
+            if e["node"] not in self.types_of or e["node"] in pi or not _is_int(e["hops"]):
+                self.bad(f"certificate: the potential of {e['node']!r} is not one of an input node, once")
+                return
+            pi[e["node"]] = (number(e["cost"]), e["hops"])
+        for t in sorted(targets, key=str):
+            if t not in pi or pi[t] > (0, 0):
+                self.bad(f"certificate: the target {t!r} is not listed at (0, 0) or below")
+        for v in sorted(pi, key=str):
+            for eid, u, rel in self.hops_into(v, allowed):
+                if u not in pi:
+                    self.bad(f"certificate: {u!r} reaches {v!r} by the hop {eid}, but is not listed")
+                elif pi[u] > (price(eid, rel) + pi[v][0], 1 + pi[v][1]):
+                    self.bad(f"certificate: the hop {eid} from {u!r} {pi[u]} leads to {v!r} {pi[v]} for less")
+        if self.problems:
+            return
+        full = len(paths) == request["k"]
+        tau = (keys[-1][0], keys[-1][1], 1) if full else None
+        last = keys[-1][2] if full else None
+        sides = {"before": 0, "after": 1} if full else {None: 0}
+
+        def pruned(val: tuple, v: Any) -> bool:
+            bound = pi.get(v)
+            return bound is None or (tau is not None and (val[0] + bound[0], val[1] + bound[1], val[2]) >= tau)
+
+        explored: dict = {}
+        for e in cert["explored"]:
+            labels = {}
+            for x in e["labels"]:
+                if x["node"] not in self.types_of or x["node"] in labels or not _is_int(x["hops"]) \
+                        or x["side"] not in sides:
+                    self.bad(f"certificate: the label of {x['node']!r} is not one of an input node, once, with a "
+                             f"side {'before or after the last path' if full else 'null (no path is last)'}")
+                    return
+                labels[x["node"]] = (number(x["cost"]), x["hops"], sides[x["side"]])
+            if (e["path"], e["at"]) in explored:
+                self.bad(f"certificate: two entries explore {(e['path'], e['at'])}")
+                return
+            explored[(e["path"], e["at"])] = labels
+
+        def explore(where: str, labels: dict, starts: list, avoid: set) -> None:
+            for v in sorted(set(labels) & avoid, key=str):
+                self.bad(f"certificate: {where} labels {v!r}, which its prefix visits")
+            for val, v, eid in starts:
+                if not pruned(val, v) and not (v in labels and labels[v] <= val):
+                    self.bad(f"certificate: {where}: the hop {eid} leaves the listed paths for {v!r} at {val}, "
+                             "which is neither labelled so nor at or after the last path")
+            for y in sorted(labels, key=str):
+                if y in targets:
+                    self.bad(f"certificate: {where} labels the target {y!r}: a path comes before the last one")
+                c, h, b = labels[y]
+                for eid, z, rel in self.hops_from(y, allowed):
+                    if z in avoid:
+                        continue
+                    val = (c + price(eid, rel), h + 1, b)
+                    if not pruned(val, z) and not (z in labels and labels[z] <= val):
+                        self.bad(f"certificate: {where}: the hop {eid} from {y!r} leads to {z!r} at {val}, which "
+                                 "is neither labelled so nor at or after the last path")
+
+        used = {x["source"] for x in paths}
+        explore("the start", explored.pop((None, None), {}),
+                [((0, 0, int(full and s > last[0])), s, None) for s in sorted(sources - used, key=str)], set())
+        roots: dict = {}                                  # the prefix tree: [hops taken next, a path stops, seen]
+        along = []
+        for x in paths:
+            at = roots.setdefault(x["source"], [{}, False, False])
+            nodes = [at]
+            for h in x["hops"]:
+                at = at[0].setdefault(h["edge"], [{}, False, False])
+                nodes.append(at)
+            at[1] = True
+            along.append(nodes)
+        for i, x in enumerate(paths):
+            seq = (x["source"],) + tuple(h["edge"] for h in x["hops"])
+            same = 0                                      # leading IDs it shares with the last path
+            while full and same < len(seq) and same < len(last) and seq[same] == last[same]:
+                same += 1
+            avoid, at, total = {x["source"]}, x["source"], 0
+            for j, tree in enumerate(along[i]):
+                if j:
+                    h = x["hops"][j - 1]
+                    at = h["to"]
+                    avoid.add(at)
+                    total += price(h["edge"], h["relation"])
+                if tree[2]:
+                    continue
+                tree[2] = True
+                where = f"the prefix of path {i} by {j} hops"
+                if at in targets and not tree[1]:
+                    self.bad(f"certificate: {where} ends at the target {at!r}, a path before path {i}, unlisted")
+
+                def side(eid: str, j: int = j, same: int = same, seq: tuple = seq) -> int:
+                    """On a tie of cost and hops, whether a walk leaving the prefix by ``eid`` comes after the last
+                    path: as its IDs compare."""
+                    if not full:
+                        return 0
+                    if j + 1 <= same:                     # the last path's prefix: the next edge decides
+                        return int(len(last) == j + 1 or eid > last[j + 1])
+                    return int(same == len(last) or seq[same] > last[same])
+                starts = [((total + price(eid, rel), j + 1, side(eid)), v, eid)
+                          for eid, v, rel in self.hops_from(at, allowed) if v not in avoid and eid not in tree[0]]
+                explore(where, explored.pop((i, j), {}), starts, avoid)
+        for i, j in sorted(explored, key=str):
+            self.bad(f"certificate: the entry {(i, j)} is not where a prefix of the listed paths first appears")
 
     def cycle_basis(self, request: Mapping, answer: Mapping, status: str) -> None:
         """Each cycle against the records: links in scope, each node met by two of its links (a loop counts two) and
@@ -1937,9 +2079,11 @@ class _Checker:
         return out
 
     def hops_into(self, u: Any, allowed: set) -> list[tuple[str, Any, str]]:
-        """(edge, the node whose hop it is, its relation) for every hop in scope that leads to ``u``."""
-        flipped = {(r, "reverse" if d == "forward" else "forward") for r, d in allowed}
-        return self.hops_from(u, flipped)
+        """(edge, the node whose hop it is, its relation) for every hop in scope that leads to ``u``. The reversed
+        scope is built once per scope, not per node (a scope of many relations made that quadratic)."""
+        if self._flipped is None or self._flipped[0] is not allowed:
+            self._flipped = (allowed, {(r, "reverse" if d == "forward" else "forward") for r, d in allowed})
+        return self.hops_from(u, self._flipped[1])
 
     def components(self, request: Mapping, answer: Mapping, status: str) -> None:
         """Components against the records: each listed component's edge count and flags recounted; and, from the

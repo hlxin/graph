@@ -79,7 +79,7 @@ Operations (docs/API_CONTRACT.md):
   edge 1), ``costs`` (as a shortest path's, non-negative), ``value`` (how much to send; null: as much as possible),
   ``certificate``; limit ``max_expansions``.
 * ``k_shortest_paths``: ``sources``, ``targets``, ``scope``, ``costs`` (as a shortest path's, non-negative; null: every
-  hop costs 1), ``k`` (how many paths; default 10); limit ``max_expansions``.
+  hop costs 1), ``k`` (how many paths; default 10), ``certificate``; limit ``max_expansions``.
 * ``cycle_basis``: ``scope`` (each edge in it a link between its ends, either way), ``weights`` (as costs: non-negative;
   null: every link weighs 1), ``certificate``; limit ``max_expansions``.
 
@@ -172,7 +172,7 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "d_separation": (("x", "y", "scope"), ("given", "certificate")),
            "spanning_forest": (("scope",), ("weights", "objective")),
            "cycle_basis": (("scope",), ("weights", "certificate")),
-           "k_shortest_paths": (("sources", "targets", "scope"), ("costs", "k")),
+           "k_shortest_paths": (("sources", "targets", "scope"), ("costs", "k", "certificate")),
            "min_cost_flow": (("sources", "targets", "scope", "costs"), ("capacities", "value", "certificate")),
            "reachability_pairs": (("pairs", "scope"), ("witnesses", "certificate")),
            "datalog": (("program", "query"), ("answer", "derivations", "certificate")),
@@ -450,6 +450,7 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         if isinstance(k, bool) or not isinstance(k, int) or not 1 <= k <= 1_000_000:
             raise _fail("invalid_request", f"k is an integer from 1 to 1000000, not {k!r}")
         data["k"] = k
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "cycle_basis":
         data["scope"] = _scope(raw["scope"], "scope")
         data["weights"] = None if raw.get("weights") is None else _costs(raw["weights"])
