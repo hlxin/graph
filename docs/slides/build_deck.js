@@ -521,7 +521,7 @@ async function familySlide(fam) {
   const s = contentSlide("Operations", fam.slideTitle, fam.lede);
   const footerH = fam.footer ? 0.55 : 0;
   const bottom = BOTTOM - (footerH ? footerH + 0.2 : 0);
-  const asideW = fam.aside ? 5.0 : 0, gap = 0.3;
+  const asideW = fam.aside ? fam.asideW || 5.0 : 0, gap = 0.3; // asideW: narrower beside two operations
   const n = fam.ops.length;
   const areaW = CW - (asideW ? asideW + gap : 0);
   const colW = (areaW - gap * (n - 1)) / n, h = bottom - TOP;
@@ -741,6 +741,52 @@ const ASIDES = {
     check("datalog example note", ny - y + height(note, w - 0.6, 14), h - 0.1);
     text(s, rich(note, { fontSize: 14, color: C.text1 }), { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.1 });
   },
+  // A worked example: one six-ring under two sets of IDs, read as links (run on the runtime at 32507b6). The amber
+  // digits are each node's position in its canonical order; renumbered by them, both rings have the same edges.
+  canonicalExample(s, x, y, w, h) {
+    card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "canonical example" });
+    text(s, [
+      { text: "WORKED EXAMPLE", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1, breakLine: true } },
+      { text: "One ring, two sets of IDs", options: { fontSize: 16, bold: true, color: C.text1 } },
+    ], { x: x + 0.3, y: y + 0.25, w: w - 0.6, h: 0.65 });
+    // Clockwise from the top: each node's ID and its position in the canonical order (a b f c e d; u x y v w z).
+    const rings = [
+      [["a", 0], ["b", 1], ["c", 3], ["d", 5], ["e", 4], ["f", 2]],
+      [["u", 0], ["x", 1], ["v", 3], ["z", 5], ["w", 4], ["y", 2]],
+    ];
+    const R = 0.52, r = 0.17, lr = R + 0.26, iw = w - 0.6, cy = y + 2.0;
+    const centers = [x + 0.3 + iw * 0.25, x + 0.3 + iw * 0.75];
+    rings.forEach((ring, k) => {
+      const at = (i, rad) => [centers[k] + rad * Math.sin((i * Math.PI) / 3), cy - rad * Math.cos((i * Math.PI) / 3)];
+      for (let i = 0; i < 6; i++) {
+        const [x1, y1] = at(i, R), [x2, y2] = at((i + 1) % 6, R);
+        const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+        line(s, x1 + ux * r, y1 + uy * r, x2 - ux * r, y2 - uy * r, { color: C.accent6, width: 1.5 });
+      }
+      ring.forEach(([id, pos], i) => {
+        const [nx, ny] = at(i, R);
+        s.addText(id, {
+          shape: pres.shapes.OVAL, x: nx - r, y: ny - r, w: 2 * r, h: 2 * r, fill: { color: C.accent1 }, line: { type: "none" },
+          color: C.background1, fontFace: MONO, fontSize: 13, bold: true, align: "center", valign: "middle", margin: 0,
+          objectName: `node ${id}`,
+        });
+        const [lx, ly] = at(i, lr);
+        text(s, [{ text: String(pos), options: { fontSize: 14, bold: true, color: C.accent2 } }], { x: lx - 0.12, y: ly - 0.13, w: 0.24, h: 0.26, align: "center", valign: "middle" });
+      });
+    });
+    // Both rings lead to one identity.
+    const py = cy + lr + 0.5, pw = w - 0.6, ph = 0.4, px = x + 0.3;
+    centers.forEach((cx, k) => line(s, cx, cy + lr + 0.16, px + pw * (k ? 0.72 : 0.28), py - 0.03, { color: C.accent6, width: 1.5, endArrowType: "triangle" }));
+    s.addText([
+      { text: "canonical_id  ", options: { fontFace: MONO, fontSize: 13, color: C.background1 } },
+      { text: "sha256:2bd33e…", options: { fontFace: MONO, fontSize: 13, bold: true, color: C.background1 } },
+    ], { shape: pres.shapes.ROUNDED_RECTANGLE, x: px, y: py, w: pw, h: ph, rectRadius: 0.08, fill: { color: C.accent2 }, line: { type: "none" }, align: "center", valign: "middle", margin: 0, objectName: "canonical_id" });
+    check("canonical id pill width", "canonical_id  sha256:2bd33e…".length * 13 * 0.6 / 72, pw - 0.1);
+    const ny = py + ph + 0.2;
+    const note = "Amber: the canonical order. Renumbered by it, both rings have edges 0–1, 0–2, 1–3, 2–4, 3–5 and 4–5: one encoding, one id.";
+    check("canonical example note", ny - y + height(note, w - 0.6, 14), h - 0.1);
+    text(s, note, { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.1, fontSize: 14, color: C.text1 });
+  },
   // A worked example: A + B ⇄ C → D, its stoichiometric matrix and what incidence answers for it (run on the runtime).
   incidenceExample(s, x, y, w, h) {
     card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "incidence example" });
@@ -834,7 +880,7 @@ async function revalidationSlide() {
     objectName: "SCALE verdicts chart",
   });
   text(s, "Each verdict confirmed by a fresh run.", { x: x0, y: BOTTOM - 0.3, w, h: 0.3, fontSize: 12, color: C.accent6, italic: true });
-  s.addNotes(`Sources: ${R.source} (verdicts and reasons). With one diff of the projections, each result is checked in time proportional to the edit (binary search in the answer's canonical lists). On 700 random edits the diff and full checks give the same record and every 'holds' matches a fresh run. Measured on a heavily loaded machine. Revalidation by certificate (0a58767, extended in 05d3ea5): components, biconnectivity, max_flow, matching, dominators and incidence are always checked in full: a node or edge the answer names that is gone refutes it (node_gone, witness_gone); a claim the new records contradict refutes it (answer_refuted); otherwise it holds exactly when the certificate still checks (as verify_result checks it), and is unknown (certificate_broken) when it does not, or (no_certificate) when it has none. Tested on 600 random edits: whenever a result holds, a fresh run gives the same canonical answer.`);
+  s.addNotes(`Sources: ${R.source} (verdicts and reasons). With one diff of the projections, each result is checked in time proportional to the edit (binary search in the answer's canonical lists). On 700 random edits the diff and full checks give the same record and every 'holds' matches a fresh run. Measured on a heavily loaded machine. Revalidation by certificate (0a58767, extended in 05d3ea5): components, biconnectivity, max_flow, matching, dominators and incidence are always checked in full: a node or edge the answer names that is gone refutes it (node_gone, witness_gone); a claim the new records contradict refutes it (answer_refuted); otherwise it holds exactly when the certificate still checks (as verify_result checks it), and is unknown (certificate_broken) when it does not, or (no_certificate) when it has none. Tested on 600 random edits: whenever a result holds, a fresh run gives the same canonical answer.${R.trust ? ` Trust model (docs/API_CONTRACT.md §7): ${R.trust}` : ""}`);
 }
 
 async function verificationSlide() {
@@ -868,7 +914,7 @@ async function verificationSlide() {
   }
   text(s, K.reviews.map((t, i) => ({ text: t, options: { fontSize: 12, color: C.accent6, italic: true, paraSpaceAfter: 3, breakLine: i < K.reviews.length - 1 } })), { x: MX, y: BOTTOM - reviewH, w: reviewW, h: reviewH, valign: "bottom" });
   const count = (label) => (K.verification.find((v) => v.label.includes(label)) || {}).big;
-  s.addNotes(`Counts as of this build: python3 -m pytest (${count("runtime")} pass), src/graph_runtime/conformance/cases.json (${count("conformance")} cases), SCALE parity (${count("SCALE")} tests) and STATES parity (${count("STATES")} tests) in their environments; ${count("real requests")} real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3); negative costs against an independent fixpoint on 1,500 random graphs (tests/test_negative_costs.py); Datalog against an independent naive fixpoint on 400 random programs (tests/test_datalog.py). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: ${K.reviewsSource}.`);
+  s.addNotes(`Counts as of this build: python3 -m pytest (${count("runtime")} pass), src/graph_runtime/conformance/cases.json (${count("conformance")} cases), SCALE parity (${count("SCALE")} tests) and STATES parity (${count("STATES")} tests) in their environments; ${count("real requests")} real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3); negative costs against an independent fixpoint on 1,500 random graphs (tests/test_negative_costs.py); Datalog against an independent naive fixpoint on 400 random programs (tests/test_datalog.py); isomorphism against networkx's VF2 on 500 random cases, and the canonical identities of 300 relabeled or perturbed copies (tests/test_canonical.py). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: ${K.reviewsSource}.`);
 }
 
 async function speedSlide() {
@@ -1008,7 +1054,7 @@ async function timelineSlide() {
 
 async function roadmapSlide() {
   pres.addSection({ title: "Roadmap" });
-  const s = contentSlide("Roadmap", "Roadmap: the next increments", K.roadmapLede);
+  const s = contentSlide("Roadmap", K.roadmapTitle || "Roadmap: the next increments", K.roadmapLede);
   const cols = [
     { key: "name", label: "INCREMENT", w: 2.95 },
     { key: "answers", label: "WHAT IT ANSWERS", w: 3.55 },
@@ -1021,9 +1067,15 @@ async function roadmapSlide() {
     text(s, [{ text: c.label, options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: cx + (c.key === "name" ? 0.85 : 0.15), y: hy, w: c.w - 0.2, h: 0.25 });
     cx += c.w;
   }
-  // The increments after the table, if any, in one line below it.
-  const laterH = K.roadmapLater ? height(K.roadmapLater, CW, 14) + 0.12 : 0;
-  const ry = hy + 0.32, n = K.roadmap.length, gap = 0.1, rh = (BOTTOM - laterH - ry - gap * (n - 1)) / n;
+  // Below the table: the increments done as a grid (roadmapDone), or the increments after them in one line
+  // (roadmapLater).
+  const done = K.roadmapDone || [];
+  const DG = { cols: 3, gap: 0.2, rowGap: 0.1, h: 0.62, label: 0.33, above: 0.3 };
+  const doneRows = Math.ceil(done.length / DG.cols);
+  const doneH = done.length ? DG.above + DG.label + doneRows * DG.h + (doneRows - 1) * DG.rowGap : 0;
+  const laterH = !done.length && K.roadmapLater ? height(K.roadmapLater, CW, 14) + 0.12 : 0;
+  const ry = hy + 0.32, n = K.roadmap.length, gap = 0.1;
+  const rh = Math.min(1.9, (BOTTOM - laterH - doneH - ry - gap * (n - 1)) / n);
   for (let i = 0; i < n; i++) {
     const r = K.roadmap[i];
     const y = ry + i * (rh + gap);
@@ -1039,7 +1091,25 @@ async function roadmapSlide() {
       x += c.w;
     }
   }
-  if (K.roadmapLater) text(s, rich(K.roadmapLater, { fontSize: 14, color: C.text1 }), { x: MX + 0.15, y: BOTTOM - laterH + 0.12, w: CW - 0.3, h: laterH - 0.12, valign: "middle", objectName: "roadmap later" });
+  if (laterH) text(s, rich(K.roadmapLater, { fontSize: 14, color: C.text1 }), { x: MX + 0.15, y: BOTTOM - laterH + 0.12, w: CW - 0.3, h: laterH - 0.12, valign: "middle", objectName: "roadmap later" });
+  if (done.length) {
+    const dy = ry + n * rh + (n - 1) * gap + DG.above;
+    text(s, [{ text: `DONE FROM THE SURVEY (${done.length})`, options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: MX + 0.18, y: dy, w: CW - 0.36, h: 0.25 });
+    const cw = (CW - DG.gap * (DG.cols - 1)) / DG.cols, d = 0.36;
+    for (let i = 0; i < done.length; i++) {
+      const { name, note } = done[i];
+      const cx = MX + (i % DG.cols) * (cw + DG.gap), cy = dy + DG.label + Math.floor(i / DG.cols) * (DG.h + DG.rowGap);
+      card(s, cx, cy, cw, DG.h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: `done ${name}` });
+      await iconCircle(s, "LuCheck", cx + 0.18, cy + (DG.h - d) / 2, d, { label: `done ${name}` });
+      const tx = cx + 0.18 + d + 0.18, tw = cx + cw - 0.15 - tx;
+      check(`roadmap done ${name}`, height(name, tw, 14, 1.22, { bold: true }) + height(note, tw, 12), DG.h - 0.1);
+      text(s, [
+        { text: name, options: { fontSize: 14, bold: true, color: C.text1, breakLine: true } },
+        { text: note, options: { fontSize: 12, color: C.accent6, italic: true } },
+      ], { x: tx, y: cy, w: tw, h: DG.h, valign: "middle" });
+    }
+    check("roadmap done grid", dy + DG.label + doneRows * DG.h + (doneRows - 1) * DG.rowGap, BOTTOM);
+  }
   s.addNotes(`Sources: ${K.roadmapSource}`);
 }
 
