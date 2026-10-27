@@ -1085,8 +1085,48 @@ def _search_signed(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simpl
             break
     st.examined = examined
     if st.cycle is None and st.interruption is None:
-        st.goal = min((dist[t], t) for t in plan.targets if t in live)[1]
+        goal = min((dist[t], t) for t in plan.targets if t in live)[1]
+        st.tight = _tight_walk(p, plan, st, goal, ctl)
+        if st.tight is not None:
+            st.goal = goal
     return st
+
+
+def _tight_walk(p: Projection, plan: SimpleNamespace, st: SimpleNamespace, t: int,
+                ctl: _Control) -> tuple[list[tuple[int, int, int, int]], int] | None:
+    """The least-cost walk to ``t`` with the fewest hops: breadth-first from the sources at cost 0 (in ascending ID)
+    over the hops whose cost is the difference of their ends' least costs, in canonical order. A walk from a source to
+    ``t`` costs its least cost exactly when every hop is such a hop and it starts at cost 0, so this is a choice among
+    least-cost walks that depends on the costs alone, not on the order of the search. Each node it expands is one
+    expansion; an interruption (None) leaves the answer to what the search knew."""
+    dist, live, sides, rel = st.dist, st.live, _sides(p, plan.fwd, plan.rev), p._edge_rel
+    by_edge, by_rel = plan.cost.edge, plan.cost.rel
+    seen: dict[int, Any] = {s: None for s in plan.sources if s in live and dist[s] == 0}
+    queue = deque(seen)
+    while queue and t not in seen:
+        why = ctl.stop()
+        if why:
+            st.interruption = why
+            return None
+        u = queue.popleft()
+        for lists, base, marks, ends, flag in sides:
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            st.examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                if v in live and v not in seen and \
+                        dist[u] + (by_edge[ei] if by_edge is not None else by_rel[rel[ei]]) == dist[v]:
+                    seen[v] = (u, ei, flag)
+                    queue.append(v)
+    steps, x = [], t
+    while seen[x] is not None:
+        u, ei, flag = seen[x]
+        steps.append((u, ei, flag, x))
+        x = u
+    steps.reverse()
+    return steps, x
 
 
 def _number(x: Any, rational: bool) -> tuple[Any, str | None]:
@@ -1135,34 +1175,6 @@ def _answer_signed(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) ->
         steps, root = from_root(t)
         return walk(steps, root)
 
-    def tight_walk(t: int) -> dict:
-        """The least-cost walk to ``t`` with the fewest hops: breadth-first from the sources at cost 0 (in ascending
-        ID) over the hops whose cost is the difference of their ends' least costs, in canonical order. A walk from a
-        source to ``t`` costs its least cost exactly when every hop is such a hop and it starts at cost 0, so this
-        is a choice among least-cost walks that depends on the costs alone, not on the order of the search."""
-        dist, live, sides = st.dist, st.live, _sides(p, plan.fwd, plan.rev)
-        seen: dict[int, Any] = {s: None for s in plan.sources if s in live and dist[s] == 0}
-        queue = deque(seen)
-        while queue and t not in seen:
-            u = queue.popleft()
-            for lists, base, marks, ends, flag in sides:
-                hs = lists[u]
-                if hs is None:
-                    hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
-                for ei in hs:
-                    v = ends[ei]
-                    if v in live and v not in seen and \
-                            dist[u] + (by_edge[ei] if by_edge is not None else by_rel[rel[ei]]) == dist[v]:
-                        seen[v] = (u, ei, flag)
-                        queue.append(v)
-        steps, x = [], t
-        while seen[x] is not None:
-            u, ei, flag = seen[x]
-            steps.append((u, ei, flag, x))
-            x = u
-        steps.reverse()
-        return walk(steps, x)
-
     nothing = {"found": None, "optimal": None, "cost": None, "lower_bound": None, "witness": None,
                "negative_cycle": None, "certificate": None}
     if st.cycle is not None:
@@ -1191,7 +1203,7 @@ def _answer_signed(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) ->
             cert = {"kind": "feasible_potentials", "bound": exact(st.dist[st.goal]),
                     "potentials": [{"node": ids[v], "value": exact(st.dist[v])} for v in sorted(st.live)],
                     "dead_ends": [ids[v] for v in sorted(st.region - st.live)]}
-        return ({"found": True, "optimal": True, **costed("cost", st.dist[st.goal]), "witness": tight_walk(st.goal),
+        return ({"found": True, "optimal": True, **costed("cost", st.dist[st.goal]), "witness": walk(*st.tight),
                  "negative_cycle": None, "certificate": cert}, [WITNESS_NOTE] + ([CERTIFIED_NOTE] if cert else []))
     if st.interruption is None:
         cert = {"kind": "closure", "reached": [ids[v] for v in sorted(st.region)]} if plan.certificate else None

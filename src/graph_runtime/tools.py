@@ -451,6 +451,12 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
                                      "value", "bound") if k in a}
         summary.update(length=None if a["witness"] is None else a["witness"]["length"], hops=hops(a["witness"]),
                        certificate=kind(a["certificate"]))
+        cycle = a.get("negative_cycle")
+        if cycle is not None:                              # unbounded: the cycle that makes it so, and what it costs
+            loop = cycle["cycle"]
+            summary["negative_cycle"] = {**{k: loop[k] for k in ("cost", "cost_exact") if k in loop},
+                                         "edges": [h["edge"] for h in loop["hops"][:limit]],
+                                         "more": len(loop["hops"]) > limit}
     elif op == "pattern":
         summary = {"exists": a["exists"], "total": a["total"], "count": a["count"],
                    **head(a["rows"], ("nodes", "edges"))}
@@ -483,7 +489,7 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
                        cut_nodes=None if a["cut_nodes"] is None else [x["node"] for x in a["cut_nodes"][:limit]],
                        certificate=kind(a["certificate"]))
     elif op == "matching":
-        summary = {k: a[k] for k in ("size", "left_count", "optimal", "deficiency")}
+        summary = {k: a[k] for k in ("size", "left_count", "optimal", "deficiency", "cost", "cost_exact") if k in a}
         summary.update(head(a["pairs"], ("left", "right")), certificate=kind(a["certificate"]))
     elif op == "dominators":
         summary = {"reached": a["reached"], "certificate": kind(a["certificate"])}

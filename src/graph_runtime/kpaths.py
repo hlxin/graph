@@ -59,11 +59,27 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
         return out
 
     def least(starts: list[tuple[tuple, int]], avoid: set, banned: set, go_on: bool = False,
-              bound: tuple | None = None) -> tuple | None:
+              bound: tuple | None = None, root: Any = None) -> tuple | None:
         """The least path from one of ``starts`` (each a key so far and a node) to a target: a key and its hops
         [(from, edge, flag, to)]. ``avoid``: nodes it may not visit; ``banned``: (node, edge, flag) hops it may not
         take as its first one; ``go_on``: a start that is a target does not end it there (that path is taken);
-        ``bound``: a key no path worth finding reaches (enough candidates come before it), where the search stops."""
+        ``bound``: a key no path worth finding reaches (enough candidates come before it), where the search stops.
+        ``root``: when every start extends one prefix, a function giving that prefix's IDs; the keys then hold only
+        the IDs after it (all of them share it, so they compare the same), and the full IDs are built only to compare
+        a tie of cost and hops with the bound, and for the path found."""
+        prefix: list = []
+
+        def full(seq: tuple) -> tuple:
+            if root is None:
+                return seq
+            if not prefix:
+                prefix.append(root())
+            return prefix[0] + seq
+
+        def past(key: tuple) -> bool:
+            if (key[0], key[1]) != (bound[0], bound[1]):
+                return (key[0], key[1]) > (bound[0], bound[1])
+            return full(key[2]) >= bound[2]
         best: dict[int, tuple] = {}
         parent: dict[int, tuple] = {}
         heap = []
@@ -78,7 +94,7 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
             if u in done or key != best[u]:
                 continue
             del best[u]                                   # settled: its key (and its prefix of edge IDs) can go
-            if bound is not None and key >= bound:
+            if bound is not None and past(key):
                 return None
             why = ctl.stop()
             if why:
@@ -91,7 +107,7 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
                     path.append((w, ei, flag, x))
                     x = w
                 path.reverse()
-                return key, x, path
+                return (key[0], key[1], full(key[2])), x, path
             c0, h0, seq = key
             for ei, v, flag in hops(u):
                 if v in avoid or v in done or (parent[u] is None and (u, ei, flag) in banned):
@@ -106,6 +122,7 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
     accepted: list[tuple] = []                            # (key, source, hops)
     candidates: list[tuple] = []                          # (key, source, hops, the index it left its parent at)
     known: set = set()
+    cached: list = []                                     # the bound, until a candidate comes or goes
 
     def offer(found: tuple | None, deviation: int = 0) -> None:
         if found is None:
@@ -115,18 +132,27 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
         if signature not in known:
             known.add(signature)
             heapq.heappush(candidates, (key, source, path, deviation))
+            cached.clear()
 
     def bound() -> tuple | None:
         """The key of the last candidate that could still be listed, when there are enough: a path at or past it
         cannot be among the k."""
-        need = plan.k - len(accepted)
-        return heapq.nsmallest(need, candidates)[-1][0] if len(candidates) >= need > 0 else None
+        if not cached:
+            need = plan.k - len(accepted)
+            cached.append(heapq.nsmallest(need, candidates)[-1][0] if len(candidates) >= need > 0 else None)
+        return cached[0]
 
+    tree: dict = {}                                       # the accepted paths' prefixes: [next hops, a path stops]
     try:
         offer(least([((0, 0, (ids[s],)), s) for s in plan.sources], set(), set()))
         while candidates and len(accepted) < plan.k:
             key, source, path, deviation = heapq.heappop(candidates)
+            cached.clear()
             accepted.append((key, source, path))
+            at = tree.setdefault(source, [{}, False])
+            for _, ei, flag, _ in path:
+                at = at[0].setdefault((ei, flag), [{}, False])
+            at[1] = True
             if len(accepted) == plan.k:
                 break
             used = {s for _, s, _ in accepted}            # the virtual start: another source
@@ -134,19 +160,28 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
                         bound()))
             nodes = [source] + [v for *_, v in path]
             # Lawler: below the index where this path left its parent, the roots and their bans are the parent's,
-            # whose spurs were searched already
+            # whose spurs were searched already. The root's cost, its nodes and its place in the tree of accepted
+            # prefixes (whose next hops are the bans) grow by one hop per spur, not rebuilt
+            at = tree[source]
+            for _, ei, flag, _ in path[:deviation]:
+                at = at[0][(ei, flag)]
+            avoid = set(nodes[:deviation])
+            c_root = sum(cost(ei) for _, ei, _, _ in path[:deviation])
             for j in range(deviation, len(path) + 1):    # spur at node j, keeping the first j hops
-                root = path[:j]
+                if j > deviation:
+                    _, ei, flag, _ = path[j - 1]
+                    at = at[0][(ei, flag)]
+                    avoid.add(nodes[j - 1])
+                    c_root += cost(ei)
                 spur = nodes[j]
-                same = [a_path for _, s, a_path in accepted
-                        if s == source and len(a_path) >= j and [h[1:3] for h in a_path[:j]] == [h[1:3] for h in root]]
-                banned = {(spur, a_path[j][1], a_path[j][2]) for a_path in same if len(a_path) > j}
-                stopped = any(len(a_path) == j for a_path in same)       # the root itself is a path taken
-                c_root = sum(cost(ei) for _, ei, _, _ in root)
-                start_key = (c_root, j, (ids[source],) + tuple(eids[ei] for _, ei, _, _ in root))
-                found = least([(start_key, spur)], set(nodes[:j]), banned, stopped, bound())
+                banned = {(spur, ei, flag) for ei, flag in at[0]}
+                stopped = at[1]                           # the root itself is a path taken
+
+                def root(j: int = j) -> tuple:
+                    return (ids[source],) + tuple(eids[ei] for _, ei, _, _ in path[:j])
+                found = least([((c_root, j, ()), spur)], avoid, banned, stopped, bound(), root)
                 if found is not None:
-                    offer((found[0], source, root + found[2]), j)
+                    offer((found[0], source, path[:j] + found[2]), j)
         if plan.certificate:
             st.certificate = certify(p, plan, accepted, hops, ctl)
     except _Stop as stop:

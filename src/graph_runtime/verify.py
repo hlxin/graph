@@ -1919,8 +1919,9 @@ class _Checker:
         """A ranking against the records, from its certificate (the estimates p): every residual is recomputed
         exactly from the PageRank equation, r = s - p (I - (1 - alpha) P) / alpha, and must not be negative; then
         pi = p + sum_u r(u) pi_u bounds every node's PageRank, p(v) <= pi(v) <= p(v) + r(v) + (1 - alpha) (R - r(v)),
-        and the listed intervals, the residual and the certified prefix must be exactly those. Without a
-        certificate only the records' nodes are checked."""
+        and the listed intervals, the residual and the certified prefix must be exactly those, and no node with a
+        positive estimate left out may outrank a listed one (or fit within ``top``). Without a certificate only the
+        records' nodes are checked."""
         for e in answer.get("ranked") or []:
             if e.get("node") not in self.types_of:
                 self.bad(f"ranked {e.get('node')!r} is not an input node")
@@ -1959,6 +1960,12 @@ class _Checker:
             if lo != estimate.get(u, Fraction(0)) or hi != upper(u):
                 self.bad(f"ranked {u!r}: the records prove [{estimate.get(u, 0)}, {upper(u)}], not [{lo}, {hi}]")
             listed.append(u)
+        worst = max(((-estimate.get(u, Fraction(0)), u) for u in listed), default=None)
+        for u in sorted(estimate, key=str):               # the top nodes by lower bound, ties by ID: none outranks them
+            if estimate[u] > 0 and u not in listed and (len(listed) < request["top"] or (-estimate[u], u) < worst):
+                self.bad(f"{u!r} has the lower bound {estimate[u]} and is not ranked, but outranks a ranked node "
+                         f"or fits within top")
+                break
         rest = [upper(u) for u in set(estimate) | set(residual) if u not in listed] + [(1 - alpha) * total]
         m = answer.get("certified_top", 0)
         if m and min(estimate.get(u, Fraction(0)) for u in listed[:m]) <= max(
