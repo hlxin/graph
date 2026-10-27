@@ -2138,12 +2138,68 @@
               }
             },
             {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "nodes",
+                "potentials",
+                "source",
+                "sink"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "cover_and_potentials"
+                },
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  }
+                },
+                "potentials": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "value"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "value": {
+                        "$ref": "#/$defs/signed_certificate_number"
+                      }
+                    }
+                  }
+                },
+                "source": {
+                  "$ref": "#/$defs/signed_certificate_number"
+                },
+                "sink": {
+                  "$ref": "#/$defs/signed_certificate_number"
+                }
+              }
+            },
+            {
               "type": "null"
             }
           ]
+        },
+        "cost": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cost_exact": {
+          "$ref": "#/$defs/signed_exact"
         }
       },
-      "description": "matching: the pairs by left node, each with the hop that pairs them; size; how many left nodes there are; when complete, the deficiency (left nodes no maximum matching pairs) and on request König's vertex cover: as many nodes as pairs, touching every candidate hop."
+      "description": "matching: the pairs by left node, each with the hop that pairs them; size; how many left nodes there are; when complete, the deficiency (left nodes no maximum matching pairs) and on request König's vertex cover: as many nodes as pairs, touching every candidate hop. With costs: cost (cost_exact in rational mode), and a certificate that adds the residual network's potentials (source and sink included)."
     },
     "max_depth": {
       "type": [
@@ -4348,7 +4404,8 @@
             "limits",
             "left",
             "scope",
-            "certificate"
+            "certificate",
+            "costs"
           ],
           "properties": {
             "contract": {
@@ -4401,6 +4458,33 @@
             },
             "certificate": {
               "type": "boolean"
+            },
+            "costs": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "additionalProperties": false,
+                  "properties": {
+                    "by_relation": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/weight"
+                      }
+                    },
+                    "by_edge": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/weight"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "description": "matching: left names the nodes to pair (node_types, nodes, or both); scope leads from a left node to its candidate partners outside the left set."

@@ -68,6 +68,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - the `cycle_basis` operation: a minimum cycle basis (ring perception: the smallest set of smallest rings, for every
   link 1) by de Pina's algorithm, independent by construction and proven minimum by its witnesses, whose lightest
   odd cycles a checker recomputes; an interrupted search lists a proven prefix (section 4)
+- costs for `matching`: among the largest matchings, one of least total cost (the assignment problem), by successive
+  shortest paths with potentials, proven by König's cover and the residual network's potentials; every matching
+  request now states `costs`, so matching requests made before have other `request_id`s and `result_id`s, with the
+  same answers (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -176,7 +180,7 @@ no wildcard: a scope lists what it follows.
 | `components` | `scope`, `connectivity` (`weak`, the default: hops followed either way; `strong`: a walk each way), `nodes` (only the components holding these; null: every component), `min_size` (the fewest nodes a listed component has; default 1), `certificate` (default false) | `max_expansions`, `max_results` (components listed) |
 | `biconnectivity` | `scope` (each edge in it, in either direction, a link between its ends), `nodes` (only the components holding these; null: all), `blocks` (list the blocks too; default false), `certificate` (default false) | `max_expansions` |
 | `max_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as costs, non-negative; null: every edge 1), `node_capacity` (what each node other than the sources and targets passes; null: no limit), `certificate` (default false) | `max_expansions` |
-| `matching` | `left` (`{"node_types", "nodes"}`, at least one: the nodes to pair), `scope` (from a left node to its candidate partners), `certificate` (default false) | `max_expansions` |
+| `matching` | `left` (`{"node_types", "nodes"}`, at least one: the nodes to pair), `scope` (from a left node to its candidate partners), `costs` (as weights: any finite numbers; null: none), `certificate` (default false) | `max_expansions` |
 | `dominators` | `sources`, `scope`, `targets` (null: every node reached, with its immediate dominator; else each target's dominators), `certificate` (default false) | `max_expansions` |
 | `critical_path` | `scope` (a hop from u to v: u comes first), `sources` (only what they reach; null: every node), `costs` (as for shortest paths; null: every hop takes 1), `answer` (`path`, the default: the makespan and a critical path; `schedule`: every node's times too), `certificate` (default false) | `max_expansions` |
 | `d_separation` | `x`, `y`, `given` (default none; the three disjoint), `scope` (a hop from u to v: u is a parent, a direct cause, of v), `certificate` (default false) | `max_expansions` |
@@ -636,6 +640,21 @@ not candidates.
   deficiency is not zero, the uncovered left nodes S and their candidates N(S), all in the cover, have fewer
   candidates than nodes: Hall's condition fails, which is why they cannot all be paired.
 - **Limits.** An interrupted search keeps the pairs found so far, a valid matching never claimed maximum.
+- **Costs.** With `costs` (as weights: any finite numbers, by relation or by edge), the matching is one of least total
+  cost among the largest: the assignment problem (samples to instruments at least total time, catalysts to
+  conditions at least total penalty; for a heaviest one, negate the weights). A left node's candidate for a partner
+  is its cheapest hop to it (the first in canonical order among equally cheap ones). The search is successive
+  shortest paths (Kuhn and Munkres's Hungarian method, with Dijkstra's searches on costs reduced by potentials, after
+  Edmonds and Karp and Tomizawa) in the network source -> left node -> partner -> sink: potentials start at 0 for the
+  source and the left nodes, at each partner's cheapest incoming cost, and at the least of those for the sink; each
+  phase searches from the source over reduced costs (states by distance, then node index; each settled one an
+  expansion; a left node read is one too), raises each potential by its node's distance (the sink's for a node not
+  settled), and augments along the path to the sink. The answer adds `cost` (and `cost_exact` in rational mode).
+  The certificate is `{"kind": "cover_and_potentials", "nodes", "potentials": [{"node", "value"}], "source",
+  "sink"}`: König's cover proves the size, and the potentials (of every left node and partner, the source and the
+  sink) leave no arc of the residual network costing less than nothing once reduced (source to an unpaired left node,
+  a paired one back, a candidate hop not used by a pair, a pair's hop backwards at minus its cost, an unpaired partner
+  to the sink, the sink back to a paired one), so no matching of that size is cheaper.
 
 Answer: `{"pairs": [{"left", "right", "edge", "relation", "direction"}], "size", "left_count", "optimal",
 "deficiency", "certificate"}`.
@@ -911,7 +930,8 @@ The result contract reports how an execution ended. It carries no scientific ans
     other node, the value leaving the sources, the cut's capacities adding up to the value, and with a certificate
     the cut recomputed from the records from its source side
   - for a matching, every pair a hop in scope from a left node to a node outside the left set, no node twice,
-    `left_count` the left set's size, and a cover as large as the matching touching every candidate hop
+    `left_count` the left set's size, and a cover as large as the matching touching every candidate hop; with costs,
+    the pairs' exact cost, and the potentials leaving no residual arc negative once reduced
   - for dominators, from a certificate: the order a preorder of the tree, every hop in scope from a listed node
     landing on a listed node whose dominator is an ancestor of the hop's tail, and every node low-high; the tree or
     chains read from it
@@ -931,7 +951,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 182 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 183 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.

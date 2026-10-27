@@ -20,11 +20,19 @@ certificate is a vertex cover (König, 1931): as many nodes as pairs, with every
 so no matching has more pairs. When not every left node can be paired, the uncovered left nodes S and their partners
 N(S), all covered, have |N(S)| < |S| (Hall's condition fails), which says why.
 
+With ``costs``, the matching is one of least total cost among the largest (the assignment problem): successive
+shortest augmenting paths (Kuhn and Munkres's Hungarian method, with Dijkstra's searches on costs reduced by node
+potentials, as Edmonds and Karp and Tomizawa made it) in the network source -> left -> partner -> sink, each phase
+one augmentation along a cheapest path. The certificate adds the potentials: every arc of the final residual network
+costs nothing negative once reduced by them, so no cycle there costs less than nothing and no matching of the same
+size is cheaper; with König's cover proving the size, the matching is a cheapest largest one.
+
 An interrupted search leaves a valid flow (or matching): its value is a lower bound, never claimed optimal.
 """
 
 from __future__ import annotations
 
+import heapq
 from collections import deque
 from fractions import Fraction
 from types import SimpleNamespace
@@ -237,10 +245,12 @@ def _hops(p: Any, sides: tuple, u: int) -> list[tuple[int, int, int]]:
 
 # ---------------------------------------------------------------------------------------------- matching
 def search_matching(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
-    """Hopcroft and Karp: phases of a breadth-first search from the unpaired left nodes along alternating paths (a
+    """Hopcroft and Karp, or :func:`_search_weighted` when the request gives costs: phases of a breadth-first search from the unpaired left nodes along alternating paths (a
     candidate hop out of a left node, a pair back into one), then depth-first augmentation along shortest such paths
     to unpaired partners, until none is left. A left node's candidates are its hops in scope to nodes outside the left
     set (the first hop, in canonical order, to each partner). Each left node read is one expansion."""
+    if plan.cost is not None:
+        return _search_weighted(p, plan, ctl)
     from .engine import _sides
     sides, rel = _sides(p, plan.fwd, plan.rev), p._edge_rel
     left = plan.left
@@ -330,6 +340,116 @@ def search_matching(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
     return st
 
 
+def _search_weighted(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
+    """A cheapest largest matching by successive shortest paths. A left node's candidates are, for each partner, its
+    cheapest hop (the first in canonical order among equally cheap ones); reading a left node is one expansion.
+    Potentials start at 0 for the source and the left nodes, at a partner's cheapest incoming cost, and at the least
+    of those for the sink, so every arc's reduced cost is non-negative. Each phase is Dijkstra's search from the source
+    over reduced costs (each state settled one expansion, states by (distance, node index)), stopped at the sink; the
+    potentials then rise by each node's distance, or the sink's for a node not settled, which keeps every reduced cost
+    non-negative; and the matching is augmented along the path found. With no path to the sink, the matching is a
+    largest one, and of least cost among those of its size (no negative residual cycle); the nodes the last search
+    reached give König's cover."""
+    from .engine import _sides
+    sides, rel = _sides(p, plan.fwd, plan.rev), p._edge_rel
+    left, by_edge, by_rel = plan.left, plan.cost.edge, plan.cost.rel
+    st = SimpleNamespace(interruption=None, examined=0, discovered=0, pair={}, mate={}, cand={}, free=None, pi=None,
+                         right=None)
+    cand, pair, mate = st.cand, st.pair, st.mate          # left -> [(right, edge, flag)], left -> that, right -> left
+    price: dict[int, Any] = {}                            # a candidate hop's cost, by edge
+    order = sorted(left)
+    for u in order:
+        why = ctl.stop()
+        if why:
+            st.interruption = why
+            return st
+        best: dict[int, tuple] = {}
+        for lists, base, marks, ends, flag in sides:
+            hs = lists[u]
+            if hs is None:
+                hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+            st.examined += len(hs)
+            for ei in hs:
+                v = ends[ei]
+                if v in left:
+                    continue
+                c = by_edge[ei] if by_edge is not None else by_rel[rel[ei]]
+                if v not in best or c < best[v][0]:
+                    best[v] = (c, ei, flag)
+        cand[u] = [(v, ei, flag) for v, (c, ei, flag) in sorted(best.items())]
+        for v, (c, ei, flag) in best.items():
+            price[ei] = c
+    n = len(p._node_ids)
+    source, sink = n, n + 1
+    pi: dict[int, Any] = {source: 0, **{u: 0 for u in order}}
+    for u in order:
+        for v, ei, _ in cand[u]:
+            pi[v] = price[ei] if v not in pi else min(pi[v], price[ei])
+    right = sorted(v for v in pi if v != source and v not in left)
+    pi[sink] = min((pi[v] for v in right), default=0)
+    st.right, st.pi = right, pi
+    entering: dict[int, list[int]] = {}                   # partner -> the left nodes with a candidate hop to it
+    for u in order:
+        for v, _, _ in cand[u]:
+            entering.setdefault(v, []).append(u)
+
+    def arcs(x: int):
+        """(the node an arc of the residual network leads to, its cost, the hop it is) from x."""
+        if x == source:
+            for u in order:
+                if u not in pair:
+                    yield u, 0, None
+        elif x == sink:
+            for v in right:
+                if v in mate:
+                    yield v, 0, None
+        elif x in left:
+            if x in pair:
+                yield source, 0, None
+            for v, ei, flag in cand[x]:
+                if pair.get(x, (None,))[0] != v:
+                    yield v, price[ei], (x, v, ei, flag)
+        elif x in mate:
+            u = mate[x]
+            yield u, -price[pair[u][1]], None
+        else:
+            yield sink, 0, None
+
+    while True:
+        dist, prev, done, heap = {source: 0}, {}, set(), [(0, source)]
+        while heap:
+            d, x = heapq.heappop(heap)
+            if x in done:
+                continue
+            why = ctl.stop()
+            if why:
+                st.interruption = why
+                return st
+            done.add(x)
+            if x == sink:
+                break
+            for y, c, hop in arcs(x):
+                nd = d + c + pi[x] - pi[y]
+                if y not in done and (y not in dist or nd < dist[y]):
+                    dist[y], prev[y] = nd, (x, hop)
+                    heapq.heappush(heap, (nd, y))
+        st.discovered = max(st.discovered, len(done))
+        if sink not in done:
+            st.free = {u: 0 for u in order if u in done}  # what the source reaches: König's set
+            return st
+        top = dist[sink]
+        for x in pi:
+            pi[x] += dist[x] if x in done else top
+        y = sink
+        while y != source:
+            x, hop = prev[y]
+            if hop is not None:                            # a candidate hop now pairs its ends
+                u, v, ei, flag = hop
+                pair[u] = (v, ei, flag)
+                mate[v] = u
+            y = x
+
+
 def answer_matching(p: Any, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
     """The pairs by left node; how many left nodes there are; when the search finished, its deficiency (the left
     nodes no maximum matching pairs) and, on request, König's vertex cover: the left nodes the unpaired cannot reach
@@ -348,4 +468,20 @@ def answer_matching(p: Any, plan: SimpleNamespace, st: SimpleNamespace) -> tuple
         partners = {v for u in reached for v, _, _ in st.cand.get(u, ())}
         cover = sorted((plan.left - reached) | partners)
         answer["certificate"] = {"kind": "cover", "nodes": [ids[x] for x in cover]}
+    if plan.cost is None:
+        return answer, []
+    from .engine import _number
+
+    def exact(x: Any) -> Any:
+        return _number(plan.cost.exact(x), True)[1] if plan.rational else x
+    total = sum(plan.cost.edge[ei] if plan.cost.edge is not None else plan.cost.rel[rel[ei]]
+                for _, ei, _ in st.pair.values())
+    value, text = _number(plan.cost.exact(total), plan.rational)
+    answer.update(cost=value, **({"cost_exact": text} if plan.rational else {}))
+    if answer["certificate"] is not None:
+        n = len(p._node_ids)
+        answer["certificate"] = {"kind": "cover_and_potentials", "nodes": answer["certificate"]["nodes"],
+                                 "potentials": [{"node": ids[x], "value": exact(st.pi[x])}
+                                                for x in sorted(set(plan.left) | set(st.right))],
+                                 "source": exact(st.pi[n]), "sink": exact(st.pi[n + 1])}
     return answer, []

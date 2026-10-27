@@ -1750,7 +1750,11 @@ class _Checker:
         """A matching against the records: every pair a hop in scope from a node of the left set to a node outside
         it, no node in two pairs; left_count the left set's size. König's cover, when given: every candidate hop
         (from a left node to a node outside the left set) touches one of its nodes, and it has as many nodes as there
-        are pairs, so no matching has more."""
+        are pairs, so no matching has more. With costs: the stated cost the exact sum of the pairs' hops; and the
+        potentials, when given, leave no arc of the residual network (source to an unpaired left node, a paired left
+        node back to the source, a candidate hop not used by a pair, a pair's hop backwards at minus its cost, an
+        unpaired partner to the sink, the sink back to a paired one) costing less than nothing once reduced, so no
+        matching of the same size is cheaper."""
         allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
         spec = request["left"]
         left = {n for n in self.types_of if (spec["nodes"] is None or n in spec["nodes"]) and
@@ -1765,6 +1769,22 @@ class _Checker:
             lefts.add(x["left"])
             rights.add(x["right"])
             self.hop(where, x["left"], x["right"], x["edge"], x["relation"], x["direction"], allowed)
+        costs = request.get("costs")
+        kind, table = next(iter(costs.items())) if costs else (None, None)
+        rational = table is not None and any(isinstance(x, float) for x in table.values())
+
+        def price(eid: str) -> Any:
+            x = table.get(self.edge_of[eid][2] if kind == "by_relation" else eid) if eid in self.edge_of else None
+            if x is None:
+                self.bad(f"the hop {eid} in scope has no cost in the request")
+                return 0
+            return Fraction(x) if rational else x
+        if table is not None:
+            total = sum((price(x["edge"]) for x in answer.get("pairs") or ()), Fraction(0) if rational else 0)
+            stated = Fraction(answer["cost_exact"]) if rational and isinstance(answer.get("cost_exact"), str) \
+                else answer.get("cost")
+            if stated != total:
+                self.bad(f"the pairs cost {total}, but the answer says {stated!r}")
         cert = self.proof(answer)
         if cert is None:
             return
@@ -1778,6 +1798,35 @@ class _Checker:
                 if v not in left and v not in cover:
                     self.bad(f"certificate: the candidate hop {eid} from {u!r} to {v!r} touches no node of the cover")
                     return
+        if table is None:
+            return
+        number = (lambda x: Fraction(x)) if rational else (lambda x: x)
+        value = {e["node"]: number(e["value"]) for e in cert.get("potentials") or ()}
+        source, sink = number(cert["source"]), number(cert["sink"])
+        paired = {x["left"]: x["edge"] for x in answer.get("pairs") or ()}
+        partners = {x["right"] for x in answer.get("pairs") or ()}
+        candidates = {u: [(eid, v) for eid, v, _ in self.hops_from(u, allowed) if v not in left]
+                      for u in sorted(left, key=str)}
+        nodes = set(left) | {v for hops in candidates.values() for _, v in hops}
+        missing = sorted(nodes - set(value), key=str)
+        if missing:
+            self.bad(f"certificate: no potential for {missing[:5]}")
+            return
+
+        def arc(where: str, reduced: Any) -> None:
+            if reduced < 0:
+                self.bad(f"certificate: the residual arc {where} costs {reduced} once reduced")
+        for u, hops in candidates.items():
+            arc(f"source -> {u!r}" if u not in paired else f"{u!r} -> source",
+                source - value[u] if u not in paired else value[u] - source)
+            for eid, v in hops:
+                if paired.get(u) == eid:
+                    arc(f"{v!r} -> {u!r} (by {eid})", -price(eid) + value[v] - value[u])
+                else:
+                    arc(f"{u!r} -> {v!r} (by {eid})", price(eid) + value[u] - value[v])
+        for v in sorted(nodes - set(left), key=str):
+            arc(f"{v!r} -> sink" if v not in partners else f"sink -> {v!r}",
+                value[v] - sink if v not in partners else sink - value[v])
 
 
     def dominators(self, request: Mapping, answer: Mapping, status: str) -> None:
