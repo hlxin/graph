@@ -470,9 +470,12 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 rows = [(b, links) for b, links in rows
                         if len(set(v for v in b.values() if v is not None)) == sum(v is not None for v in b.values())
                         and len(set(x for x in links if x is not None)) == sum(x is not None for x in links)]
-            assert exp['total'] == len(rows), case['name']
+            assert exp['total'] == len(rows) or (exp['total'] is None and exp['status'] == 'interrupted'), \
+                case['name']                      # an interrupted count knows no total
             if exp.get('rows') and raw.get('answer', 'rows') == 'rows':
-                assert exp['rows'] == [[b, links] for b, links in rows], case['name']
+                want = [[b, links] for b, links in rows]      # an interrupted case may list a prefix of them
+                assert exp['rows'] == (want[:len(exp['rows'])] if exp['status'] == 'interrupted' else want), \
+                    case['name']
         elif op == 'min_cost_flow':
             from test_min_cost_flow import oracle
             want = oracle(g['edges'], r['sources'], r['targets'], r['scope'], r.get('capacities'), r['costs'],

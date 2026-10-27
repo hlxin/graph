@@ -1938,6 +1938,104 @@
    "bindings": {
     "source": "conformance-g22@1"
    }
+  },
+  "G23": {
+   "nodes": [
+    {
+     "id": "l1",
+     "types": [
+      "Left"
+     ]
+    },
+    {
+     "id": "l2",
+     "types": [
+      "Left"
+     ]
+    },
+    {
+     "id": "r1",
+     "types": [
+      "Right"
+     ]
+    },
+    {
+     "id": "r2",
+     "types": [
+      "Right"
+     ]
+    },
+    {
+     "id": "r3",
+     "types": [
+      "Right"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "a",
+     "source": "l1",
+     "target": "r1",
+     "relation": "R"
+    },
+    {
+     "id": "a2",
+     "source": "l1",
+     "target": "r1",
+     "relation": "R"
+    },
+    {
+     "id": "b",
+     "source": "l1",
+     "target": "r2",
+     "relation": "R"
+    },
+    {
+     "id": "c",
+     "source": "l2",
+     "target": "r1",
+     "relation": "R"
+    },
+    {
+     "id": "d",
+     "source": "l2",
+     "target": "r2",
+     "relation": "R"
+    },
+    {
+     "id": "e",
+     "source": "l2",
+     "target": "r3",
+     "relation": "R"
+    },
+    {
+     "id": "f",
+     "source": "r3",
+     "target": "r3",
+     "relation": "S"
+    },
+    {
+     "id": "g",
+     "source": "l1",
+     "target": "r2",
+     "relation": "S"
+    },
+    {
+     "id": "h",
+     "source": "l1",
+     "target": "r3",
+     "relation": "S"
+    }
+   ],
+   "relations": [
+    "R",
+    "S"
+   ],
+   "node_types": [
+    "Left",
+    "Right"
+   ]
   }
  },
  "cases": [
@@ -10655,6 +10753,444 @@
      "d": 2,
      "e": 1
     }
+   }
+  },
+  {
+   "name": "pattern-cycle-counted-without-listing",
+   "covers": [
+    "pattern",
+    "cycle",
+    "count by variable elimination",
+    "parallel edges"
+   ],
+   "graph": "G23",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "l1",
+      "l2"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "reverse"
+       }
+      ]
+     },
+     {
+      "from": "z",
+      "var": "w",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "w",
+      "to": "x",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "reverse"
+       }
+      ]
+     }
+    ],
+    "answer": "count"
+   },
+   "expect": {
+    "status": "completed",
+    "total": 52,
+    "exists": true,
+    "count": 0,
+    "rows": []
+   }
+  },
+  {
+   "name": "pattern-cycle-rows-stop-at-the-limit",
+   "covers": [
+    "pattern",
+    "cycle",
+    "output limit",
+    "count by variable elimination"
+   ],
+   "graph": "G23",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "l1",
+      "l2"
+     ]
+    },
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "reverse"
+       }
+      ]
+     },
+     {
+      "from": "z",
+      "var": "w",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "w",
+      "to": "x",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "reverse"
+       }
+      ]
+     }
+    ],
+    "limits": {
+     "max_results": 3
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "total": 52,
+    "exists": true,
+    "count": 3,
+    "rows": [
+     [
+      {
+       "x": "l1",
+       "y": "r1",
+       "z": "l1",
+       "w": "r1"
+      },
+      [
+       "a",
+       "a",
+       "a",
+       "a"
+      ]
+     ],
+     [
+      {
+       "x": "l1",
+       "y": "r1",
+       "z": "l1",
+       "w": "r1"
+      },
+      [
+       "a",
+       "a",
+       "a",
+       "a2"
+      ]
+     ],
+     [
+      {
+       "x": "l1",
+       "y": "r1",
+       "z": "l1",
+       "w": "r1"
+      },
+      [
+       "a",
+       "a",
+       "a2",
+       "a"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-cycle-count-with-an-optional-branch",
+   "covers": [
+    "pattern",
+    "cycle",
+    "optional step",
+    "count by variable elimination"
+   ],
+   "graph": "G23",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "l1",
+      "l2"
+     ]
+    },
+    "answer": "count",
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "x",
+      "var": "o",
+      "scope": [
+       {
+        "relation": "S",
+        "direction": "forward"
+       }
+      ],
+      "optional": true
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "reverse"
+       }
+      ]
+     },
+     {
+      "from": "z",
+      "to": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 32,
+    "exists": true,
+    "count": 0
+   }
+  },
+  {
+   "name": "pattern-cycle-loop-exists",
+   "covers": [
+    "pattern",
+    "cycle",
+    "loop",
+    "count by variable elimination"
+   ],
+   "graph": "G23",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "l1",
+      "l2"
+     ]
+    },
+    "answer": "exists",
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "to": "y",
+      "scope": [
+       {
+        "relation": "S",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 1,
+    "exists": true,
+    "count": 0
+   }
+  },
+  {
+   "name": "pattern-cycle-count-none",
+   "covers": [
+    "pattern",
+    "cycle",
+    "complete negative",
+    "count by variable elimination"
+   ],
+   "graph": "G23",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "l1",
+      "l2"
+     ]
+    },
+    "answer": "count",
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "to": "y",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 0,
+    "exists": false,
+    "count": 0
+   }
+  },
+  {
+   "name": "pattern-cycle-count-budget-one-short",
+   "covers": [
+    "pattern",
+    "cycle",
+    "count by variable elimination",
+    "expansion budget",
+    "never a false negative"
+   ],
+   "graph": "G13",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "d"
+     ]
+    },
+    "answer": "count",
+    "steps": [
+     {
+      "from": "x",
+      "to": "x",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     }
+    ],
+    "limits": {
+     "max_expansions": 14
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "expansion_budget",
+    "total": null,
+    "exists": null,
+    "count": 0
+   }
+  },
+  {
+   "name": "pattern-cycle-count-budget-exact",
+   "covers": [
+    "pattern",
+    "cycle",
+    "count by variable elimination",
+    "expansion budget"
+   ],
+   "graph": "G13",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "d"
+     ]
+    },
+    "answer": "count",
+    "steps": [
+     {
+      "from": "x",
+      "to": "x",
+      "scope": [
+       {
+        "relation": "R",
+        "direction": "forward"
+       }
+      ]
+     }
+    ],
+    "limits": {
+     "max_expansions": 15
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "total": 1,
+    "exists": true,
+    "count": 0
    }
   }
  ]

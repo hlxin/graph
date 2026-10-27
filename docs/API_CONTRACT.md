@@ -77,6 +77,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
   shortest paths with potentials, proven by König's cover and the residual network's potentials; every matching
   request now states `costs`, so matching requests made before have other `request_id`s and `result_id`s, with the
   same answers (section 4)
+- counting patterns with cycles without listing their rows: variable elimination along a tree decomposition (FAQ's
+  sum of products), a generic join inside each bag; `answer: rows` lists rows only up to `max_results` and counts the
+  rest. Totals and rows are unchanged; the expansions spent, and so the `result_id`s of cyclic pattern requests, are
+  not (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -365,16 +369,50 @@ along the kept hops, without listing them.
 - An expansion budget, a deadline or a cancellation that stops discovery leaves `exists` and `total` null: unknown,
   never false.
 
-A pattern with a cycle has no full reducer, and its rows cannot be counted without being listed. After the tree's
-semi-join reduction (its closing steps aside), each closing step is indexed over the kept candidates: from each
-candidate of its `from` variable (one expansion each), its hops landing on a candidate of its `to` variable, by that
-node. Rows are then built by a generic join (the worst-case optimal join of Ngo, Porat, Ré and Rudra; Veldhuizen's
-Leapfrog Triejoin): when a step binds the later of a closing step's two variables, its candidates are intersected with
-what every such closing step allows, iterating the smallest of the sets and keeping the canonical order of the rest;
-each candidate tried, and each closing link, is one expansion. `total` is the number of rows the enumeration lists,
-known when it ends; `answer: count` and `exists` list none but enumerate them all. An interruption while listing keeps
-the rows found so far (a prefix of the canonical order) and leaves `total` null, `exists` true when a row was found;
-an `output_limit` interruption still counts every row. `coverage` gives a closing step's indexed hops.
+A pattern with a cycle has no full reducer. After the tree's semi-join reduction (its closing steps aside), each
+closing step is indexed over the kept candidates: from each candidate of its `from` variable (one expansion each), its
+hops landing on a candidate of its `to` variable, by that node. Rows are then built by a generic join (the worst-case
+optimal join of Ngo, Porat, Ré and Rudra; Veldhuizen's Leapfrog Triejoin): when a step binds the later of a closing
+step's two variables, its candidates are intersected with what every such closing step allows, iterating the smallest
+of the sets and keeping the canonical order of the rest; each candidate tried, and each closing link, is one
+expansion. `answer: rows` lists rows this way up to `max_results`. When every row fits, `total` is the number listed;
+when one more turns up, the listing stops (an `output_limit` interruption) and `total` is counted without listing.
+
+Counting without listing is a sum of products over the required variables (FAQ, Abo Khamis, Ngo and Rudra, 2016),
+which `answer: count` and `exists` use directly. Each required step is a factor of its two variables, valued by the
+number of kept hops between their nodes (a closing step from a variable to itself, by its loops), and each optional
+branch folds into its required variable as the number of ways it continues, as a tree's total does; factors of the
+same variables multiply into one.
+
+The elimination order comes first, from the pattern alone, along a tree decomposition: a weighted min-fill order (the
+variable whose neighbours need the fewest new links, each weighted by the product of its ends' candidates; then the
+least sum of the neighbours' candidate counts in bits; then the earliest variable). A variable with more than sixteen
+neighbours (a hub) goes after every other, by that sum alone, without its fill. An order that needs a bag of more than
+32 neighbours (a pattern too dense to decompose narrowly) is not used: the rows are counted by listing them, as above.
+Then each variable in turn: the factors that hold it, and those within its neighbours (looked up by scope when it has
+at most ten), are joined by a generic join and the variable is summed out into one factor of the neighbours (the last
+bag sums out everything). The join binds first the variable most linked to those bound (none, at first), then the one
+with the fewest candidates, then the earliest; each binding intersects its factors' sets from the smallest.
+
+The intersection and each value it yields are one expansion each. The rest of the work is charged too, before it is
+done:
+
+- the setup: one, plus one per candidate of each variable; then each loop (a closing step from a variable to itself)
+  drops the candidates it misses, before any product, for one plus one per candidate its variable still has; then
+  each step, last first, one, plus, for a loop or an optional step, one per candidate its variable still has;
+- the order: one per required variable and one per variable of each factor, then for each fill computed, one plus one
+  per pair of the variable's neighbours, and for each elimination, one plus the square of its number of neighbours;
+  except for the last, for each link the clique of its neighbours adds, the smaller of its two ends' numbers of
+  neighbours (counted with the clique), and one per variable whose weight is recomputed;
+- each join: one per non-empty subset of the neighbours looked up, and, before the join starts, one per variable of
+  its bag and one per variable of each factor.
+
+A triangle costs the join of its triangles, a longer cycle the paths around it, not the rows: closed walks of length
+four in the complete bipartite graph K(60, 60), 26 million rows, count with fewer than a million expansions.
+
+An interruption while listing keeps the rows found so far (a prefix of the canonical order) and leaves `total` null,
+`exists` true when a row was found; an interruption while counting leaves `total` null (and, with no row listed,
+`exists` null). `coverage` gives a closing step's indexed hops.
 
 **Injective patterns.** With `injective: true`, distinct variables bind distinct nodes and distinct steps link
 distinct edges: subgraph monomorphism, the substructure search of chemistry (a motif, a catalytic site, a ring), which
