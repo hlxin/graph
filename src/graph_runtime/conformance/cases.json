@@ -10262,6 +10262,75 @@
     ],
     "basis_weight": "15/4"
    }
+  },
+  {
+   "name": "matching-cheapest-largest",
+   "covers": [
+    "weighted matching",
+    "potentials"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "matching",
+    "left": {
+     "node_types": [
+      "Sample"
+     ]
+    },
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "e1": 1,
+      "e2": 2,
+      "e3": 5,
+      "e4": 1,
+      "e5": 1,
+      "e6": 1
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "matching_size": 1,
+    "left_count": 2,
+    "deficiency": 1,
+    "matching_pairs": {
+     "b": "e2"
+    },
+    "matching_cost": 2,
+    "certificate": {
+     "kind": "cover_and_potentials",
+     "nodes": [
+      "c"
+     ],
+     "potentials": [
+      {
+       "node": "a",
+       "value": 0
+      },
+      {
+       "node": "b",
+       "value": 0
+      },
+      {
+       "node": "c",
+       "value": 2
+      }
+     ],
+     "source": 0,
+     "sink": 2
+    }
+   }
   }
  ]
 }

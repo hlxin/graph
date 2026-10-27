@@ -309,6 +309,8 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.left = {u for u in (nodes if nodes is not None else range(len(p._node_ids)))
                      if tmask is None or masks[u] & tmask}
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        plan.cost = None if req["costs"] is None else _costs(p, req["costs"], plan.fwd, plan.rev)
+        plan.rational = plan.cost is not None and plan.cost.rational
     elif op == "dominators":
         plan.certificate = req["certificate"]
         plan.sources = _nodes(p, req["sources"], "sources")

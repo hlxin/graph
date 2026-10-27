@@ -45,7 +45,8 @@ Operations (docs/API_CONTRACT.md):
   edge 1), ``node_capacity`` (what each node other than the sources and targets passes; null: no limit),
   ``certificate``; limit ``max_expansions``.
 * ``matching``: ``left`` (``{node_types, nodes}``: the nodes to pair), ``scope`` (from a left node to its candidate
-  partners), ``certificate``; limit ``max_expansions``.
+  partners), ``costs`` (as weights: any finite numbers; null: pair as many as possible, whatever they cost; given:
+  among the largest matchings, one of least total cost), ``certificate``; limit ``max_expansions``.
 * ``dominators``: ``sources``, ``scope``, ``targets`` (null: every node reached, with its immediate dominator; else
   each target's dominators), ``certificate``; limit ``max_expansions``.
 * ``critical_path``: ``scope`` (a hop from u to v: u comes first), ``sources`` (only what they reach; null: every
@@ -134,7 +135,7 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "components": (("scope",), ("connectivity", "nodes", "min_size", "certificate")),
            "biconnectivity": (("scope",), ("nodes", "blocks", "certificate")),
            "max_flow": (("sources", "targets", "scope"), ("capacities", "node_capacity", "certificate")),
-           "matching": (("left", "scope"), ("certificate",)),
+           "matching": (("left", "scope"), ("costs", "certificate")),
            "dominators": (("sources", "scope"), ("targets", "certificate")),
            "incidence": (("rows", "columns", "scope", "coefficients"), ("kernels", "certificate")),
            "critical_path": (("scope",), ("sources", "costs", "answer", "certificate")),
@@ -351,6 +352,7 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         if data["left"]["node_types"] is None and data["left"]["nodes"] is None:
             raise _fail("invalid_request", "left names node_types or nodes")
         data["scope"] = _scope(raw["scope"], "scope")
+        data["costs"] = None if raw.get("costs") is None else _weights(raw["costs"], "costs")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "dominators":
         data["sources"] = _ids(raw["sources"], "sources")

@@ -400,6 +400,10 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                         b.add_edge(('L', u), ('R', v))
             size = len(nx.bipartite.maximum_matching(b, top_nodes=[('L', u) for u in left])) // 2
             assert (exp['matching_size'], exp['left_count'], exp['deficiency']) == (size, len(left), len(left) - size)
+            if raw.get('costs') is not None:      # a cheapest largest matching: its cost by trying every matching
+                from test_weighted_matching import cheapest_largest
+                assert (size, exp['matching_cost']) == cheapest_largest(g['nodes'], g['edges'], left, r['scope'],
+                                                                        raw['costs']), case['name']
         elif op == 'd_separation':
             import networkx as nx
             dag = nx.DiGraph()

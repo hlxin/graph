@@ -784,10 +784,39 @@ def _matching_problems(request: dict, answer: dict, status: str) -> list[str]:
             complete and answer["deficiency"] != answer["left_count"] - answer["size"]):
         out.append("a complete answer is optimal, its deficiency the left nodes it leaves unpaired")
     cert = answer["certificate"]
+    weighted = request["costs"] is not None
     if (cert is not None) != (bool(request["certificate"]) and complete):
         out.append("a certificate comes exactly when asked for, on a complete answer")
     elif cert is not None and (len(cert["nodes"]) != answer["size"] or cert["nodes"] != sorted(set(cert["nodes"]))):
         out.append("the cover has as many nodes as there are pairs, unique and ascending")
+    elif cert is not None and cert["kind"] != ("cover_and_potentials" if weighted else "cover"):
+        out.append("a cover proves a matching's size; with costs, potentials prove its cost too")
+    if weighted != ("cost" in answer):
+        out.append("a matching states its cost exactly when the request gives costs")
+    elif weighted:
+        rational = any(isinstance(x, float) for t in request["costs"].values() for x in t.values())
+        if rational != ("cost_exact" in answer):
+            out.append("cost_exact appears exactly in rational mode")
+        elif rational:
+            exact = Fraction(answer["cost_exact"])
+            try:
+                nearest = float(exact)
+            except OverflowError:
+                nearest = None
+            if str(exact) != answer["cost_exact"] or answer["cost"] != nearest:
+                out.append("cost is the nearest float to cost_exact, in lowest terms (null on overflow)")
+        elif type(answer["cost"]) is not int:
+            out.append("an integer-cost matching costs an integer")
+    if cert is not None and weighted:
+        names = [e["node"] for e in cert["potentials"]]
+        if names != sorted(set(names)):
+            out.append("potentials are unique, by node ID")
+        rational = any(isinstance(x, float) for t in request["costs"].values() for x in t.values())
+        try:                                    # exact numbers only: an integer is an int, never a float
+            for x in [e["value"] for e in cert["potentials"]] + [cert["source"], cert["sink"]]:
+                _exact_value(x, rational, signed=True)
+        except (ValueError, TypeError, ZeroDivisionError) as exc:
+            out.append(f"certificate numbers: {exc}")
     return out
 
 
