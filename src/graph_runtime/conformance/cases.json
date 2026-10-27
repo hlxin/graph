@@ -10331,6 +10331,116 @@
      "sink": 2
     }
    }
+  },
+  {
+   "name": "k-shortest-paths-first-three",
+   "covers": [
+    "k shortest paths",
+    "parallel edges"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "k_shortest_paths",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "k": 3
+   },
+   "expect": {
+    "status": "completed",
+    "path_edges": [
+     [
+      "e3",
+      "e4"
+     ],
+     [
+      "e3",
+      "e5"
+     ],
+     [
+      "e1",
+      "e2",
+      "e4"
+     ]
+    ],
+    "exhausted": false
+   }
+  },
+  {
+   "name": "k-shortest-paths-all-four",
+   "covers": [
+    "k shortest paths",
+    "costs",
+    "exhausted"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "k_shortest_paths",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "e1": 1,
+      "e2": 1,
+      "e3": 4,
+      "e4": 1,
+      "e5": 1,
+      "e6": 1
+     }
+    },
+    "k": 10
+   },
+   "expect": {
+    "status": "completed",
+    "path_edges": [
+     [
+      "e1",
+      "e2",
+      "e4"
+     ],
+     [
+      "e1",
+      "e2",
+      "e5"
+     ],
+     [
+      "e3",
+      "e4"
+     ],
+     [
+      "e3",
+      "e5"
+     ]
+    ],
+    "exhausted": true
+   }
   }
  ]
 }

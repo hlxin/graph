@@ -112,6 +112,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.spanning_forest(request, answer, status)
         elif op == "cycle_basis":
             check.cycle_basis(request, answer, status)
+        elif op == "k_shortest_paths":
+            check.k_shortest_paths(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -360,6 +362,41 @@ class _Checker:
             elif not key[eid] > heaviest(s, t):
                 self.bad(f"the link {eid} comes before an edge of the tree path between its ends: a lighter forest "
                          "(or one earlier in edge ID) keeps it")
+
+    def k_shortest_paths(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """Each path against the records: hops in scope chaining from a source to a target, no node twice, each hop at
+        the cost the request gives its edge and the path at their exact sum; the paths distinct and in the strict
+        order of (cost, hops, start node and edge IDs); no more than k, and exactly k unless the answer says fewer
+        exist. That no simple path missing from the list comes before its last is not checked here (Yen's theorem;
+        the oracle tests)."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        costs = request["costs"]
+        kind, table = next(iter(costs.items())) if costs else (None, None)
+        rational = table is not None and any(isinstance(x, float) for x in table.values())
+        sources, targets = set(request["sources"]), set(request["targets"])
+        keys = []
+        for n, path in enumerate(answer.get("paths") or ()):
+            where = f"path {n}"
+            hops = self.chain(where, path, sources, targets, [allowed])
+            visited = [path.get("source")] + [h.get("to") for h in hops if isinstance(h, Mapping)]
+            if len(set(visited)) != len(visited):
+                self.bad(f"{where}: visits a node twice")
+            if table is None:
+                total = len(hops)
+                for i, h in enumerate(hops):
+                    if h.get("cost") != 1 or type(h.get("cost")) is not int:
+                        self.bad(f"{where}: hop {i} costs 1 when the request gives no costs")
+            else:
+                total = self.hop_costs(where, hops, kind, table, rational)
+            if total != self.reported_cost(path, "cost", rational):
+                self.bad(f"{where}: its hops cost {total}, not what it says")
+            keys.append((total, len(hops), (path.get("source"),) + tuple(h.get("edge") for h in hops)))
+        if any(a >= b for a, b in zip(keys, keys[1:])):
+            self.bad("the paths are distinct and in the order of (cost, hops, start node and edge IDs)")
+        k, count = request["k"], len(keys)
+        exhausted = answer.get("exhausted")
+        if count > k or (status == COMPLETED and exhausted is not (count < k)):
+            self.bad(f"a complete answer lists k paths, or fewer when that is all there are (exhausted)")
 
     def cycle_basis(self, request: Mapping, answer: Mapping, status: str) -> None:
         """Each cycle against the records: links in scope, each node met by two of its links (a loop counts two) and

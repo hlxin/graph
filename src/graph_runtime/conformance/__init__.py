@@ -294,6 +294,12 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
         elif "negative_cycle_cost" in exp and _cost(cycle["cycle"], "cost") != exp["negative_cycle_cost"]:
             problems.append(f"negative cycle cost {_cost(cycle['cycle'], 'cost')!r}, expected "
                             f"{exp['negative_cycle_cost']!r}")
+    if "path_edges" in exp:                                 # the k shortest paths: exactly these, in this order
+        got = [[h["edge"] for h in x["hops"]] for x in answer.get("paths") or []]
+        want = exp["path_edges"] if done else exp["path_edges"][:len(got)]
+        if got != want or (done and answer.get("exhausted") is not exp["exhausted"]):
+            problems.append(f"paths {got} (exhausted {answer.get('exhausted')}), expected {want} "
+                            f"(exhausted {exp['exhausted']})")
     if "matching_pairs" in exp and done:                    # a cheapest largest matching: its pairs and cost
         got = {x["left"]: x["edge"] for x in answer.get("pairs") or []}
         if got != exp["matching_pairs"] or _cost(answer, "cost") != exp["matching_cost"]:

@@ -28,7 +28,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import algebra, causal, cycles, dominators, flows, forest, paths, ranking, schedule, structure
+from . import algebra, causal, cycles, dominators, flows, forest, kpaths, paths, ranking, schedule, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -320,6 +320,18 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.certificate = req["certificate"]
         plan.x, plan.y, plan.given = _nodes(p, req["x"], "x"), _nodes(p, req["y"], "y"), _nodes(p, req["given"], "given")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "k_shortest_paths":
+        plan.sources = _nodes(p, req["sources"], "sources")
+        plan.targets = set(_nodes(p, req["targets"], "targets"))
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        plan.k = req["k"]
+        if req["costs"] is None:
+            plan.rational, plan.cost, plan.given, plan.exact = False, (lambda ei: 1), (lambda ei: 1), (lambda x: x)
+        else:
+            table = _costs(p, req["costs"], plan.fwd, plan.rev)
+            edge, rel_cost, edge_rel = table.edge, table.rel, p._edge_rel
+            plan.rational, plan.given, plan.exact = table.rational, table.given, table.exact
+            plan.cost = (lambda ei: edge[ei]) if edge is not None else (lambda ei: rel_cost[edge_rel[ei]])
     elif op in ("spanning_forest", "cycle_basis"):
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
         forest_op = op == "spanning_forest"
@@ -2228,4 +2240,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "spanning_forest": (lambda p, plan, ctl: forest.search(p, plan, ctl),
                                    lambda p, plan, st: forest.answer(p, plan, st)),
                "cycle_basis": (lambda p, plan, ctl: cycles.search(p, plan, ctl),
-                               lambda p, plan, st: cycles.answer(p, plan, st))}
+                               lambda p, plan, st: cycles.answer(p, plan, st)),
+               "k_shortest_paths": (lambda p, plan, ctl: kpaths.search(p, plan, ctl),
+                                    lambda p, plan, st: kpaths.answer(p, plan, st))}
