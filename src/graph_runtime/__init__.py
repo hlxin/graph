@@ -2,9 +2,9 @@
 
 GRAPH executes graph operations for scientific applications and keeps the computational contract the same across them:
 explicit inputs (an immutable :class:`Projection`, with optional type and relation hierarchies, or a
-:class:`PeriodicProjection` of one cell of an infinite periodic graph, and a normalized :class:`Request`), twenty-seven
+:class:`PeriodicProjection` of one cell of an infinite periodic graph, and a normalized :class:`Request`), twenty-eight
 exact operations (reachability, between pairs too, and dependency impact; positive Datalog; canonical forms and
-isomorphism; typed, shortest, k shortest, bottleneck and regular paths; patterns; support
+isomorphism; elementary flux modes; typed, shortest, k shortest, bottleneck and regular paths; patterns; support
 under failure and lightest derivations; personalized PageRank; components, biconnectivity, spanning forests, cycle
 bases, dominators and critical paths; maximum and minimum-cost flows and matchings; d-separation; incidence; periodicity) with structural witnesses,
 bounded work, reproducible results, and

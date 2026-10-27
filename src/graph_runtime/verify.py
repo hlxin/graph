@@ -124,6 +124,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.canonical_form(request, answer)
         elif op == "isomorphism":
             check.isomorphism(request, answer)
+        elif op == "flux_modes":
+            check.flux_modes(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -2610,6 +2612,69 @@ class _Checker:
         """The input nodes a ``{node_types, nodes}`` constraint admits (a type through the hierarchy)."""
         return {n for n in self.types_of if (spec["nodes"] is None or n in spec["nodes"]) and
                 (spec["node_types"] is None or self.types_of[n] & set(spec["node_types"]))}
+
+    def flux_modes(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """Each mode against the records: the stoichiometric matrix rebuilt from them (as for incidence), the vector's
+        reactions columns of it, its values non-zero integers with no common factor, an irreversible reaction's
+        non-negative, and S v = 0 exactly; the modes distinct and in the order of (support size, reactions and values
+        by ID). With the certificate, each mode's minor: |J| - 1 species and |J| - 1 of its reactions whose
+        determinant is non-zero, so its support's columns have rank |J| - 1 and the mode is elementary. That the list
+        holds every mode is not checked here (the enumeration; the oracle tests)."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        rows, cols = self.chosen(request["rows"]), self.chosen(request["columns"])
+        if answer.get("species") != len(rows) or answer.get("reactions") != len(cols):
+            self.bad(f"the network has {len(rows)} species and {len(cols)} reactions")
+            return
+        (kind, table), = request["coefficients"].items()
+        matrix: dict = {}
+        for u in rows:
+            for eid, v, rel in self.links(u, allowed):
+                if v in cols:
+                    x = table.get(rel if kind == "by_relation" else eid)
+                    if x is None:
+                        self.bad(f"edge {eid} in scope has no coefficient")
+                        return
+                    matrix[(u, v)] = matrix.get((u, v), Fraction(0)) + Fraction(x)
+        by_col: dict = {}
+        for (u, v), a in matrix.items():
+            by_col.setdefault(v, []).append((u, a))
+        backwards = set(request["reversible"])
+        keys = []
+        for n, mode in enumerate(answer.get("modes") or ()):
+            where = f"mode {n}"
+            vec = [(e.get("reaction"), e.get("value")) for e in mode.get("vector") or ()]
+            if not vec or any(r not in cols or not _is_int(x) or x == 0 for r, x in vec) \
+                    or len({r for r, _ in vec}) != len(vec) or mode.get("support") != len(vec):
+                self.bad(f"{where}: its reactions are distinct columns, each with a non-zero integer, counted")
+                continue
+            g = 0
+            for _, x in vec:
+                g = gcd(g, x)
+            if g != 1:
+                self.bad(f"{where}: its values share the factor {g}")
+            if any(x < 0 and r not in backwards for r, x in vec):
+                self.bad(f"{where}: an irreversible reaction runs backwards")
+            balance: dict = {}
+            for r, x in vec:
+                for u, a in by_col.get(r, ()):
+                    balance[u] = balance.get(u, Fraction(0)) + a * x
+            if any(balance.values()):
+                self.bad(f"{where}: S v is not zero")
+                continue
+            keys.append((len(vec), sorted(vec)))
+            cert = self.proof(mode)
+            if cert is None:
+                continue
+            support = {r for r, _ in vec}
+            mr, mc = list(cert.get("rows") or ()), list(cert.get("columns") or ())
+            if len(mr) != len(vec) - 1 or len(mc) != len(vec) - 1 or len(set(mr)) != len(mr) \
+                    or len(set(mc)) != len(mc) or not set(mr) <= rows or not set(mc) <= support:
+                self.bad(f"{where}: the minor takes |J| - 1 distinct species and |J| - 1 of the mode's reactions")
+                continue
+            if not _nonsingular([[matrix.get((u, v), Fraction(0)) for v in mc] for u in mr]):
+                self.bad(f"{where}: the minor's determinant is zero: it does not prove the mode elementary")
+        if any(a >= b for a, b in zip(keys, keys[1:])):
+            self.bad("the modes are distinct and in the order of (support size, reactions and values by ID)")
 
     def incidence(self, request: Mapping, answer: Mapping, status: str) -> None:
         """An incidence answer against the records: the matrix rebuilt from them (every edge in scope, either way,

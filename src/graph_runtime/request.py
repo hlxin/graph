@@ -61,6 +61,9 @@ Operations (docs/API_CONTRACT.md):
 * ``spanning_forest``: ``scope`` (each edge in it a link between its ends, either way), ``weights`` (any finite numbers,
   by relation or by edge; null: every link weighs 1), ``objective`` (``min``, the default, or ``max``); limit
   ``max_expansions``.
+* ``flux_modes``: ``rows`` (species), ``columns`` (reactions), ``scope``, ``coefficients`` (as ``incidence``'s),
+  ``reversible`` (the reactions that may run backwards; default none), ``certificate`` (each mode's support-rank
+  proof); limits ``max_expansions``, ``max_results``.
 * ``canonical_form``: ``nodes`` (the induced subgraph's), ``scope`` (the edges that count, with their own relations),
   ``directed`` (default true), ``node_colors`` (``types``, the default, or ``none``); limit ``max_expansions``.
 * ``isomorphism``: ``left``, ``right`` (two node sets), ``scope``, ``directed``, ``node_colors``, ``certificate``; limit
@@ -105,7 +108,7 @@ OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact"
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
               "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path", "d_separation",
               "spanning_forest", "cycle_basis", "k_shortest_paths", "min_cost_flow", "reachability_pairs",
-              "datalog", "canonical_form", "isomorphism")
+              "datalog", "canonical_form", "isomorphism", "flux_modes")
 NODE_COLORS = ("types", "none")
 DATALOG_INPUTS = {"node": 1, "type": 2, "edge": 4}         # the projection's records, as input predicates
 DATALOG_ARITY = 32                                         # the most arguments a predicate takes
@@ -146,7 +149,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "reachability_pairs": ("max_expansions",),
            "datalog": ("max_expansions", "max_results"),
            "canonical_form": ("max_expansions",),
-           "isomorphism": ("max_expansions",)}
+           "isomorphism": ("max_expansions",),
+           "flux_modes": ("max_expansions", "max_results")}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -173,7 +177,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "reachability_pairs": (("pairs", "scope"), ("witnesses", "certificate")),
            "datalog": (("program", "query"), ("answer", "derivations", "certificate")),
            "canonical_form": (("nodes", "scope"), ("directed", "node_colors")),
-           "isomorphism": (("left", "right", "scope"), ("directed", "node_colors", "certificate"))}
+           "isomorphism": (("left", "right", "scope"), ("directed", "node_colors", "certificate")),
+           "flux_modes": (("rows", "columns", "scope", "coefficients"), ("reversible", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -463,7 +468,7 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         if data["answer"] not in ("path", "schedule"):
             raise _fail("invalid_request", f"answer is path or schedule, not {data['answer']!r}")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
-    elif op == "incidence":
+    elif op in ("incidence", "flux_modes"):
         for field in ("rows", "columns"):
             spec = raw[field]
             if not isinstance(spec, Mapping) or any(k not in ("node_types", "nodes") for k in spec):
@@ -473,11 +478,16 @@ def _normalize_request(raw: Mapping | Request) -> Request:
                 raise _fail("invalid_request", f"{field} names node_types or nodes")
         data["scope"] = _scope(raw["scope"], "scope")
         data["coefficients"] = _weights(raw["coefficients"], "coefficients")
-        kernels = raw.get("kernels", [])
-        if isinstance(kernels, (str, bytes)) or not isinstance(kernels, (list, tuple)) or any(
-                k not in ("left", "right") for k in kernels):
-            raise _fail("invalid_request", f"kernels is a list of left and right, not {kernels!r}")
-        data["kernels"] = sorted(set(kernels))
+        if op == "flux_modes":
+            reversible = raw.get("reversible")
+            data["reversible"] = [] if reversible is None or (isinstance(reversible, (list, tuple)) and not reversible) \
+                else _ids(reversible, "reversible")
+        else:
+            kernels = raw.get("kernels", [])
+            if isinstance(kernels, (str, bytes)) or not isinstance(kernels, (list, tuple)) or any(
+                    k not in ("left", "right") for k in kernels):
+                raise _fail("invalid_request", f"kernels is a list of left and right, not {kernels!r}")
+            data["kernels"] = sorted(set(kernels))
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "periodicity":
         data["nodes"] = _ids(raw["nodes"], "nodes")

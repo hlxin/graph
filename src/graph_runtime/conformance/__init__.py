@@ -301,6 +301,10 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             problems.append(f"flow {got}, value {answer.get('value')}, cost {answer.get('cost')}, feasible "
                             f"{answer.get('feasible')}; expected {exp['flow_amounts']}, {exp['flow_value']}, "
                             f"{exp['flow_cost']}, {exp['feasible']}")
+    if "flux_modes" in exp:                                 # flux modes: these vectors, in this order
+        got = [{x["reaction"]: x["value"] for x in m["vector"]} for m in answer.get("modes") or []]
+        if got != exp["flux_modes"][:len(got)] or (done and len(got) != len(exp["flux_modes"])):
+            problems.append(f"modes {got}, expected {exp['flux_modes']}")
     if "isomorphic" in exp and done:                       # isomorphism: the decision and, for a negative, its proof
         cert = answer.get("certificate")
         if answer.get("isomorphic") is not exp["isomorphic"] or ("iso_certificate" in exp and cert != exp["iso_certificate"]):

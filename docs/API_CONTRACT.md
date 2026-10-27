@@ -93,6 +93,9 @@ states consistently, and required costs only for edges actually in scope. Revisi
   individualization and refinement with automorphism pruning, its encoding checked as a relabeling; and whether two
   node sets' graphs are isomorphic, proven by node and edge bijections, or not, proven by other counts or color
   refinement histograms when those separate them (section 4)
+- the `flux_modes` operation: the elementary flux modes of a reaction network's stoichiometric matrix (as
+  `incidence` reads it), by exact double description, each mode proven elementary by a nonsingular minor of its
+  support (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -208,6 +211,7 @@ no wildcard: a scope lists what it follows.
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
 | `min_cost_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as for `max_flow`; null: every edge 1), `costs` (as for shortest paths, non-negative), `value` (how much to send, as a capacity; null: as much as possible), `certificate` (default false) | `max_expansions` |
 | `k_shortest_paths` | `sources`, `targets`, `scope`, `costs` (as for shortest paths, non-negative; null: every hop 1), `k` (1 to 1,000,000; default 10) | `max_expansions` |
+| `flux_modes` | `rows` (species), `columns` (reactions), `scope`, `coefficients` (all as for `incidence`), `reversible` (reactions, column nodes, that may run backwards; default none), `certificate` (default false) | `max_expansions`, `max_results` |
 | `canonical_form` | `nodes` (the induced subgraph's), `scope` (the edges that count, by relation, with their own direction), `directed` (default true), `node_colors` (`types`, the default: each node's types with their ancestors; or `none`) | `max_expansions` |
 | `isomorphism` | `left`, `right` (two node sets, which may overlap), `scope`, `directed`, `node_colors` (as for `canonical_form`), `certificate` (default false) | `max_expansions` |
 | `datalog` | `program` (rules `{"id", "head", "body"}`, atoms `{"predicate", "args"}`; a term `"?name"` is a variable, any other text, or `{"const": text}`, a constant), `query` (an atom of a derived predicate), `answer` (`rows`, `count` or `exists`; default `rows`), `derivations` (default true), `certificate` (default false) | `max_expansions`, `max_results` |
@@ -895,6 +899,35 @@ sends; every target to the virtual sink, and back from one that receives), so no
 When the flow is a maximum one (no value asked, or `feasible` false), `source_side` is a minimum cut's: every source
 and no target, every hop out of it full and every hop into it empty, so its capacity is the value; otherwise null.
 
+**Elementary flux modes.** The minimal pathways of a reaction network at steady state: a network's indivisible routes,
+from which every steady flux is a non-negative combination (Schuster and Hilgetag, 1994). The stoichiometric matrix S
+is `incidence`'s: a row per species, a column per reaction, each entry the sum of the coefficients of the edges in
+scope joining them, either way. A flux v is feasible when S v = 0 and every irreversible reaction carries v ≥ 0; an
+elementary mode is a feasible v ≠ 0 whose support (its reactions) no other feasible vector's support lies strictly
+inside. Modes are listed as primitive integer vectors by reaction, ordered by support size, then by their reactions
+and values in ID order; both directions of a cycle of reversible reactions are listed, each a mode.
+
+Enumeration is exact double description in its nullspace form (Wagner, 2004; Gagneur and Klamt, 2004; Terzer and
+Stelling, 2008): each reversible reaction is split into a forward and a reverse column; the kernel's canonical basis
+(as `incidence` gives it) spans the vectors non-negative on its free columns; then each other column in turn, the one
+with the fewest positive-negative pairs first (the lowest on ties), is made non-negative: rays positive or zero there
+stay, and each adjacent pair of a positive ray p and a negative ray n (no other ray is zero wherever both are, on the
+columns made non-negative so far) gives (−n_j) p + p_j n. At the end the rays, their halves merged and a reaction's two
+halves alone (the trivial cycle) dropped, are the modes. The matrix and its kernel cost as `incidence`'s; choosing a
+column reads every ray once per column left; each pair tried costs one expansion plus one per ray its adjacency test
+reads; each proof one, plus one per entry of its support's columns, plus one per pivot. The number of modes can grow exponentially with the network, and the budget bounds
+the enumeration: an interrupted one lists none (`total` null). Each ray, the starting ones included, is also charged
+one expansion per 64 split columns (its support's bitset) before it is built, and each ray merged at the end one. More
+than `max_results` modes is an `output_limit` interruption whose `total` is exact.
+
+Answer: `{"species", "reactions", "modes": [{"vector": [{"reaction", "value"}], "support", "certificate"}], "count",
+"total"}`. With `certificate: true`, each mode carries `{"kind": "support_rank", "rows", "columns"}`: |J| − 1 species
+and |J| − 1 of its reactions whose minor is nonsingular, so the columns of its support have rank |J| − 1, and with the
+mode itself in their kernel, no feasible vector has a support strictly inside J. A checker rebuilds S from the records,
+checks S v = 0 exactly, the signs, the primitive scale and the minor. That the list holds every mode is the
+enumeration's, not certified. A network whose number of modes doubles with every layer (12 layers of two parallel
+reactions, 26 reactions) gives its 4,096 modes in 0.6 s, all proven in 0.85 s.
+
 **Canonical form and isomorphism.** Whether two fragments are the same structure, and one name for every copy of a
 structure: deduplicating molecules, motifs and provenance fragments. The graph of a node set is its induced subgraph:
 its nodes, each colored by its types (with their ancestors; `node_colors: none` colors all alike), and the edges in
@@ -1121,6 +1154,9 @@ The result contract reports how an execution ended. It carries no scientific ans
     empty
   - for k shortest paths, each path's hops chaining in scope from a source to a target, no node twice, at the exact
     cost of its hops; the paths distinct and in the strict order; k of them unless `exhausted`
+  - for flux modes, each vector's reactions columns of the matrix rebuilt from the records, its values non-zero
+    integers without a common factor, irreversible reactions non-negative, S v = 0 exactly, the modes in order; from
+    each certificate, a nonsingular (|J| − 1)-minor of the mode's support
   - for a canonical form, the order a permutation of the node set and the encoding the set's graph relabeled by it,
     with its digest; for an isomorphism, the node mapping a color-keeping bijection and the edge mapping a bijection
     keeping relations and mapped ends, and for a certified negative, the counts or the refinement histograms
@@ -1238,7 +1274,9 @@ kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut
 the sources, a support count that an added or removed support changed); otherwise it holds exactly when its certificate still checks against the new projection's records (as
 `verify_result` checks it), and is unknown (`certificate_broken`, with the first problem found) when it does not, or
 (`no_certificate`) when it has none, unless its witness alone proves it (a cycle, an active trail, the witnesses of
-pairs that are all reachable, an isomorphism's mappings). A canonical form is refuted when its encoding is no longer
+pairs that are all reachable, an isomorphism's mappings). Flux modes are refuted when a mode is no longer feasible or
+its minor no longer proves it, and are otherwise unknown: their certificates prove each mode, never that the list is
+complete, and an edit can add a mode. A canonical form is refuted when its encoding is no longer
 the set's graph relabeled by its order, and otherwise unknown (`no_certificate`): that it is the least encoding is not
 certified. Pairs need both proofs: a closure proves only negatives, so a reachable pair asked for
 without its witness leaves the answer unknown (`no_certificate`). These are always checked in full.

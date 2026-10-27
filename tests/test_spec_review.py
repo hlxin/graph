@@ -496,6 +496,13 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 return nodes, edges
             assert exp['isomorphic'] is iso_oracle(side(r['left']), side(r['right']), r.get('directed', True)), \
                 case['name']
+        elif op == 'flux_modes':                    # every support with a one-dimensional, full kernel
+            from test_flux_modes import oracle as flux_oracle
+            species = [n for n in g['nodes'] if 'Species' in (n.get('types') or [])]
+            reactions = [n for n in g['nodes'] if 'Reaction' in (n.get('types') or [])]
+            want = [dict(m) for m in flux_oracle(species, reactions, g['edges'], set(r.get('reversible') or []))]
+            assert exp['total'] == len(want), case['name']
+            assert exp['flux_modes'] == want[:len(exp['flux_modes'])], case['name']
         elif op == 'canonical_form':                # the edges are the induced subgraph relabeled by the order
             pos = {n: i for i, n in enumerate(exp['canonical_order'])}
             names = {e['relation'] for e in r['scope']}
