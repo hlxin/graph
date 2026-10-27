@@ -61,6 +61,10 @@ Operations (docs/API_CONTRACT.md):
 * ``spanning_forest``: ``scope`` (each edge in it a link between its ends, either way), ``weights`` (any finite numbers,
   by relation or by edge; null: every link weighs 1), ``objective`` (``min``, the default, or ``max``); limit
   ``max_expansions``.
+* ``datalog``: ``program`` (rules ``{id, head, body}``, atoms ``{predicate, args}``, a term ``"?x"`` a variable and any
+  other text a constant; positive and range-restricted, over the inputs ``node(N)``, ``type(N, T)`` and ``edge(E, S, T,
+  R)``), ``query`` (an atom of a derived predicate), ``answer`` (``rows``, ``count`` or ``exists``), ``derivations``
+  (default true), ``certificate`` (the whole least model); limits ``max_expansions``, ``max_results``.
 * ``reachability_pairs``: ``pairs`` (``[{source, target}]``: does each source reach its target), ``scope``,
   ``witnesses`` (default true: a simple path for each reachable pair), ``certificate`` (each negative's source's
   closure); limit ``max_expansions``.
@@ -96,7 +100,10 @@ from .projection import CONTRACT, DIRECTIONS
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
               "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path", "d_separation",
-              "spanning_forest", "cycle_basis", "k_shortest_paths", "min_cost_flow", "reachability_pairs")
+              "spanning_forest", "cycle_basis", "k_shortest_paths", "min_cost_flow", "reachability_pairs",
+              "datalog")
+DATALOG_INPUTS = {"node": 1, "type": 2, "edge": 4}         # the projection's records, as input predicates
+DATALOG_ARITY = 32                                         # the most arguments a predicate takes
 FOREST_OBJECTIVES = ("min", "max")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
@@ -131,7 +138,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "cycle_basis": ("max_expansions",),
            "k_shortest_paths": ("max_expansions",),
            "min_cost_flow": ("max_expansions",),
-           "reachability_pairs": ("max_expansions",)}
+           "reachability_pairs": ("max_expansions",),
+           "datalog": ("max_expansions", "max_results")}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -155,7 +163,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "cycle_basis": (("scope",), ("weights", "certificate")),
            "k_shortest_paths": (("sources", "targets", "scope"), ("costs", "k")),
            "min_cost_flow": (("sources", "targets", "scope", "costs"), ("capacities", "value", "certificate")),
-           "reachability_pairs": (("pairs", "scope"), ("witnesses", "certificate"))}
+           "reachability_pairs": (("pairs", "scope"), ("witnesses", "certificate")),
+           "datalog": (("program", "query"), ("answer", "derivations", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -382,6 +391,14 @@ def _normalize_request(raw: Mapping | Request) -> Request:
             raise _fail("invalid_request", f"x, y and given are disjoint; {sorted(overlap)[:10]} is in two of them")
         data["scope"] = _scope(raw["scope"], "scope")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "datalog":
+        data["program"], data["query"] = _datalog(raw["program"], raw["query"])
+        answer = raw.get("answer", "rows")
+        if answer not in PATTERN_ANSWERS:
+            raise _fail("invalid_request", f"answer is one of {list(PATTERN_ANSWERS)}, not {answer!r}")
+        data["answer"] = answer
+        data["derivations"] = _flag(raw.get("derivations", True), "derivations")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "reachability_pairs":
         data["pairs"] = _pairs(raw["pairs"])
         data["scope"] = _scope(raw["scope"], "scope")
@@ -493,6 +510,76 @@ def _ids(value: Any, field: str) -> list[str]:
     if not out:
         raise _fail("invalid_request", f"{field} names no node")
     return sorted(out)
+
+
+def _term(value: Any, where: str) -> Any:
+    """A variable ``"?name"``, or a constant: any other non-empty text, or ``{"const": text}`` (written so only when the
+    text itself starts with ``?``)."""
+    if isinstance(value, Mapping):
+        if set(value) != {"const"} or not isinstance(value["const"], str) or not value["const"]:
+            raise _fail("invalid_request", f"{where} is a variable \"?name\", a constant, or {{\"const\": text}}")
+        text = value["const"]
+        return {"const": text} if text.startswith("?") else text
+    if not isinstance(value, str) or not value or value == "?":
+        raise _fail("invalid_request", f"{where} is a variable \"?name\" or a non-empty constant, not {value!r}")
+    return value
+
+
+def _atom(value: Any, where: str) -> dict:
+    if not isinstance(value, Mapping) or set(value) - {"predicate", "args"} or "predicate" not in value:
+        raise _fail("invalid_request", f"{where} is an atom {{predicate, args}}")
+    pred, args = value["predicate"], value.get("args", [])
+    if not isinstance(pred, str) or not pred or pred.startswith("?"):
+        raise _fail("invalid_request", f"{where}.predicate is a non-empty name, not {pred!r}")
+    if isinstance(args, (str, bytes, Mapping)) or not isinstance(args, (list, tuple)) or len(args) > DATALOG_ARITY:
+        raise _fail("invalid_request", f"{where}.args is a list of at most {DATALOG_ARITY} terms")
+    return {"predicate": pred, "args": [_term(a, f"{where}.args[{i}]") for i, a in enumerate(args)]}
+
+
+def _variables(atom: dict) -> list[str]:
+    return [a for a in atom["args"] if isinstance(a, str) and a.startswith("?")]
+
+
+def _datalog(program: Any, query: Any) -> tuple[list[dict], dict]:
+    """A positive Datalog program and its query. Each rule ``{id, head, body}``: its id unique, its head a derived
+    predicate (not an input), every variable of its head in its body (range restriction; a rule without a body states
+    a ground fact), every predicate used with one arity and every body predicate an input or the head of a rule. The
+    rules are sorted by id; the query is an atom of a derived predicate."""
+    if isinstance(program, (str, bytes, Mapping)) or not isinstance(program, (list, tuple)) or not program:
+        raise _fail("invalid_request", "program is a non-empty list of rules {id, head, body}")
+    rules, ids = [], set()
+    for i, rule in enumerate(program):
+        where = f"program[{i}]"
+        if not isinstance(rule, Mapping) or set(rule) - {"id", "head", "body"} or "id" not in rule or "head" not in rule:
+            raise _fail("invalid_request", f"{where} is a rule {{id, head, body}}")
+        rid = rule["id"]
+        if not isinstance(rid, str) or not rid or rid in ids:
+            raise _fail("invalid_request", f"{where}.id is a non-empty name that no other rule has, not {rid!r}")
+        ids.add(rid)
+        body = rule.get("body", [])
+        if isinstance(body, (str, bytes, Mapping)) or not isinstance(body, (list, tuple)):
+            raise _fail("invalid_request", f"{where}.body is a list of atoms")
+        out = {"id": rid, "head": _atom(rule["head"], f"{where}.head"),
+               "body": [_atom(b, f"{where}.body[{j}]") for j, b in enumerate(body)]}
+        if out["head"]["predicate"] in DATALOG_INPUTS:
+            raise _fail("invalid_request", f"{where} defines {out['head']['predicate']}, an input predicate")
+        free = sorted(set(_variables(out["head"])) - {v for b in out["body"] for v in _variables(b)})
+        if free:
+            raise _fail("invalid_request", f"{where}: the head's variables {free} do not occur in the body "
+                        "(every rule is range-restricted)")
+        rules.append(out)
+    q = _atom(query, "query")
+    arity: dict[str, int] = dict(DATALOG_INPUTS)
+    heads = {r["head"]["predicate"] for r in rules}
+    for where, atom in ([(f"rule {r['id']}", a) for r in rules for a in [r["head"]] + r["body"]] + [("query", q)]):
+        pred, n = atom["predicate"], len(atom["args"])
+        if arity.setdefault(pred, n) != n:
+            raise _fail("invalid_request", f"{where}: {pred} takes {arity[pred]} arguments, not {n}")
+        if pred not in heads and pred not in DATALOG_INPUTS:
+            raise _fail("invalid_request", f"{where}: {pred} is neither an input predicate nor the head of a rule")
+    if q["predicate"] not in heads:
+        raise _fail("invalid_request", f"query asks for {q['predicate']}, which no rule derives")
+    return sorted(rules, key=lambda r: r["id"]), q
 
 
 def _pairs(value: Any) -> list[dict[str, str]]:

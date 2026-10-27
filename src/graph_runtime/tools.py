@@ -96,7 +96,8 @@ TOOLS: list[dict] = [
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
                        "biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, "
-                       "spanning_forest, cycle_basis, k_shortest_paths, min_cost_flow, reachability_pairs, or on "
+                       "spanning_forest, cycle_basis, k_shortest_paths, min_cost_flow, reachability_pairs, datalog, or "
+                       "on "
                        "a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
@@ -495,6 +496,10 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
         if a["trail"] is not None:
             summary.update(trail=[{k: s[k] for k in ("edge", "from", "to", "travel")} for s in a["trail"][:limit]],
                            colliders=[c["node"] for c in a["colliders"][:limit]])
+    elif op == "datalog":
+        summary = {"count": a["count"], "total": a["total"], "exists": a["exists"], "model": a["model"],
+                   "rows": {"items": [x["values"] for x in a["rows"][:limit]], "more": len(a["rows"]) > limit},
+                   "facts": len(a["facts"]), "certificate": kind(a["certificate"])}
     elif op == "reachability_pairs":
         summary = {"count": a["count"], "reachable": a["reachable"], "index": a["index"],
                    "pairs": {"items": [{k: x[k] for k in ("source", "target", "reachable")} for x in a["pairs"][:limit]],

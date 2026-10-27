@@ -85,6 +85,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
   projection and the scope (pruned landmark labelling) built once and kept on the projection, every request charged
   its full cost so that a kept index changes nothing but the time; a simple path for each reachable pair, and on
   request the closure of each unreachable pair's source (section 4)
+- the `datalog` operation: a positive, range-restricted Datalog program over the projection's records (`node`, `type`
+  and `edge` as input predicates, with the hierarchies), evaluated semi-naively to its least model; every fact with a
+  derivation of strictly increasing ranks, and on request the whole model as a certificate a checker proves closed
+  under every rule (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -200,6 +204,7 @@ no wildcard: a scope lists what it follows.
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
 | `min_cost_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as for `max_flow`; null: every edge 1), `costs` (as for shortest paths, non-negative), `value` (how much to send, as a capacity; null: as much as possible), `certificate` (default false) | `max_expansions` |
 | `k_shortest_paths` | `sources`, `targets`, `scope`, `costs` (as for shortest paths, non-negative; null: every hop 1), `k` (1 to 1,000,000; default 10) | `max_expansions` |
+| `datalog` | `program` (rules `{"id", "head", "body"}`, atoms `{"predicate", "args"}`; a term `"?name"` is a variable, any other text, or `{"const": text}`, a constant), `query` (an atom of a derived predicate), `answer` (`rows`, `count` or `exists`; default `rows`), `derivations` (default true), `certificate` (default false) | `max_expansions`, `max_results` |
 | `reachability_pairs` | `pairs` (`[{"source", "target"}]`, a pair `[source, target]` read as one; sorted and de-duplicated), `scope`, `witnesses` (default true), `certificate` (default false) | `max_expansions` |
 | `cycle_basis` | `scope` (each edge in it a link between its ends, either way), `weights` (as costs: non-negative; null: every link 1), `certificate` (default false) | `max_expansions` |
 | `spanning_forest` | `scope` (each edge in it a link between its ends, either way), `weights` (as weights: any finite numbers; null: every link 1), `objective` (`min`, the default, or `max`) | `max_expansions` |
@@ -884,6 +889,49 @@ sends; every target to the virtual sink, and back from one that receives), so no
 When the flow is a maximum one (no value asked, or `feasible` false), `source_side` is a minimum cut's: every source
 and no target, every hop out of it full and every hop into it empty, so its capacity is the value; otherwise null.
 
+**Datalog.** Rules that derive facts from the records, recursively: provenance closures, lineage, "supported through
+a dataset", any question that is a fixpoint of joins. A program is a list of rules, `head :- body`, each atom a
+predicate over terms, a variable `"?x"` or a constant. It is positive (no negation), function-free and range-restricted
+(every variable of a head occurs in its body; a rule without a body states a ground fact), so its meaning is its least
+model: the smallest set of facts that holds the inputs and is closed under every rule (Abiteboul, Hull and Vianu,
+1995). The inputs are the records: `node(N)` for every node; `type(N, T)` for every type a node has, its declared
+types' ancestors included; `edge(E, S, T, R)` for every edge E from S to T, for its relation and every relation above
+it. A rule may not define an input; every predicate has one arity, at most 32; every body predicate is an input or a
+rule's head.
+Rules are sorted by `id`, so their order in the request does not matter.
+
+Evaluation is semi-naive (Bancilhon, 1986), the derived predicates in the order of their dependencies (strongly
+connected components of the predicate graph, dependencies first). Within a component, each round fires every rule once
+for each of its body atoms of the component, that atom over the facts the previous round found and the others over
+every fact found so far, so that each derivation uses a new fact; a round's facts join the model when it ends, in
+sorted order. A rule's atoms are joined in a fixed order: the new-fact atom first, then always the atom with the most
+arguments bound (the earliest on ties), its candidates looked up in an index on its bound arguments. Every fact read,
+input or derived, is one expansion, and so is every input fact loaded and every parent link followed to find an edge
+relation's ancestors; building an index reads its relation's every fact (one expansion each), keeping an index reads
+each new fact once more, each join order (one per rule and atom the new facts take) costs one expansion per atom of
+the rule's body, and keeping a derivation (only when derivations or the certificate are asked for) costs one
+expansion per premise. Each derived fact keeps the first derivation
+found in that order: its rule and, for each body atom, the fact it matched; its rank is the round that found it, and
+every premise's rank is lower. Facts, ranks and derivations do not depend on the interpreter's hash seed.
+
+Answer: `{"rows": [{"values", "fact"}], "count", "total", "exists", "facts": [{"predicate", "args", "rule", "rank",
+"premises"}], "model": {"facts", "rounds"}, "certificate"}`. The rows are the facts of the query's predicate that match
+the query (its constants, and a variable repeated in it, alike), ascending, up to `max_results` (more is an
+`output_limit` interruption whose `total` is still exact); `answer: count` and `exists` list none. With `derivations`,
+each row names its derivation (`fact`, an index into `facts`), and `facts` lists every derived fact those derivations
+use, by (rank, predicate, arguments), each premise `{"fact": index}` (an earlier fact) or `{"input": predicate,
+"args"}` (a record). With `certificate: true`, a complete answer lists the whole least model in `facts`, and
+`certificate` is `{"kind": "least_model"}`: every listed fact derived, and every rule, fired over the inputs and the
+listed facts, deriving only listed facts, so they are the least model and the rows all of the query's matches. An
+`output_limit` interruption keeps the exact total but not the certificate. Without `derivations`, rows name no fact
+(`fact` null), with or without the certificate. An
+interruption keeps the facts of the rounds completed: every row listed is derived, but `total` and `model` are null and
+absence is unknown (a later round may find a fact that sorts first).
+
+Transitive closure over 2,600 random edges among 2,000 nodes (583,630 facts in 60 rounds) takes 1.8 s, 4.7 s with the
+whole model as certificate (10 s to check); networkx's `transitive_closure`, which proves nothing, 0.5 s. A naive
+fixpoint takes 39 s for the 14,528 facts of 300 nodes, where semi-naive evaluation takes 0.03 s.
+
 **Reachability between pairs.** Whether each source reaches its target in scope, for many pairs at once: provenance
 checks, dependency questions asked again and again of one projection. A node reaches itself, by the empty walk. The
 answer comes from a 2-hop index (Cohen, Halperin, Kaplan and Zwick, 2003): for each node, the hubs it reaches (its
@@ -908,8 +956,8 @@ node): a set holding the source and not the target, from which every hop in scop
 verifies against the records.
 
 The index pays when it is reused, or when many pairs reach far: on a random graph of 100,000 nodes and 300,000 edges
-(one giant strong component, 390,000 label entries), 10,000 pairs take 1.5 s with the build and 0.4 s with the index
-kept. Labels stay small when some nodes are hubs; a random layered DAG without hubs (100,000 nodes, 46 million
+(one giant strong component, 390,000 label entries), 10,000 pairs take 1.2 s with the build and 0.33 s with the
+index kept (networkx's `has_path`, pair by pair, 1.6 s). Labels stay small when some nodes are hubs; a random layered DAG without hubs (100,000 nodes, 46 million
 entries) takes minutes to index, then answers 10,000 pairs in 0.3 s. Where most pairs are unreachable and reach sets
 are small, a search per pair is cheaper than any index.
 
@@ -1028,6 +1076,11 @@ The result contract reports how an execution ended. It carries no scientific ans
     empty
   - for k shortest paths, each path's hops chaining in scope from a source to a target, no node twice, at the exact
     cost of its hops; the paths distinct and in the strict order; k of them unless `exhausted`
+  - for Datalog, each listed fact's derivation: its rule, its head and every body atom matching the fact and its
+    premises under one substitution, each premise a record (with the hierarchies) or an earlier fact of lower rank;
+    each row a match of the query with that derivation; from the certificate, every rule fired over the inputs and the
+    listed facts deriving only listed facts, and a complete answer's rows the first matches of the query among them;
+    a closure check that would read more than five million facts stops and reports the certificate not checked
   - for reachability between pairs, the request's pairs in order (a prefix when interrupted), a node reaching itself,
     each reachable pair's witness a path in scope from its source to its target, no node twice; from the certificate,
     each closure holding its source and none of the targets it is said not to reach, and closed under every hop in
@@ -1125,7 +1178,8 @@ pieces it spans, as `verify_result` checks them); an edit that breaks any of the
 full.
 
 Components, biconnectivity, a maximum flow, a minimum-cost flow, a matching, dominators, incidence, critical paths,
-d-separation, cycle bases, reachability between pairs and support are revalidated by their certificates, which
+d-separation, cycle bases, reachability between pairs, Datalog and support are revalidated by their certificates,
+which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
 kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest

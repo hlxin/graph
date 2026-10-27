@@ -29,8 +29,8 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import (algebra, causal, cycles, dominators, flows, forest, kpaths, mincost, paths, ranking, reachindex,
-               schedule, structure)
+from . import (algebra, causal, cycles, datalog, dominators, flows, forest, kpaths, mincost, paths, ranking,
+               reachindex, schedule, structure)
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -339,6 +339,13 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.certificate = req["certificate"]
         plan.x, plan.y, plan.given = _nodes(p, req["x"], "x"), _nodes(p, req["y"], "y"), _nodes(p, req["given"], "given")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "datalog":
+        plan.answer, plan.derivations, plan.certificate = req["answer"], req["derivations"], req["certificate"]
+        plan.rules = [SimpleNamespace(index=k, id=r["id"], plans={},
+                                      head=(r["head"]["predicate"], [datalog._term(a) for a in r["head"]["args"]]),
+                                      body=[(b["predicate"], [datalog._term(a) for a in b["args"]]) for b in r["body"]])
+                      for k, r in enumerate(req["program"])]
+        plan.query = (req["query"]["predicate"], [datalog._term(a) for a in req["query"]["args"]])
     elif op == "reachability_pairs":
         plan.certificate, plan.witnesses = req["certificate"], req["witnesses"]
         _nodes(p, sorted({x[end] for x in req["pairs"] for end in ("source", "target")}), "pairs")    # they exist
@@ -2651,4 +2658,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "min_cost_flow": (lambda p, plan, ctl: mincost.search(p, plan, ctl),
                                  lambda p, plan, st: mincost.answer(p, plan, st)),
                "reachability_pairs": (lambda p, plan, ctl: reachindex.search(p, plan, ctl),
-                                      lambda p, plan, st: reachindex.answer(p, plan, st))}
+                                      lambda p, plan, st: reachindex.answer(p, plan, st)),
+               "datalog": (lambda p, plan, ctl: datalog.search(p, plan, ctl),
+                           lambda p, plan, st: datalog.answer(p, plan, st))}

@@ -11447,6 +11447,448 @@
     "status": "failed",
     "error_code": "unknown_node"
    }
+  },
+  {
+   "name": "datalog-transitive-closure",
+   "covers": [
+    "datalog",
+    "recursion",
+    "derivations",
+    "least model certificate"
+   ],
+   "graph": "G24",
+   "request": {
+    "operation": "datalog",
+    "program": [
+     {
+      "id": "base",
+      "head": {
+       "predicate": "reach",
+       "args": [
+        "?x",
+        "?y"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "edge",
+        "args": [
+         "?e",
+         "?x",
+         "?y",
+         "R"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "step",
+      "head": {
+       "predicate": "reach",
+       "args": [
+        "?x",
+        "?z"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "reach",
+        "args": [
+         "?x",
+         "?y"
+        ]
+       },
+       {
+        "predicate": "edge",
+        "args": [
+         "?e",
+         "?y",
+         "?z",
+         "R"
+        ]
+       }
+      ]
+     }
+    ],
+    "query": {
+     "predicate": "reach",
+     "args": [
+      "a",
+      "?y"
+     ]
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "total": 4,
+    "exists": true,
+    "count": 4,
+    "model_facts": 13,
+    "datalog_rows": [
+     [
+      "a",
+      "a"
+     ],
+     [
+      "a",
+      "b"
+     ],
+     [
+      "a",
+      "c"
+     ],
+     [
+      "a",
+      "d"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "datalog-who-reaches-d",
+   "covers": [
+    "datalog",
+    "a constant in the query's last place"
+   ],
+   "graph": "G24",
+   "request": {
+    "operation": "datalog",
+    "program": [
+     {
+      "id": "base",
+      "head": {
+       "predicate": "reach",
+       "args": [
+        "?x",
+        "?y"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "edge",
+        "args": [
+         "?e",
+         "?x",
+         "?y",
+         "R"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "step",
+      "head": {
+       "predicate": "reach",
+       "args": [
+        "?x",
+        "?z"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "reach",
+        "args": [
+         "?x",
+         "?y"
+        ]
+       },
+       {
+        "predicate": "edge",
+        "args": [
+         "?e",
+         "?y",
+         "?z",
+         "R"
+        ]
+       }
+      ]
+     }
+    ],
+    "query": {
+     "predicate": "reach",
+     "args": [
+      "?x",
+      "d"
+     ]
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "total": 4,
+    "exists": true,
+    "datalog_rows": [
+     [
+      "a",
+      "d"
+     ],
+     [
+      "b",
+      "d"
+     ],
+     [
+      "c",
+      "d"
+     ],
+     [
+      "x",
+      "d"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "datalog-on-a-cycle",
+   "covers": [
+    "datalog",
+    "a repeated query variable",
+    "count"
+   ],
+   "graph": "G24",
+   "request": {
+    "operation": "datalog",
+    "program": [
+     {
+      "id": "base",
+      "head": {
+       "predicate": "reach",
+       "args": [
+        "?x",
+        "?y"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "edge",
+        "args": [
+         "?e",
+         "?x",
+         "?y",
+         "R"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "step",
+      "head": {
+       "predicate": "reach",
+       "args": [
+        "?x",
+        "?z"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "reach",
+        "args": [
+         "?x",
+         "?y"
+        ]
+       },
+       {
+        "predicate": "edge",
+        "args": [
+         "?e",
+         "?y",
+         "?z",
+         "R"
+        ]
+       }
+      ]
+     }
+    ],
+    "query": {
+     "predicate": "reach",
+     "args": [
+      "?x",
+      "?x"
+     ]
+    },
+    "answer": "count",
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "total": 3,
+    "exists": true,
+    "count": 0,
+    "datalog_rows": []
+   }
+  },
+  {
+   "name": "datalog-types-and-a-join",
+   "covers": [
+    "datalog",
+    "type input",
+    "three-way join"
+   ],
+   "graph": "G12",
+   "request": {
+    "operation": "datalog",
+    "query": {
+     "predicate": "supports",
+     "args": [
+      "claim",
+      "?d"
+     ]
+    },
+    "program": [
+     {
+      "id": "via-measurement",
+      "head": {
+       "predicate": "supports",
+       "args": [
+        "?c",
+        "?d"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "type",
+        "args": [
+         "?c",
+         "Claim"
+        ]
+       },
+       {
+        "predicate": "edge",
+        "args": [
+         "?s",
+         "?c",
+         "?m",
+         "SUPPORTED_BY"
+        ]
+       },
+       {
+        "predicate": "edge",
+        "args": [
+         "?i",
+         "?m",
+         "?d",
+         "IN"
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 2,
+    "exists": true,
+    "model_facts": 2,
+    "datalog_rows": [
+     [
+      "claim",
+      "d1"
+     ],
+     [
+      "claim",
+      "d2"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "datalog-stated-fact-and-output-limit",
+   "covers": [
+    "datalog",
+    "a rule without a body",
+    "output limit"
+   ],
+   "graph": "G24",
+   "request": {
+    "operation": "datalog",
+    "query": {
+     "predicate": "from_a",
+     "args": [
+      "?y"
+     ]
+    },
+    "limits": {
+     "max_results": 2
+    },
+    "program": [
+     {
+      "id": "seed",
+      "head": {
+       "predicate": "start",
+       "args": [
+        "a"
+       ]
+      },
+      "body": []
+     },
+     {
+      "id": "first",
+      "head": {
+       "predicate": "from_a",
+       "args": [
+        "?y"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "start",
+        "args": [
+         "?x"
+        ]
+       },
+       {
+        "predicate": "edge",
+        "args": [
+         "?e",
+         "?x",
+         "?y",
+         "R"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "more",
+      "head": {
+       "predicate": "from_a",
+       "args": [
+        "?z"
+       ]
+      },
+      "body": [
+       {
+        "predicate": "from_a",
+        "args": [
+         "?y"
+        ]
+       },
+       {
+        "predicate": "edge",
+        "args": [
+         "?e",
+         "?y",
+         "?z",
+         "R"
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "total": 4,
+    "exists": true,
+    "count": 2,
+    "datalog_rows": [
+     [
+      "a"
+     ],
+     [
+      "b"
+     ]
+    ]
+   }
   }
  ]
 }
