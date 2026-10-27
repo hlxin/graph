@@ -195,3 +195,22 @@ def test_the_contract_alone_refuses_a_misordered_or_repeated_list():
         assert contract_problems(data)
         with pytest.raises(ValueError):
             Result.from_dict(data)
+
+
+def test_a_second_path_costs_about_what_the_first_does():
+    """k = 2 on an 8,000-node chain (a deep Codex review's case): there is no second path, but every spur rebuilt its
+    root, its cost, its avoided nodes and its full key, and compared it with every accepted path (9.4 s, against
+    0.1 s for k = 1). The root now grows by one hop per spur."""
+    import time
+    n = 8000
+    nodes = [f"v{i:05d}" for i in range(n)]
+    edges = [{"id": f"e{i:05d}", "source": nodes[i], "target": nodes[i + 1], "relation": "R"} for i in range(n - 1)]
+    p = Projection.build(nodes=nodes, edges=edges)
+    took = {}
+    for k in (1, 2):
+        start = time.perf_counter()
+        res = execute(p, p.request("k_shortest_paths", sources=[nodes[0]], targets=[nodes[-1]],
+                                   scope=[("R", "forward")], k=k))
+        took[k] = time.perf_counter() - start
+    assert res.status == COMPLETED and res.answer["count"] == 1 and res.answer["exhausted"] is True
+    assert took[2] < 3 * took[1] + 0.5, took

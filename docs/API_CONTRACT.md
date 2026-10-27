@@ -334,7 +334,8 @@ each scan, is one expansion. A source that is a target is not answered at cost 0
 - **An optimum** (`negative_cycle` null): `found` and `optimal` true, the least cost, and as witness the least-cost
   walk with the fewest hops, the first a breadth-first search finds from the sources at cost 0 (in ascending ID)
   over the hops whose cost is the difference of their ends' least costs, in canonical order (a choice that depends
-  on the costs alone). The target is the cheapest, ties by node ID.
+  on the costs alone). The target is the cheapest, ties by node ID. Each node that breadth-first search expands is
+  one expansion too: a budget it runs out leaves the answer interrupted, with what the search knew.
 - **A negative cycle** on a walk from a source to a target: no walk is cheapest. `found` true, `optimal` false,
   `cost`, `witness` and `certificate` null, and `negative_cycle` `{"lead_in", "cycle", "lead_out"}`: three walks
   (`{"source", "target", "length", "hops"}`, hops as a witness's), from a source to the cycle's start, around the
@@ -1228,7 +1229,8 @@ The result contract reports how an execution ended. It carries no scientific ans
     type using one hop to each distinct input; one: any other node) and every use as a hop in scope; and the
     certificate's conditions at every node of the targets' region, which it finds from the records
   - for personalized PageRank, from its certificate: every residual recomputed exactly from the estimates and the
-    records' hops, none negative, and the intervals, residual and certified prefix exactly those they prove
+    records' hops, none negative, the intervals, residual and certified prefix exactly those they prove, and no node
+    with a positive estimate left out that outranks a listed one by lower bound (or fits within `top`)
   - for components, every listed component's edge count and flags recounted from the records; and from a certificate,
     each group's tree hops (a spanning tree of the group from its first node), the groups disjoint, closed and
     (strong) in an order no hop goes back in, each listed component one of them, and a complete answer's groups

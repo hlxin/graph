@@ -264,3 +264,18 @@ def test_a_total_beyond_the_floats_is_written_exactly():
     assert Result.from_dict(res.to_dict()).result_id == res.result_id
     q = Projection.build(nodes=nodes + ["c"], edges=edges)
     assert revalidate(res, q).verdict == HOLDS             # an isolated node: the rank stays 2 - 3 + 2 = 1
+
+
+def test_reading_a_cycle_costs_its_edges_not_every_edge_index():
+    """One loop in scope among 320,000 out of scope (a deep Codex review's case): a cycle's edge bitset was read bit
+    by bit up to its highest edge index, quadratic in the edges out of scope (0.52 s at 80,000)."""
+    import time
+    m = 320_000
+    edges = [{"id": f"a{i:06d}", "source": "x", "target": "x", "relation": "OUT"} for i in range(m)]
+    edges.append({"id": "z", "source": "x", "target": "x", "relation": "IN"})
+    p = Projection.build(nodes=["x"], edges=edges)
+    start = time.perf_counter()
+    res = execute(p, p.request("cycle_basis", scope=[("IN", "forward")], certificate=True,
+                               limits={"max_expansions": 3}))
+    assert time.perf_counter() - start < 1
+    assert res.status == COMPLETED and [c["edges"] for c in res.answer["cycles"]] == [("z",)]

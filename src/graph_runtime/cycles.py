@@ -132,12 +132,13 @@ def _lightest_odd(s: set, adjacent: list, src: Any, dst: Any, weight: Any, ctl: 
 
 
 def _members(bits: int) -> list[int]:
-    out, ei = [], 0
+    """The edges a bitset holds, ascending: its set bits, lowest first (not every position below the highest: a
+    cycle's bits sit among every edge index, in scope or not)."""
+    out = []
     while bits:
-        if bits & 1:
-            out.append(ei)
-        bits >>= 1
-        ei += 1
+        low = bits & -bits
+        out.append(low.bit_length() - 1)
+        bits ^= low
     return out
 
 

@@ -220,3 +220,36 @@ def test_an_unrelated_edit_does_not_read_the_whole_certificate():
             if key in cert:
                 cert[key] = Unread(cert[key])
         assert revalidate(data, q, diff=diff(p, q)).verdict == HOLDS
+
+
+def test_the_fewest_hop_witness_is_charged_and_polled():
+    """A chain of 100 nodes at cost -1 (a deep Codex review's case): after the search, the walk of fewest hops among
+    the least-cost ones was a breadth-first search the budget never saw, so 300 expansions completed, and a
+    cancellation as it began went unheard. Now each node it expands is one expansion."""
+    from graph_runtime import CancelToken
+    n = 100
+    nodes = [f"n{i:03d}" for i in range(n)]
+    edges = [{"id": f"e{i:03d}", "source": nodes[i], "target": nodes[i + 1], "relation": "R"} for i in range(n - 1)]
+    p = Projection.build(nodes=nodes, edges=edges)
+
+    def request(limit):
+        return p.request("shortest_path", sources=["n000"], targets=["n099"], scope=[("R", "forward")],
+                         costs={"by_relation": {"R": -1}}, certificate=True, limits={"max_expansions": limit})
+    res = execute(p, request(300))
+    assert res.status == INTERRUPTED and res.answer["optimal"] is not True
+    assert verify_result(res, nodes=nodes, edges=edges) == []
+    full = execute(p, request(1000))
+    assert full.status == COMPLETED and full.answer["cost"] == -99 and full.stats["expansions"] > 300
+    assert execute(p, request(full.stats["expansions"] - 1)).status == INTERRUPTED
+    import graph_runtime.engine as engine
+    token, original = CancelToken(), engine._tight_walk
+
+    def cancelled_first(*args):
+        token.cancel()
+        return original(*args)
+    engine._tight_walk = cancelled_first
+    try:
+        res = execute(p, request(1000), cancel=token, check_interval=1)
+    finally:
+        engine._tight_walk = original
+    assert res.status == INTERRUPTED and res.interruption["reason"] == "cancelled"

@@ -227,3 +227,20 @@ def test_a_batch_answers_each_request_in_order(kit):
     full = kit.call("graph_batch", {"projection": p, "view": "full", "requests": [
         {"operation": "reachability", "sources": ["n00"], "scope": [["R", "forward"]], "max_depth": 1}]})
     assert full["results"][0]["answer"]["count"] == 2
+
+
+def test_summaries_carry_a_negative_cycle_and_a_matching_cost():
+    """A deep Codex review's cases: an unbounded shortest path summarized as found with nothing else, and a
+    weighted matching's cost left out."""
+    from graph_runtime import Projection, execute
+    from graph_runtime.tools import summarize
+    p = Projection.build(nodes=["s"], edges=[{"id": "e", "source": "s", "target": "s", "relation": "R"}])
+    res = execute(p, p.request("shortest_path", sources=["s"], targets=["s"], scope=[("R", "forward")],
+                               costs={"by_relation": {"R": -1}}))
+    assert res.answer["negative_cycle"] is not None
+    assert summarize(res)["summary"]["negative_cycle"] == {"cost": -1, "edges": ["e"], "more": False}
+    p = Projection.build(nodes=["l", "r"], edges=[{"id": "e", "source": "l", "target": "r", "relation": "R"}])
+    res = execute(p, p.request("matching", left={"nodes": ["l"]}, scope=[("R", "forward")],
+                               costs={"by_edge": {"e": -0.5}}))
+    summary = summarize(res)["summary"]
+    assert summary["cost"] == -0.5 and summary["cost_exact"] == "-1/2"

@@ -195,3 +195,26 @@ def test_alpha_is_a_probability_strictly_between_0_and_1(alpha):
     res = execute(p, {"operation": "personalized_pagerank", "projection": p.identity, "sources": ["a"],
                       "scope": [("R", "forward")], "alpha": alpha})
     assert res.status == "failed" and res.error["code"] == "invalid_request"
+
+
+def test_a_listed_node_outranked_by_an_unlisted_one_is_refused():
+    """a -> b with alpha 3/4 and top 1 (a deep Codex review's case): a's PageRank is 3/4 and b's 3/16. Listing b
+    instead of a, with its true interval and nothing certified, passed every check: the intervals hold, but b is
+    not the top node by lower bound."""
+    import copy
+    from graph_runtime._canonical import thaw
+    from test_certificates import reseal
+    nodes, edges = ["a", "b"], [{"id": "e", "source": "a", "target": "b", "relation": "R"}]
+    p = Projection.build(nodes=nodes, edges=edges)
+    res = execute(p, p.request("personalized_pagerank", sources=["a"], scope=[("R", "forward")], alpha="3/4", top=1,
+                               certificate=True))
+    assert [e["node"] for e in res.answer["ranked"]] == ["a"] and verify_result(res, nodes=nodes, edges=edges) == []
+    data = copy.deepcopy(thaw(res.to_dict()))
+    data["answer"]["ranked"] = [{"node": "b", "lower": 0.1875, "upper": 0.1875, "lower_exact": "3/16",
+                                 "upper_exact": "3/16"}]
+    data["answer"]["certified_top"] = 0
+    problems = verify_result(reseal(data), nodes=nodes, edges=edges)
+    assert any("outranks a ranked node" in x for x in problems), problems
+    data = copy.deepcopy(thaw(res.to_dict()))
+    data["request"] = {**data["request"], "top": 2}
+    assert verify_result(reseal(data), nodes=nodes, edges=edges)          # b fits within top 2 but is left out
