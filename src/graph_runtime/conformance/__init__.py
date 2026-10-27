@@ -301,6 +301,14 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             problems.append(f"flow {got}, value {answer.get('value')}, cost {answer.get('cost')}, feasible "
                             f"{answer.get('feasible')}; expected {exp['flow_amounts']}, {exp['flow_value']}, "
                             f"{exp['flow_cost']}, {exp['feasible']}")
+    if "datalog_rows" in exp:                               # Datalog: the query's facts, ascending, up to max_results
+        got = [list(r["values"]) for r in answer.get("rows") or []]
+        want = exp["datalog_rows"]
+        if (got != want) if (done or exp.get("interruption") == "output_limit") else any(r not in want for r in got):
+            problems.append(f"rows {got}, expected {want}")
+        if "model_facts" in exp and done and (answer.get("model") or {}).get("facts") != exp["model_facts"]:
+            problems.append(f"the model has {(answer.get('model') or {}).get('facts')} facts, expected "
+                            f"{exp['model_facts']}")
     if "pairs_reachable" in exp:                            # pairs: each decided; a prefix when interrupted
         got = {f"{x['source']}->{x['target']}": x["reachable"] for x in answer.get("pairs") or []}
         want = exp["pairs_reachable"]

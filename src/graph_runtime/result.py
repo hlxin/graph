@@ -459,6 +459,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_mincost_problems(request, answer, status))
     elif op == "reachability_pairs":
         out.extend(_pairs_problems(request, answer, status))
+    elif op == "datalog":
+        out.extend(_datalog_problems(request, answer, status, data.get("interruption")))
     elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
         nc = answer["negative_cycle"]
         start = nc["cycle"]["source"]
@@ -1391,6 +1393,61 @@ def _mincost_problems(request: dict, answer: dict, status: str) -> list[str]:
             out.append("a cut comes exactly when the flow claims to be a maximum one")
         elif side is not None and side != sorted(set(side)):
             out.append("the cut's source side is unique, in ascending ID")
+    return out
+
+
+def _datalog_problems(request: dict, answer: dict, status: str, interruption: dict | None) -> list[str]:
+    """A Datalog answer's own consistency, read without the records: rows distinct and ascending, counted, at most
+    max_results and only for answer rows; total and exists known exactly when the evaluation finished (an output
+    limit finishes it); each row naming its fact exactly when derivations are asked for; facts distinct, in the order
+    of (rank, predicate, arguments), each premise an input or an earlier fact of lower rank; the model's size and
+    rounds when finished; the certificate only on a finished answer that asked for it, with the whole model listed."""
+    out = []
+    rows, total, exists, facts = answer["rows"], answer["total"], answer["exists"], answer["facts"]
+    values = [tuple(r["values"]) for r in rows]
+    finished = status == COMPLETED or (interruption or {}).get("reason") == "output_limit"
+    if answer["count"] != len(rows) or any(a >= b for a, b in zip(values, values[1:])):
+        out.append("count is the number of rows, which are distinct and ascending")
+    if request["answer"] != "rows" and rows:
+        out.append(f"an answer of {request['answer']} lists no rows")
+    if len(rows) > request["limits"]["max_results"]:
+        out.append("more rows than max_results")
+    if finished:
+        if type(total) is not int or exists is not (total > 0):
+            out.append("a finished answer gives its total, and exists says whether it is positive")
+        elif request["answer"] == "rows" and len(rows) != min(total, request["limits"]["max_results"]):
+            out.append("a finished answer lists its first rows, up to max_results")
+        elif (status != COMPLETED) != (request["answer"] == "rows" and total > request["limits"]["max_results"]):
+            out.append("an output limit is reached exactly when the total exceeds max_results")
+        if answer["model"] is None:
+            out.append("a finished answer gives the model's size and rounds")
+    else:
+        if total is not None or exists is False or (rows and exists is not True) or answer["model"] is not None:
+            out.append("an interrupted answer knows no total, no model and no absence")
+    keys = [(f["rank"], f["predicate"], tuple(f["args"])) for f in facts]
+    if any(a >= b for a, b in zip(keys, keys[1:])):
+        out.append("the facts are distinct, in the order of (rank, predicate, arguments)")
+    for i, f in enumerate(facts):
+        for prem in f["premises"]:
+            k = prem.get("fact")
+            if k is not None and not (k < i and facts[k]["rank"] < f["rank"]):
+                out.append(f"fact {i}: a premise comes before it, at a lower rank")
+                break
+    for r in rows:
+        k = r["fact"]
+        if request["derivations"] != (k is not None) or (k is not None and (
+                k >= len(facts) or (facts[k]["predicate"], facts[k]["args"]) != (request["query"]["predicate"],
+                                                                                   r["values"]))):
+            out.append("a row names its derivation's fact exactly when derivations are asked for")
+            break
+    cert = answer["certificate"]
+    if cert is not None and (status != COMPLETED or not request["certificate"]
+                             or answer["model"] is None or len(facts) != answer["model"]["facts"]):
+        out.append("a certificate comes only with a complete answer that asked for it, listing the whole model")
+    if cert is None and status == COMPLETED and request["certificate"]:
+        out.append("a complete answer gives the certificate it was asked for")
+    if not request["derivations"] and cert is None and facts:
+        out.append("facts are listed only for derivations or the certificate")
     return out
 
 

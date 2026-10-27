@@ -5211,6 +5211,189 @@
             }
           },
           "description": "reachability_pairs: whether each source reaches its target in scope, from a 2-hop index of the projection and the scope; a simple path for each reachable pair (witnesses), the closure of each unreachable pair's source (certificate)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "program",
+            "query",
+            "answer",
+            "derivations",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "datalog"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_sets"
+            },
+            "program": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "head",
+                  "body"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "head": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "predicate",
+                      "args"
+                    ],
+                    "properties": {
+                      "predicate": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "const"
+                              ],
+                              "properties": {
+                                "const": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "body": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "predicate",
+                        "args"
+                      ],
+                      "properties": {
+                        "predicate": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "args": {
+                          "type": "array",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "const"
+                                ],
+                                "properties": {
+                                  "const": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "query": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "predicate",
+                "args"
+              ],
+              "properties": {
+                "predicate": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "const"
+                        ],
+                        "properties": {
+                          "const": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "answer": {
+              "enum": [
+                "rows",
+                "count",
+                "exists"
+              ]
+            },
+            "derivations": {
+              "type": "boolean"
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "datalog: a positive, range-restricted program over the inputs node(N), type(N, T) and edge(E, S, T, R); the query's facts in its least model, each with a derivation, and on request the whole model as certificate."
         }
       ]
     },
@@ -5768,7 +5951,8 @@
                   "cycle_basis",
                   "k_shortest_paths",
                   "min_cost_flow",
-                  "reachability_pairs"
+                  "reachability_pairs",
+                  "datalog"
                 ]
               }
             }
@@ -7083,6 +7267,49 @@
             "properties": {
               "operation": {
                 "const": "reachability_pairs"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "datalog"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/datalog_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "datalog"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "datalog"
               }
             }
           }
@@ -8726,6 +8953,184 @@
         }
       },
       "description": "Each pair decided, in the request's order (a prefix when interrupted), with a simple path as witness when reachable; how many pairs and how many reachable; the index's label entries and its largest pair of labels (null until built); and the certificate: the closure of each unreachable pair's source."
+    },
+    "datalog_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows",
+        "count",
+        "total",
+        "exists",
+        "facts",
+        "model",
+        "certificate"
+      ],
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "values",
+              "fact"
+            ],
+            "properties": {
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fact": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "exists": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "predicate",
+              "args",
+              "rule",
+              "rank",
+              "premises"
+            ],
+            "properties": {
+              "predicate": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rule": {
+                "type": "string"
+              },
+              "rank": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "premises": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "fact"
+                      ],
+                      "properties": {
+                        "fact": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "input",
+                        "args"
+                      ],
+                      "properties": {
+                        "input": {
+                          "enum": [
+                            "node",
+                            "type",
+                            "edge"
+                          ]
+                        },
+                        "args": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "model": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "facts",
+                "rounds"
+              ],
+              "properties": {
+                "facts": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "least_model"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "The query's matching facts in the least model (ascending, up to max_results), their total and whether any exists (null when interrupted), the facts their derivations use (or, with the certificate, the whole model) in rank order, each with its rule and premises, and the model's size and rounds."
     }
   }
 }

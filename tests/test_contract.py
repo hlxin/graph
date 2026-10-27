@@ -484,6 +484,21 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 want = oracle(g['edges'], r['sources'], r['targets'], r['scope'], r.get('capacities'), r['costs'],
                               None)
             assert (exp['flow_value'], exp['flow_cost']) == want, case['name']
+        elif op == 'datalog':
+            from test_datalog import matches, naive_model
+            model = naive_model(g['nodes'], g['edges'], r['program'], rp)
+            want = matches(model, r['query'])
+            if exp.get('total') is not None:
+                assert exp['total'] == len(want), case['name']
+            if 'datalog_rows' in exp:
+                limit = (r.get('limits') or {}).get('max_results', 10 ** 9) if r.get('answer', 'rows') == 'rows' else 0
+                assert exp['datalog_rows'] == (want[:limit] if exp['status'] == 'completed'
+                                               or exp.get('interruption') == 'output_limit'
+                                               else exp['datalog_rows']), case['name']
+                assert all(row in want for row in exp['datalog_rows']), case['name']
+            if 'model_facts' in exp:
+                derived = {x['head']['predicate'] for x in r['program']}
+                assert exp['model_facts'] == sum(len(model[q]) for q in derived), case['name']
         elif op == 'reachability_pairs':
             from test_reachability_pairs import reaches
             closure = reaches(g['nodes'], g['edges'], r['scope'])

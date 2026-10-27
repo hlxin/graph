@@ -118,6 +118,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.min_cost_flow(request, answer, status)
         elif op == "reachability_pairs":
             check.reachability_pairs(request, answer, status)
+        elif op == "datalog":
+            check.datalog(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -250,6 +252,13 @@ def _nearest(x: Fraction) -> float | None:
         return None
 
 
+DATALOG_CHECK_READS = 5_000_000           # the facts a Datalog closure check reads before it gives up and says so
+
+
+class _TooLarge(Exception):
+    """A Datalog closure check would read more than DATALOG_CHECK_READS facts."""
+
+
 class _Checker:
     def __init__(self, problems: list[str], edge_of: Mapping, types_of: Mapping, relation_up: dict):
         self.problems, self.edge_of, self.types_of, self.relation_up = problems, edge_of, types_of, relation_up
@@ -366,6 +375,215 @@ class _Checker:
             elif not key[eid] > heaviest(s, t):
                 self.bad(f"the link {eid} comes before an edge of the tree path between its ends: a lighter forest "
                          "(or one earlier in edge ID) keeps it")
+
+    def datalog(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """Each listed fact's derivation against the records: its rule, its head matching the fact and each body atom
+        matching its premise under one substitution, each premise an input fact the records hold (node, type with
+        the hierarchy, edge with every relation above its own) or a fact listed before it at a lower rank; each row
+        a fact of the query's predicate matching the query, with that derivation when derivations are asked for.
+        With the certificate (the whole model): every rule, fired over the inputs and the listed facts, derives only
+        listed facts, so they are the least model, and a complete answer lists every match of the query in it."""
+        def term(x: Any) -> tuple:
+            if isinstance(x, Mapping):
+                return ("c", x.get("const"))
+            return ("v", x) if isinstance(x, str) and x.startswith("?") else ("c", x)
+        rules = {r["id"]: ((r["head"]["predicate"], [term(a) for a in r["head"]["args"]]),
+                           [(b["predicate"], [term(a) for a in b["args"]]) for b in r["body"]])
+                 for r in request["program"]}
+        def holds(pred: str, args: tuple) -> bool:
+            """An input fact, read from the records directly."""
+            if pred == "node":
+                return len(args) == 1 and args[0] in self.types_of
+            if pred == "type":
+                return len(args) == 2 and args[1] in self.types_of.get(args[0], ())
+            if pred == "edge" and len(args) == 4:
+                rec = self.edge_of.get(args[0])
+                return rec is not None and rec[:2] == args[1:3] and (
+                    args[3] == rec[2] or args[3] in self.relation_up.get(rec[2], ()))
+            return False
+
+        def unify(sub: dict, atom: tuple, args: tuple) -> bool:
+            if len(atom[1]) != len(args):
+                return False
+            for (kind, x), v in zip(atom[1], args):
+                if kind == "c":
+                    if x != v:
+                        return False
+                elif sub.setdefault(x, v) != v:
+                    return False
+            return True
+        facts = list(answer.get("facts") or ())
+        known: dict = {}
+        for i, f in enumerate(facts):
+            where = f"fact {i}"
+            item = (f.get("predicate"), tuple(f.get("args") or ()))
+            if item in known:
+                self.bad(f"{where}: listed twice")
+                return
+            known[item] = i
+            rule = rules.get(f.get("rule"))
+            premises = list(f.get("premises") or ())
+            if rule is None or rule[0][0] != item[0] or len(premises) != len(rule[1]):
+                self.bad(f"{where}: rule {f.get('rule')!r} does not derive {item[0]!r} from {len(premises)} premises")
+                continue
+            sub: dict = {}
+            ok = unify(sub, rule[0], item[1])
+            for atom, prem in zip(rule[1], premises):
+                if "fact" in prem:
+                    k = prem["fact"]
+                    if not (isinstance(k, int) and 0 <= k < i) or facts[k].get("predicate") != atom[0] \
+                            or not facts[k].get("rank", 0) < f.get("rank", 0):
+                        self.bad(f"{where}: a premise is not a {atom[0]} fact listed before it at a lower rank")
+                        ok = False
+                        break
+                    args = tuple(facts[k].get("args") or ())
+                else:
+                    args = tuple(prem.get("args") or ())
+                    if prem.get("input") != atom[0] or not holds(atom[0], args):
+                        self.bad(f"{where}: the input {atom[0]}{args} is not in the records")
+                        ok = False
+                        break
+                ok = ok and unify(sub, atom, args)
+            if not ok:
+                self.bad(f"{where}: its rule, with one substitution, does not give it from its premises")
+        qpred, qterms = request["query"]["predicate"], [term(a) for a in request["query"]["args"]]
+
+        def matches(args: tuple) -> bool:
+            return unify({}, (qpred, qterms), args)
+        rows = list(answer.get("rows") or ())
+        values = [tuple(r.get("values") or ()) for r in rows]
+        if any(a >= b for a, b in zip(values, values[1:])) or not all(matches(v) for v in values):
+            self.bad("the rows are distinct facts matching the query, in ascending order")
+        for r, v in zip(rows, values):
+            k = r.get("fact")
+            if request["derivations"]:
+                if not (isinstance(k, int) and 0 <= k < len(facts)) or (facts[k].get("predicate"),
+                                                                         tuple(facts[k].get("args") or ())) != (qpred, v):
+                    self.bad(f"the row {list(v)} names no derivation of itself")
+            elif k is not None:
+                self.bad("rows name derivations only when they are asked for")
+        if self.proof(answer) is None:
+            return
+        budget = [DATALOG_CHECK_READS]                           # what the closure check may read, then it says so
+
+        def spend(k: int) -> None:
+            budget[0] -= k
+            if budget[0] < 0:
+                raise _TooLarge
+        model: dict = {}
+        try:
+            used = {atom[0] for _, body in rules.values() for atom in body}
+            if "node" in used:
+                spend(len(self.types_of))
+                model["node"] = {(n,) for n in self.types_of}
+            if "type" in used:
+                model["type"] = set()
+                for n, types in self.types_of.items():
+                    spend(1 + len(types))
+                    model["type"].update((n, t) for t in types)
+            if "edge" in used:
+                model["edge"] = set()
+                for eid, (src, dst, rel) in self.edge_of.items():
+                    above = self.relation_up.get(rel, ())
+                    spend(1 + len(above))
+                    model["edge"].update((eid, src, dst, r) for r in {rel} | set(above))
+        except _TooLarge:
+            self.bad(f"certificate: closing the model needs more than {DATALOG_CHECK_READS} reads; not checked")
+            return
+        for pred, args in known:
+            model.setdefault(pred, set()).add(args)
+        indexes: dict = {}
+
+        def candidates(pred: str, positions: tuple, key: tuple) -> Any:
+            index = indexes.get((pred, positions))
+            if index is None:
+                facts = model.get(pred, ())
+                spend(len(facts))
+                index = indexes[(pred, positions)] = {}
+                for args in facts:
+                    index.setdefault(tuple(args[k] for k in positions), []).append(args)
+            found = index.get(key, ())
+            spend(len(found))
+            return found
+        try:
+            self._close(rules, model, candidates, unify)
+        except _TooLarge:
+            self.bad(f"certificate: closing the model needs more than {DATALOG_CHECK_READS} reads; not checked")
+            return
+        qmodel = model.get(qpred, ())
+        everything = sorted(a for a in qmodel if matches(a))
+        if status == COMPLETED and (answer.get("total") != len(everything) or values != everything[:len(values)]):
+            self.bad("the rows are the first matches of the query in the model, and total counts them all")
+
+    def _close(self, rules: dict, model: dict, candidates: Any, unify: Any) -> None:
+        """That every rule, fired over the model, derives only facts in it (a problem for the first that does not)."""
+        for rid, (head, body) in rules.items():                 # closed: every binding's head is in the model
+            order, bound, left = [], set(), set(range(len(body)))
+            score = [sum(1 for kind, _ in atom[1] if kind == "c") for atom in body]
+            places: dict = {}
+            for a, atom in enumerate(body):
+                for kind, x in atom[1]:
+                    if kind == "v":
+                        places.setdefault(x, []).append(a)
+            queue = [(-score[a], a) for a in range(len(body))]
+            heapq.heapify(queue)
+            while left:                                         # the atom with the most terms bound next
+                neg, j = heapq.heappop(queue)
+                if j not in left or -neg != score[j]:
+                    continue
+                left.discard(j)
+                order.append((body[j], tuple(k for k, (kind, x) in enumerate(body[j][1])
+                                             if kind == "c" or x in bound)))
+                for kind, x in body[j][1]:
+                    if kind == "v" and x not in bound:
+                        bound.add(x)
+                        for a in places[x]:
+                            if a in left:
+                                score[a] += 1
+                                heapq.heappush(queue, (-score[a], a))
+            s: dict = {}                                        # one substitution, bound and unbound in place
+
+            def opened(depth: int) -> list:
+                atom, positions = order[depth]
+                key = tuple(x if kind == "c" else s[x] for kind, x in (atom[1][k] for k in positions))
+                return [iter(candidates(atom[0], positions, key)), []]      # candidates, variables this level bound
+            frames = [opened(0)] if order else []
+            if not order:
+                head_args = tuple(x for _, x in head[1])
+                if head_args not in model.get(head[0], ()):
+                    self.bad(f"certificate: rule {rid} states {head[0]}{head_args}, which the model leaves out")
+                    return
+            while frames:
+                depth = len(frames) - 1
+                it, mine = frames[depth]
+                for x in mine:
+                    del s[x]
+                mine.clear()
+                args = next(it, None)
+                if args is None:
+                    frames.pop()
+                    continue
+                atom = order[depth][0]
+                ok = len(atom[1]) == len(args)
+                for (kind, x), v in zip(atom[1], args) if ok else ():
+                    if kind == "c":
+                        ok = x == v
+                    elif x in s:
+                        ok = s[x] == v
+                    else:
+                        s[x] = v
+                        mine.append(x)
+                    if not ok:
+                        break
+                if not ok:
+                    continue
+                if depth + 1 < len(order):
+                    frames.append(opened(depth + 1))
+                    continue
+                head_args = tuple(x if kind == "c" else s[x] for kind, x in head[1])
+                if head_args not in model.get(head[0], ()):
+                    self.bad(f"certificate: rule {rid} derives {head[0]}{head_args}, which the model leaves out")
+                    return
 
     def reachability_pairs(self, request: Mapping, answer: Mapping, status: str) -> None:
         """Each pair against the records: the request's pairs in its order (a prefix when interrupted), counted; a
