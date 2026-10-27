@@ -2089,6 +2089,80 @@
     "S"
    ],
    "node_types": []
+  },
+  "G25": {
+   "nodes": [
+    "p1",
+    "p2",
+    "p3",
+    "t1",
+    "t2",
+    "t3",
+    "u1",
+    "u2",
+    "u3"
+   ],
+   "edges": [
+    {
+     "id": "pa",
+     "source": "p1",
+     "target": "p2",
+     "relation": "R"
+    },
+    {
+     "id": "pb",
+     "source": "p2",
+     "target": "p3",
+     "relation": "R"
+    },
+    {
+     "id": "pc",
+     "source": "p3",
+     "target": "p1",
+     "relation": "S"
+    },
+    {
+     "id": "ta",
+     "source": "t1",
+     "target": "t2",
+     "relation": "R"
+    },
+    {
+     "id": "tb",
+     "source": "t2",
+     "target": "t3",
+     "relation": "R"
+    },
+    {
+     "id": "tc",
+     "source": "t3",
+     "target": "t1",
+     "relation": "R"
+    },
+    {
+     "id": "ua",
+     "source": "u2",
+     "target": "u1",
+     "relation": "R"
+    },
+    {
+     "id": "ub",
+     "source": "u1",
+     "target": "u3",
+     "relation": "R"
+    },
+    {
+     "id": "uc",
+     "source": "u3",
+     "target": "u2",
+     "relation": "R"
+    }
+   ],
+   "relations": [
+    "R",
+    "S"
+   ],
+   "node_types": []
   }
  },
  "cases": [
@@ -11886,6 +11960,224 @@
      ],
      [
       "b"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "isomorphism-directed-triangles",
+   "covers": [
+    "isomorphism",
+    "node and edge bijections"
+   ],
+   "graph": "G25",
+   "request": {
+    "operation": "isomorphism",
+    "left": [
+     "t1",
+     "t2",
+     "t3"
+    ],
+    "right": [
+     "u1",
+     "u2",
+     "u3"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     },
+     {
+      "relation": "S",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "isomorphic": true
+   }
+  },
+  {
+   "name": "isomorphism-refinement-separates",
+   "covers": [
+    "isomorphism",
+    "refinement certificate"
+   ],
+   "graph": "G25",
+   "request": {
+    "operation": "isomorphism",
+    "left": [
+     "t1",
+     "t2",
+     "t3"
+    ],
+    "right": [
+     "p1",
+     "p2",
+     "p3"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     },
+     {
+      "relation": "S",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "isomorphic": false,
+    "iso_certificate": {
+     "kind": "refinement",
+     "rounds": 1
+    }
+   }
+  },
+  {
+   "name": "isomorphism-counts-differ",
+   "covers": [
+    "isomorphism",
+    "counts certificate"
+   ],
+   "graph": "G25",
+   "request": {
+    "operation": "isomorphism",
+    "left": [
+     "t1",
+     "t2",
+     "t3"
+    ],
+    "right": [
+     "t1",
+     "t2"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     },
+     {
+      "relation": "S",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "isomorphic": false,
+    "iso_certificate": {
+     "kind": "counts"
+    }
+   }
+  },
+  {
+   "name": "canonical-form-directed-triangle",
+   "covers": [
+    "canonical form",
+    "individualization and refinement"
+   ],
+   "graph": "G25",
+   "request": {
+    "operation": "canonical_form",
+    "nodes": [
+     "t1",
+     "t2",
+     "t3"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     },
+     {
+      "relation": "S",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "canonical_order": [
+     "t1",
+     "t3",
+     "t2"
+    ],
+    "canonical_edges": [
+     [
+      0,
+      2,
+      "R"
+     ],
+     [
+      1,
+      0,
+      "R"
+     ],
+     [
+      2,
+      1,
+      "R"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "canonical-form-undirected-mixed-triangle",
+   "covers": [
+    "canonical form",
+    "undirected",
+    "relations"
+   ],
+   "graph": "G25",
+   "request": {
+    "operation": "canonical_form",
+    "nodes": [
+     "p1",
+     "p2",
+     "p3"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     },
+     {
+      "relation": "S",
+      "direction": "forward"
+     }
+    ],
+    "directed": false
+   },
+   "expect": {
+    "status": "completed",
+    "canonical_order": [
+     "p2",
+     "p1",
+     "p3"
+    ],
+    "canonical_edges": [
+     [
+      0,
+      1,
+      "R"
+     ],
+     [
+      0,
+      2,
+      "R"
+     ],
+     [
+      1,
+      2,
+      "S"
      ]
     ]
    }

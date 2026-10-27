@@ -61,6 +61,10 @@ Operations (docs/API_CONTRACT.md):
 * ``spanning_forest``: ``scope`` (each edge in it a link between its ends, either way), ``weights`` (any finite numbers,
   by relation or by edge; null: every link weighs 1), ``objective`` (``min``, the default, or ``max``); limit
   ``max_expansions``.
+* ``canonical_form``: ``nodes`` (the induced subgraph's), ``scope`` (the edges that count, with their own relations),
+  ``directed`` (default true), ``node_colors`` (``types``, the default, or ``none``); limit ``max_expansions``.
+* ``isomorphism``: ``left``, ``right`` (two node sets), ``scope``, ``directed``, ``node_colors``, ``certificate``; limit
+  ``max_expansions``.
 * ``datalog``: ``program`` (rules ``{id, head, body}``, atoms ``{predicate, args}``, a term ``"?x"`` a variable and any
   other text a constant; positive and range-restricted, over the inputs ``node(N)``, ``type(N, T)`` and ``edge(E, S, T,
   R)``), ``query`` (an atom of a derived predicate), ``answer`` (``rows``, ``count`` or ``exists``), ``derivations``
@@ -101,7 +105,8 @@ OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact"
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
               "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path", "d_separation",
               "spanning_forest", "cycle_basis", "k_shortest_paths", "min_cost_flow", "reachability_pairs",
-              "datalog")
+              "datalog", "canonical_form", "isomorphism")
+NODE_COLORS = ("types", "none")
 DATALOG_INPUTS = {"node": 1, "type": 2, "edge": 4}         # the projection's records, as input predicates
 DATALOG_ARITY = 32                                         # the most arguments a predicate takes
 FOREST_OBJECTIVES = ("min", "max")
@@ -139,7 +144,9 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "k_shortest_paths": ("max_expansions",),
            "min_cost_flow": ("max_expansions",),
            "reachability_pairs": ("max_expansions",),
-           "datalog": ("max_expansions", "max_results")}
+           "datalog": ("max_expansions", "max_results"),
+           "canonical_form": ("max_expansions",),
+           "isomorphism": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -164,7 +171,9 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "k_shortest_paths": (("sources", "targets", "scope"), ("costs", "k")),
            "min_cost_flow": (("sources", "targets", "scope", "costs"), ("capacities", "value", "certificate")),
            "reachability_pairs": (("pairs", "scope"), ("witnesses", "certificate")),
-           "datalog": (("program", "query"), ("answer", "derivations", "certificate"))}
+           "datalog": (("program", "query"), ("answer", "derivations", "certificate")),
+           "canonical_form": (("nodes", "scope"), ("directed", "node_colors")),
+           "isomorphism": (("left", "right", "scope"), ("directed", "node_colors", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -391,6 +400,17 @@ def _normalize_request(raw: Mapping | Request) -> Request:
             raise _fail("invalid_request", f"x, y and given are disjoint; {sorted(overlap)[:10]} is in two of them")
         data["scope"] = _scope(raw["scope"], "scope")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op in ("canonical_form", "isomorphism"):
+        for field in (("nodes",) if op == "canonical_form" else ("left", "right")):
+            data[field] = _ids(raw[field], field)
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["directed"] = _flag(raw.get("directed", True), "directed")
+        colors = raw.get("node_colors", "types")
+        if colors not in NODE_COLORS:
+            raise _fail("invalid_request", f"node_colors is one of {list(NODE_COLORS)}, not {colors!r}")
+        data["node_colors"] = colors
+        if op == "isomorphism":
+            data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "datalog":
         data["program"], data["query"] = _datalog(raw["program"], raw["query"])
         answer = raw.get("answer", "rows")

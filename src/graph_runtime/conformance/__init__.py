@@ -301,6 +301,17 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             problems.append(f"flow {got}, value {answer.get('value')}, cost {answer.get('cost')}, feasible "
                             f"{answer.get('feasible')}; expected {exp['flow_amounts']}, {exp['flow_value']}, "
                             f"{exp['flow_cost']}, {exp['feasible']}")
+    if "isomorphic" in exp and done:                       # isomorphism: the decision and, for a negative, its proof
+        cert = answer.get("certificate")
+        if answer.get("isomorphic") is not exp["isomorphic"] or ("iso_certificate" in exp and cert != exp["iso_certificate"]):
+            problems.append(f"isomorphic {answer.get('isomorphic')} ({cert}), expected {exp['isomorphic']} "
+                            f"({exp.get('iso_certificate')})")
+    if "canonical_order" in exp and done:                  # a canonical form: its order and its edges by position
+        enc = answer.get("encoding") or {}
+        if list(answer.get("order") or ()) != exp["canonical_order"] or \
+                [list(e) for e in enc.get("edges") or ()] != exp["canonical_edges"]:
+            problems.append(f"order {answer.get('order')} and edges {enc.get('edges')}, expected "
+                            f"{exp['canonical_order']} and {exp['canonical_edges']}")
     if "datalog_rows" in exp:                               # Datalog: the query's facts, ascending, up to max_results
         got = [list(r["values"]) for r in answer.get("rows") or []]
         want = exp["datalog_rows"]
