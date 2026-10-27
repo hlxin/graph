@@ -7,10 +7,11 @@ from fractions import Fraction
 
 import pytest
 
-from graph_runtime import COMPLETED, INTERRUPTED, Projection, execute, verify_result
+from graph_runtime import COMPLETED, INTERRUPTED, Projection, execute, normalize_request, verify_result
 from graph_runtime._canonical import thaw
 from graph_runtime.result import contract_problems
 from graph_runtime.revalidate import FAILS, HOLDS, diff, revalidate
+from test_certificates import reseal
 from oracle import RELATIONS, TYPES, node_id, random_graph, random_scope
 from test_revalidate import edited
 
@@ -117,7 +118,7 @@ def test_forged_forests_are_refused():
     def forged(**change):
         data = thaw(res.to_dict())
         data["answer"] = {**data["answer"], **change}
-        return verify_result(data, nodes=nodes, edges=edges)
+        return verify_result(reseal(data), nodes=nodes, edges=edges)
     assert forged(edges=["ab", "bc", "cd"])                      # as light, but not first in edge ID among ties
     assert forged(edges=["ab", "bc"], count=2, trees=2, weight=3)   # cd left out: two trees where one was joined
     assert forged(edges=["ab", "ac", "bc", "cd"], count=4, trees=0, weight=10)   # a cycle
@@ -125,7 +126,8 @@ def test_forged_forests_are_refused():
     assert forged(weight=7)
     data = thaw(res.to_dict())
     data["request"] = {**data["request"], "objective": "max"}      # the same forest is not the maximum one
-    assert verify_result(data, nodes=nodes, edges=edges)
+    data["request_id"] = normalize_request(data["request"]).request_id
+    assert verify_result(reseal(data), nodes=nodes, edges=edges)
 
 
 def test_an_interrupted_search_claims_nothing():

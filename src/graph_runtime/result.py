@@ -451,6 +451,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_separation_problems(request, answer, status))
     elif op == "spanning_forest":
         out.extend(_forest_problems(request, answer, status))
+    elif op == "cycle_basis":
+        out.extend(_cycle_problems(request, answer, status))
     elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
         nc = answer["negative_cycle"]
         start = nc["cycle"]["source"]
@@ -1292,6 +1294,56 @@ def _bottleneck_problems(request: dict, answer: dict, status: str) -> list[str]:
     bound = answer.get("bound")
     if status == INTERRUPTED and bound is not None and value is not None and _better(request["objective"], value, bound):
         out.append("an interrupted answer's value is never better than its bound")
+    return out
+
+
+def _cycle_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A cycle basis's own consistency, read without the records: the rank known unless interrupted before the
+    links were read (then nothing is listed); as many cycles as the rank when complete, no more when not; each cycle
+    with its edges unique and ascending, as many nodes as edges and the weight written as costs are; the total
+    weight only when complete; witnesses, one per cycle, exactly when asked for and the rank is known."""
+    out = []
+    rank, cycles = answer["rank"], answer["cycles"]
+    weights = request["weights"]
+    rational = weights is not None and any(isinstance(x, float) for t in weights.values() for x in t.values())
+
+    def weighed(owner: dict, where: str) -> None:
+        if rational != ("weight_exact" in owner):
+            out.append(f"{where}: weight_exact appears exactly in rational mode")
+        elif rational:
+            exact = Fraction(owner["weight_exact"])
+            try:
+                nearest = float(exact)
+            except OverflowError:
+                nearest = None
+            if str(exact) != owner["weight_exact"] or exact < 0:
+                out.append(f"{where}: weight_exact is p or p/q in lowest terms")
+            elif owner["weight"] != nearest:
+                out.append(f"{where}: weight is the nearest float to weight_exact (null on overflow)")
+        elif type(owner["weight"]) is not int or owner["weight"] < 0:
+            out.append(f"{where}: an integer-weight cycle weighs a non-negative integer")
+    if answer["count"] != len(cycles):
+        out.append("count is the number of cycles listed")
+    if rank is None:
+        if status != INTERRUPTED or cycles or answer["weight"] is not None or answer["certificate"] is not None:
+            out.append("an unknown rank belongs to a search interrupted before the links were read, listing nothing")
+        return out
+    if len(cycles) > rank or status == COMPLETED and len(cycles) != rank:
+        out.append("a complete basis lists rank cycles, an interrupted one fewer or as many")
+    for n, c in enumerate(cycles):
+        if c["edges"] != sorted(set(c["edges"])) or c["length"] != len(c["edges"]) or len(c["nodes"]) != c["length"]:
+            out.append(f"cycle {n}: its edges are unique and ascending, its length their number and its nodes as many")
+        weighed(c, f"cycle {n}")
+    if status == COMPLETED:
+        weighed(answer, "the basis")
+    elif answer["weight"] is not None or "weight_exact" in answer:
+        out.append("an interrupted basis gives no total weight")
+    cert = answer["certificate"]
+    if (cert is not None) != bool(request["certificate"]):
+        out.append("witnesses are given exactly when asked for")
+    elif cert is not None and (len(cert["witnesses"]) != len(cycles)
+                               or any(w != sorted(set(w)) or not w for w in cert["witnesses"])):
+        out.append("one witness per cycle, its edges unique and ascending")
     return out
 
 

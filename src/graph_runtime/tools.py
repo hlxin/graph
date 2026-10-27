@@ -96,7 +96,7 @@ TOOLS: list[dict] = [
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
                        "biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, "
-                       "spanning_forest, or on "
+                       "spanning_forest, cycle_basis, or on "
                        "a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
@@ -495,6 +495,10 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
         if a["trail"] is not None:
             summary.update(trail=[{k: s[k] for k in ("edge", "from", "to", "travel")} for s in a["trail"][:limit]],
                            colliders=[c["node"] for c in a["colliders"][:limit]])
+    elif op == "cycle_basis":
+        summary = {k: a[k] for k in ("rank", "count", "weight", "weight_exact") if k in a}
+        summary["cycles"] = {"items": [c["nodes"] for c in a["cycles"][:limit]], "more": len(a["cycles"]) > limit}
+        summary["certificate"] = kind(a["certificate"])
     elif op == "spanning_forest":
         summary = {k: a[k] for k in ("count", "trees", "weight", "weight_exact") if k in a}
         if a["edges"] is not None:

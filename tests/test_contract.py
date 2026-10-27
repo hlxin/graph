@@ -469,6 +469,11 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             assert exp['total'] == len(rows), case['name']
             if exp.get('rows') and raw.get('answer', 'rows') == 'rows':
                 assert exp['rows'] == [[b, links] for b, links in rows], case['name']
+        elif op == 'cycle_basis':
+            from test_cycle_basis import least_basis_weight
+            rank, least = least_basis_weight(g['nodes'], g['edges'], r['scope'], r.get('weights'))
+            want = exp['basis_weight']
+            assert (exp['rank'], Fraction(want) if isinstance(want, str) else want) == (rank, least), case['name']
         elif op == 'spanning_forest':
             from test_spanning_forest import kruskal
             edges, total = kruskal(g['nodes'], g['edges'], r['scope'], r.get('weights'), r.get('objective', 'min'))
