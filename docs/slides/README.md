@@ -36,7 +36,7 @@ rather than shrink it.
   reference, `proofLabel` and `proof`). A family slide holds two or three operations; for more, add another family
   entry (it becomes a new slide, in the order of `families`). A family of one operation can carry a picture beside
   it: set `aside` to a function in `ASIDES` in `build_deck.js` (`rankingSchematic`, `dominatorSchematic`,
-  `incidenceExample`). Then:
+  `incidenceExample`, `twoHopSchematic`). Then:
   - raise `meta.operations` (the overview title, the architecture slide and the closing slide use it)
   - add the name to its card in `overview` (six cards fill the 3 × 2 grid: join a related family, as max_flow,
     min_cost_flow and matching joined "Structure and flows", rather than add a seventh; when a card's names pass
@@ -45,14 +45,15 @@ rather than shrink it.
   - set `isNew: true` while it is implemented but not committed, and remove it once it is
   - move it out of `roadmap` if it was listed there
 - **A new measured result.** A comparison with networkx goes into `networkxChart` (one category per operation, GRAPH
-  and networkx seconds side by side; say the graph sizes in its `caption`). Otherwise replace one of the six
+  and networkx seconds side by side; say the graph sizes in its `caption`; with 13 categories the caption must stay within six lines, or the
+  chart's labels are skipped). Otherwise replace one of the six
   `speedTiles` (the grid holds six), or add a chart slide modeled on `headToHeadSlide` and list it in `SLIDES`. A
   comparison with SCALE's own engine goes into `scaleComparison` (a table of times, and three notes on what they
   include). Say when the machine was loaded; give ratios where absolute times are unreliable.
 - **New verification counts** (tests, conformance cases, parity tests): `verification`; review notes: `reviews`, with
   their sources in `reviewsSource`.
-- **A new increment in the history.** Add a row to `timeline` (15 rows fill the column; merge older rows to make
-  room) and move `latest: true` to it; add its conformance count to `growth`, and update `growth.tests`,
+- **A new increment in the history.** Add a row to `timeline` (18 rows, day headings included, fill the column;
+  merge older rows to make room) and move `latest: true` to it; add its conformance count to `growth`, and update `growth.tests`,
   `growth.operations`, `timelineLede` and `timelineSource`.
 - **The roadmap.** `roadmapLede`, `roadmap` (up to six rows), `roadmapLater` (one line below the table: the increments after them, or those done),
   `roadmapSource` and `boundaries`, from the latest plan or survey.

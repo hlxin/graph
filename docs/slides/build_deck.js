@@ -644,6 +644,56 @@ const ASIDES = {
     check("dominator schematic note", ny - y + height(note, w - 0.6, 14), h - 0.1);
     text(s, note, { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.1, fontSize: 14, color: C.text1 });
   },
+  // Schematic 2-hop labels: s reaches t because s's out-label and t's in-label share the hub h; the witness follows
+  // the label pointers through h. Below, the cold and kept times of the same request (git log 61dff27).
+  twoHopSchematic(s, x, y, w, h) {
+    card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "2-hop schematic" });
+    text(s, [
+      { text: "SCHEMATIC", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1, breakLine: true } },
+      { text: "s reaches t: their labels share hub h", options: { fontSize: 16, bold: true, color: C.text1 } },
+    ], { x: x + 0.3, y: y + 0.25, w: w - 0.6, h: 0.65 });
+    const r = 0.21;
+    const node = (name, cx, cy, hot) => {
+      s.addText(name, {
+        shape: pres.shapes.OVAL, x: cx - r, y: cy - r, w: 2 * r, h: 2 * r, fill: { color: hot ? C.accent2 : C.accent1 },
+        line: { type: "none" }, color: C.background1, fontFace: MONO, fontSize: 14, bold: true, align: "center", valign: "middle",
+        margin: 0, objectName: `node ${name}`,
+      });
+    };
+    const arc = ([x1, y1], [x2, y2], witness) => {
+      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+      line(s, x1 + ux * r, y1 + uy * r, x2 - ux * (r + 0.02), y2 - uy * (r + 0.02), { color: witness ? C.accent2 : C.accent6, width: witness ? 2.5 : 1.5, endArrowType: "triangle" });
+    };
+    // h comes first in the order: (in-degree + 1)(out-degree + 1) is 9 for it, at most 4 for the others.
+    const gx = x + 0.55, gw = w - 1.1, gy = y + 1.2, gh = 0.95;
+    const G = { s: [0, 0.5], a: [0.25, 0], c: [0.25, 1], h: [0.5, 0.5], b: [0.75, 0], d: [0.75, 1], t: [1, 0.5] };
+    const at = (k) => [gx + G[k][0] * gw, gy + G[k][1] * gh];
+    for (const [u, v] of [["s", "c"], ["c", "h"], ["h", "d"]]) arc(at(u), at(v), false);
+    for (const [u, v] of [["s", "a"], ["a", "h"], ["h", "b"], ["b", "t"]]) arc(at(u), at(v), true);
+    for (const k of Object.keys(G)) node(k, ...at(k), k === "h");
+    // The two labels that meet at h.
+    const ly = gy + gh + 0.38;
+    const label = (head, rest, last) => [
+      { text: head, options: { fontFace: MONO, fontSize: 14, bold: true, color: C.accent1 } },
+      { text: rest, options: { fontSize: 14, color: C.text1, breakLine: !last } },
+    ];
+    text(s, [...label("out(s) = {h, …}", "  the hubs s reaches", false), ...label("in(t)  = {h, …}", "  the hubs that reach t", true)],
+      { x: x + 0.3, y: ly, w: w - 0.6, h: 0.6 });
+    // The same request, built in it or kept on the projection.
+    const cy = ly + 0.8, cw = (w - 0.6 - 0.2) / 2, ch = 0.62;
+    [["1.2 s", "index built"], ["0.33 s", "index kept"]].forEach(([big, what], i) => {
+      const cx = x + 0.3 + i * (cw + 0.2);
+      card(s, cx, cy, cw, ch, { name: `time ${what}` });
+      text(s, [
+        { text: `${big}  `, options: { fontSize: 22, bold: true, color: C.accent1, fontFace: "Cambria" } },
+        { text: what, options: { fontSize: 14, color: C.text1 } },
+      ], { x: cx + 0.15, y: cy, w: cw - 0.25, h: ch, valign: "middle" });
+    });
+    const ny = cy + ch + 0.15;
+    const note = "The same `result_id`, stats and status either way: each request is charged the index's full cost (10,000\u00A0pairs; 100k\u00A0nodes, 300k\u00A0edges).";
+    check("2-hop schematic note", ny - y + height(note, w - 0.6, 14), h - 0.1);
+    text(s, note, { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.1, fontSize: 14, color: C.text1 });
+  },
   // A worked example: A + B ⇄ C → D, its stoichiometric matrix and what incidence answers for it (run on the runtime).
   incidenceExample(s, x, y, w, h) {
     card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "incidence example" });
@@ -900,8 +950,8 @@ async function timelineSlide() {
   s.addChart(pres.charts.LINE, [{ name: "conformance cases", labels: G.labels, values: G.cases }], {
     x: x2, y: TOP + 1.35, w: w2, h: BOTTOM - TOP - 1.35, chartColors: [HEX.accent1], lineSize: 2.5,
     lineDataSymbol: "circle", lineDataSymbolSize: 7, showValue: true, dataLabelPosition: "t",
-    valAxisHidden: true, catAxisLabelRotate: 315,
-    // Small labels, every category shown: 25 points stay legible without overlapping.
+    valAxisHidden: true, catAxisLabelRotate: -90,
+    // Small labels, every category shown: set upright, about 30 points stay legible without overlapping.
     ...chartStyle({ title: "Hand-worked conformance cases", catAxisLabelFontSize: 10, catAxisLabelFrequency: 1, dataLabelFontSize: 9 }),
     objectName: "conformance growth chart",
   });
