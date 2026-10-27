@@ -91,6 +91,76 @@ def least_cost(nodes, edges, sources, targets, scope, costs):
     return min(found) if found else None
 
 
+def signed_least_cost(nodes, edges, sources, targets, scope, costs):
+    """Least walk costs when costs may be negative: ("none", None) when no target is reachable, ("unbounded", None)
+    when a cycle of negative cost lies on a walk from a source to a target, else ("cost", the least cost). Plain
+    fixpoints over the hops: the nodes the sources reach, those that reach a target, and |V| + 1 rounds of
+    Bellman-Ford over the nodes that are both (a round that still lowers a cost proves a negative cycle there)."""
+    (kind, table), = costs.items()
+    rational = any(isinstance(x, float) for x in table.values())
+    rel = {e["id"]: e["relation"] for e in edges}
+    hops = hops_of(edges, scope)
+
+    def cost(eid):
+        x = table[rel[eid]] if kind == "by_relation" else table[eid]
+        return Fraction(x) if rational else x
+
+    reach, grew = set(sources), True
+    while grew:
+        grew = False
+        for u, v, _ in hops:
+            if u in reach and v not in reach:
+                reach.add(v)
+                grew = True
+    if not reach & set(targets):
+        return "none", None
+    live, grew = set(targets) & reach, True
+    while grew:
+        grew = False
+        for u, v, _ in hops:
+            if v in live and u in reach and u not in live:
+                live.add(u)
+                grew = True
+    dist = {s: Fraction(0) if rational else 0 for s in sources if s in live}
+    for _ in range(len(nodes) + 1):
+        changed = False
+        for u, v, eid in hops:
+            if u in dist and v in live and (v not in dist or dist[u] + cost(eid) < dist[v]):
+                dist[v] = dist[u] + cost(eid)
+                changed = True
+        if not changed:
+            return "cost", min(dist[t] for t in targets if t in dist)
+    return "unbounded", None
+
+
+def signed_fewest_hops(nodes, edges, sources, targets, scope, costs):
+    """For a request with a least cost (no negative cycle on the way): the target a witness ends at (least cost, then
+    least ID) and the fewest hops of a least-cost walk to it, by Bellman-Ford over (cost, hops) pairs: hops only add,
+    so with no negative cycle the pairs settle within |V| rounds."""
+    (kind, table), = costs.items()
+    rational = any(isinstance(x, float) for x in table.values())
+    rel = {e["id"]: e["relation"] for e in edges}
+    hops = hops_of(edges, scope)
+
+    def cost(eid):
+        x = table[rel[eid]] if kind == "by_relation" else table[eid]
+        return Fraction(x) if rational else x
+
+    best = {s: (0, 0) for s in sources}
+    for _ in range(len(nodes) + 1):
+        changed = False
+        for u, v, eid in hops:
+            if u in best:
+                c, h = best[u]
+                cand = (c + cost(eid), h + 1)
+                if v not in best or cand < best[v]:
+                    best[v], changed = cand, True
+        if not changed:
+            break
+    target = min((best[t][0], t) for t in targets if t in best)[1]
+    return target, best[target][1]
+
+
 def random_graph(rng: random.Random, *, max_nodes=8, max_edges=18):
     ids = rng.sample(ID_POOL, rng.randint(1, max_nodes))
     nodes = []

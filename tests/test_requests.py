@@ -46,6 +46,7 @@ def test_requests_are_immutable():
 
 BASE = {"operation": "reachability", "projection": P, "sources": ["a"], "scope": [("R", "forward")]}
 SHORT = {"operation": "shortest_path", "projection": P, "sources": ["a"], "targets": ["b"], "scope": [("R", "forward")]}
+CRITICAL = {"operation": "critical_path", "projection": P, "scope": [("R", "forward")]}   # costs never negative
 
 
 @pytest.mark.parametrize("raw,status,code", [
@@ -85,8 +86,9 @@ SHORT = {"operation": "shortest_path", "projection": P, "sources": ["a"], "targe
     ({**SHORT, "costs": {"by_relation": {"R": None}}}, FAILED, "invalid_cost"),
     ({**SHORT, "costs": {"by_relation": {"R": float("inf")}}}, FAILED, "non_finite_cost"),
     ({**SHORT, "costs": {"by_relation": {"R": float("nan")}}}, FAILED, "non_finite_cost"),
-    ({**SHORT, "costs": {"by_relation": {"R": -1}}}, UNSUPPORTED, "negative_cost"),
-    ({**SHORT, "costs": {"by_edge": {"e1": -0.5}}}, UNSUPPORTED, "negative_cost"),
+    ({**CRITICAL, "costs": {"by_relation": {"R": -1}}}, UNSUPPORTED, "negative_cost"),
+    ({**CRITICAL, "costs": {"by_edge": {"e1": -0.5}}}, UNSUPPORTED, "negative_cost"),
+    ({**SHORT, "costs": {"by_relation": {"R": float("-inf")}}}, FAILED, "non_finite_cost"),
 ])
 def test_malformed_and_unsupported_requests(raw, status, code):
     with pytest.raises(RequestError) as err:
@@ -127,7 +129,8 @@ def test_requests_naming_what_the_projection_lacks_fail(small, params, code):
 def test_execute_reports_request_problems_without_raising(small):
     for raw, status in [({"operation": "pagerank", "projection": small.identity}, UNSUPPORTED),
                         ("not a request", FAILED),
-                        ({**SHORT, "projection": small.identity, "costs": {"by_relation": {"R": -2}}}, UNSUPPORTED)]:
+                        ({**CRITICAL, "projection": small.identity, "costs": {"by_relation": {"R": -2}}},
+                         UNSUPPORTED)]:
         res = execute(small, raw)
         assert res.status == status and res.answer is None and res.error["code"]
     res = execute(small, {"operation": "pagerank", "projection": small.identity})

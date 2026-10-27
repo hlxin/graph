@@ -695,27 +695,50 @@ def _pagerank(ctx: SimpleNamespace) -> None:
 
 # ---------------------------------------------------------------------------------------------- shortest path
 def _shortest(ctx: SimpleNamespace) -> None:
+    """The witness (or a negative cycle's three walks) must still be hops of the new projection; a negative cycle then
+    still makes walks ever cheaper, whatever else changed. A certificate must still hold for every hop in scope from
+    what it lists: a closure stays closed, potentials stay unlowered, feasible potentials stay feasible and their dead
+    ends closed. With a diff, only the added hops need checking: removing records breaks none of these."""
     p, plan, answer, out, d = ctx.p, ctx.plan, ctx.answer, ctx.out, ctx.diff
-    if answer["found"]:
-        for hop in answer["witness"]["hops"]:
+    cycle = answer.get("negative_cycle")
+    walks = ([cycle["lead_in"], cycle["cycle"], cycle["lead_out"]] if cycle is not None
+             else [answer["witness"]] if answer["found"] else [])
+    for walk in walks:
+        for hop in walk["hops"]:
             if _gone(ctx, hop["to"]):
                 out.append({"code": "node_gone", "node": hop["to"]})
             elif not _hop_ok(ctx, hop, plan.fwd, plan.rev):
                 out.append({"code": "witness_gone", "edge": hop["edge"]})
+    if cycle is not None:
+        return
     cert = answer["certificate"]
     if cert is None:
         out.append({"code": "no_certificate"})
         return
     ids = p._node_ids
+    number = Fraction if plan.rational else (lambda x: x)
     if cert["kind"] == "closure":
         reached = _lookup(cert["reached"], lambda x: x, d is not None)
 
         def check(eid: str, ei: int, a: int, b: int) -> None:
             if reached(ids[a]) is not None and reached(ids[b]) is None:
                 out.append({"code": "certificate_broken", "edge": eid, "from": ids[a], "to": ids[b]})
-        listed = cert["reached"]
+    elif cert["kind"] == "feasible_potentials":
+        entry = _lookup(cert["potentials"], lambda e: e["node"], d is not None)
+        dead = _lookup(cert["dead_ends"], lambda x: x, d is not None)
+
+        def check(eid: str, ei: int, a: int, b: int) -> None:
+            if dead(ids[a]) is not None:
+                ok = dead(ids[b]) is not None
+            elif entry(ids[a]) is not None:
+                to = entry(ids[b])
+                ok = dead(ids[b]) is not None or to is not None and \
+                    number(to["value"]) <= number(entry(ids[a])["value"]) + plan.cost[ei]
+            else:
+                ok = True
+            if not ok:
+                out.append({"code": "certificate_broken", "edge": eid, "from": ids[a], "to": ids[b]})
     else:
-        number = Fraction if plan.rational else (lambda x: x)
         bound = number(cert["bound"])
         entry = _lookup(cert["potentials"], lambda e: e["node"], d is not None)
 
@@ -726,12 +749,13 @@ def _shortest(ctx: SimpleNamespace) -> None:
         def check(eid: str, ei: int, a: int, b: int) -> None:
             if entry(ids[a]) is not None and value(ids[b]) > value(ids[a]) + plan.cost[ei]:
                 out.append({"code": "certificate_broken", "edge": eid, "from": ids[a], "to": ids[b]})
-        listed = None
-    if d is not None:
+    if d is not None:                         # only the added hops: the certificate is read where they start
         for eid, a, b in _added_hops(ctx, plan.fwd, plan.rev):
             check(eid, p._edge_index[eid], a, b)
         return
-    for node in listed if listed is not None else (e["node"] for e in cert["potentials"]):
+    listed = (cert["reached"] if cert["kind"] == "closure" else [e["node"] for e in cert["potentials"]]
+              + (list(cert["dead_ends"]) if cert["kind"] == "feasible_potentials" else []))
+    for node in listed:
         u = p._node_index.get(node)
         if u is not None:
             for ei, v, _ in _hops(p, u, plan.fwd, plan.rev):

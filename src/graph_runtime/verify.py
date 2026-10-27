@@ -519,6 +519,12 @@ class _Checker:
         number = (lambda x: Fraction(x)) if rational else (lambda x: x)
         bound = number(cert["bound"])
         value = {e["node"]: number(e["value"]) for e in cert["potentials"]}
+        if cert["kind"] == "feasible_potentials":
+            self.feasible_potentials(cert, allowed, sources, targets, kind, table, rational, bound, value)
+            return
+        if any(x < 0 for x in table.values()):
+            self.bad("certificate: potentials that leave a node at the bound prove nothing when a cost is negative")
+            return
         for s in sorted(sources, key=str):
             if value.get(s, bound) != 0:
                 self.bad(f"certificate: the source {s!r} has {value.get(s, bound)}, not 0")
@@ -534,6 +540,42 @@ class _Checker:
                 if value.get(v, bound) > value[u] + (Fraction(c) if rational else c):
                     self.bad(f"certificate: the hop {eid} from {u!r} ({value[u]}) costs {c} but leads to {v!r} at "
                              f"{value.get(v, bound)}")
+
+    def feasible_potentials(self, cert: Mapping, allowed: set, sources: set, targets: set, kind: str,
+                            table: Mapping, rational: bool, bound: Any, value: dict) -> None:
+        """Potentials for costs of any sign: every hop in scope from a listed node leads to a dead end or to a listed
+        node whose value is at most the hop's cost above; every hop from a dead end leads to a dead end; every source
+        is listed at 0 or below, or a dead end; no target is a dead end, and every listed target is at the bound or
+        above. A walk from a source to a target then never meets a dead end (none leads back out) nor an unlisted
+        node, and costs at least its target's value less its source's: at least the bound."""
+        dead = set(cert["dead_ends"])
+        for n in sorted(dead & set(value), key=str):
+            self.bad(f"certificate: {n!r} is both listed and a dead end")
+        for s in sorted(sources, key=str):
+            if s not in dead and (s not in value or value[s] > 0):
+                self.bad(f"certificate: the source {s!r} is neither a dead end nor listed at 0 or below")
+        for t in sorted(targets, key=str):
+            if t in dead:
+                self.bad(f"certificate: the target {t!r} is a dead end")
+            elif t in value and value[t] < bound:
+                self.bad(f"certificate: the target {t!r} has {value[t]}, below the bound {bound}")
+        for u in sorted(value, key=str):
+            for eid, v, rel in self.hops_from(u, allowed):
+                if v in dead:
+                    continue
+                c = table.get(rel if kind == "by_relation" else eid)
+                if c is None:
+                    self.bad(f"certificate: the hop {eid} in scope has no cost in the request")
+                elif v not in value:
+                    self.bad(f"certificate: the hop {eid} leads from {u!r} to {v!r}, which it neither lists nor "
+                             "calls a dead end")
+                elif value[v] > value[u] + (Fraction(c) if rational else c):
+                    self.bad(f"certificate: the hop {eid} from {u!r} ({value[u]}) costs {c} but leads to {v!r} at "
+                             f"{value[v]}")
+        for u in sorted(dead, key=str):
+            for eid, v, _ in self.hops_from(u, allowed):
+                if v not in dead:
+                    self.bad(f"certificate: the hop {eid} leads from the dead end {u!r} to {v!r}, which is not one")
 
     def bottleneck(self, request: Mapping, answer: Mapping, status: str) -> None:
         """The witness's hops, each weighing what the request gives its edge, and its value; the certificate: what it
@@ -987,17 +1029,50 @@ class _Checker:
             self.bad(f"the first {m} ranked nodes are not proven the top ones")
 
     def shortest(self, request: Mapping, answer: Mapping, status: str) -> None:
-        if answer.get("certificate") is not None:
-            self.shortest_certificate(request, answer["certificate"])
+        """The witness's hops, each costing what the request gives its edge, and its cost; with a negative cost, a
+        negative cycle instead when it gives one, and no lower bound for an interrupted witness. The certificate
+        (:meth:`shortest_certificate`) proves the bound the answer states."""
+        (kind, table), = request["costs"].items()
+        rational = any(isinstance(x, float) for x in table.values())
+        signed = any(x < 0 for x in table.values())
+        if signed != ("negative_cycle" in answer):
+            self.bad("an answer says whether a negative cycle makes it unbounded (negative_cycle) exactly when the "
+                     "request gives a negative cost")
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        cycle = answer.get("negative_cycle")
+        if cycle is not None:
+            self.negative_cycle(request, answer, cycle, status, allowed, kind, table, rational)
+            return
+        cert = answer.get("certificate")
+        if cert is not None:
+            self.shortest_certificate(request, cert)
         if answer.get("found") is not True:
             if answer.get("witness") is not None:
                 self.bad("only a found witness is given")
             return
-        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
         hops = self.chain("witness", answer.get("witness"), set(request["sources"]), set(request["targets"]),
                           [allowed])
-        (kind, table), = request["costs"].items()
-        rational = any(isinstance(x, float) for x in table.values())
+        total = self.hop_costs("witness", hops, kind, table, rational)
+        reported = self.reported_cost(answer, "cost", rational)
+        if total != reported:
+            self.bad(f"the hops cost {total}, but the answer says {reported!r}")
+        if status == INTERRUPTED:
+            low = answer.get("lower_bound_exact") if rational else answer.get("lower_bound")
+            low = Fraction(low) if rational and low is not None else low
+            if signed:
+                if low is not None:
+                    self.bad("with a negative cost, an interrupted search knows no lower bound")
+            elif low is None or low > reported:
+                self.bad("an unproven witness comes with a lower bound no greater than its cost")
+            if cert is not None and cert.get("kind") == "potentials" and low is not None \
+                    and Fraction(cert["bound"]) != low:
+                self.bad(f"the certificate proves the bound {cert['bound']}, not the lower bound {low}")
+        elif cert is not None and cert.get("kind") in ("potentials", "feasible_potentials") \
+                and Fraction(cert["bound"]) != reported:
+            self.bad(f"the certificate proves the bound {cert['bound']}, not the cost {reported}")
+
+    def hop_costs(self, where: str, hops: list, kind: str, table: Mapping, rational: bool) -> Any:
+        """The exact sum of the hops' costs, each checked to be what the request gives its edge."""
         total: Any = Fraction(0) if rational else 0
         for i, h in enumerate(hops):
             rec = self.edge_of.get(h.get("edge")) if isinstance(h, Mapping) else None
@@ -1005,24 +1080,54 @@ class _Checker:
                 continue
             want = table.get(rec[2] if kind == "by_relation" else h.get("edge"))
             if h.get("cost") != want or type(h.get("cost")) is not type(want):
-                self.bad(f"hop {i}: cost {h.get('cost')!r}, but the request gives {want!r}")
+                self.bad(f"{where}: hop {i}: cost {h.get('cost')!r}, but the request gives {want!r}")
             if want is not None:
                 total += Fraction(want) if rational else want
+        return total
+
+    def reported_cost(self, answer: Mapping, field: str, rational: bool) -> Any:
+        """A stated cost as an exact number: ``<field>_exact`` (its ``<field>`` the nearest float) in rational mode,
+        the integer ``<field>`` otherwise."""
         if rational:
-            reported = Fraction(answer["cost_exact"])
-            if answer.get("cost") != _nearest(reported):
-                self.bad(f"cost {answer.get('cost')!r} is not the nearest float to cost_exact {answer['cost_exact']}")
-        else:
-            reported = answer.get("cost")
-            if not _is_int(reported):
-                self.bad(f"an integer-cost answer gives an integer cost, not {reported!r}")
+            text = answer.get(f"{field}_exact")
+            if not isinstance(text, str):
+                self.bad(f"a rational-mode {field} gives {field}_exact")
+                return None
+            reported = Fraction(text)
+            if answer.get(field) != _nearest(reported):
+                self.bad(f"{field} {answer.get(field)!r} is not the nearest float to {field}_exact {text}")
+            return reported
+        reported = answer.get(field)
+        if not _is_int(reported):
+            self.bad(f"an integer-cost answer gives an integer {field}, not {reported!r}")
+        return reported
+
+    def negative_cycle(self, request: Mapping, answer: Mapping, nc: Any, status: str, allowed: set, kind: str,
+                       table: Mapping, rational: bool) -> None:
+        """A walk from a source to the cycle, the cycle (a closed walk whose hops cost less than nothing, as stated)
+        and a walk from it to a target: walks from a source to a target that go around it cost ever less."""
+        if status != COMPLETED or answer.get("found") is not True or answer.get("optimal") is not False \
+                or answer.get("cost") is not None or answer.get("witness") is not None \
+                or answer.get("certificate") is not None:
+            self.bad("a negative cycle is a complete answer: found, not optimal, with no cost, witness or certificate")
+        if not isinstance(nc, Mapping) or not all(isinstance(nc.get(k), Mapping)
+                                                  for k in ("lead_in", "cycle", "lead_out")):
+            self.bad("negative_cycle gives lead_in, cycle and lead_out")
+            return
+        start = nc["cycle"].get("source")
+        if nc["cycle"].get("target") != start or not nc["cycle"].get("hops"):
+            self.bad("the negative cycle is a closed walk of at least one hop")
+        lead_in = self.chain("negative_cycle.lead_in", nc["lead_in"], set(request["sources"]), {start}, [allowed])
+        loop = self.chain("negative_cycle.cycle", nc["cycle"], {start}, {start}, [allowed])
+        lead_out = self.chain("negative_cycle.lead_out", nc["lead_out"], {start}, set(request["targets"]), [allowed])
+        self.hop_costs("negative_cycle.lead_in", lead_in, kind, table, rational)
+        self.hop_costs("negative_cycle.lead_out", lead_out, kind, table, rational)
+        total = self.hop_costs("negative_cycle.cycle", loop, kind, table, rational)
+        reported = self.reported_cost(nc["cycle"], "cost", rational)
         if total != reported:
-            self.bad(f"the hops cost {total}, but the answer says {reported!r}")
-        if status == INTERRUPTED:
-            low = answer.get("lower_bound_exact") if rational else answer.get("lower_bound")
-            low = Fraction(low) if rational and low is not None else low
-            if low is None or low > reported:
-                self.bad("an unproven witness comes with a lower bound no greater than its cost")
+            self.bad(f"the cycle's hops cost {total}, but it says {reported!r}")
+        if not total < 0:
+            self.bad(f"the cycle costs {total}, which is not negative")
 
     def links(self, u: Any, allowed: set) -> list[tuple[str, Any, str]]:
         """(edge, the other end, its relation) for every edge at ``u`` whose relation is in scope in either direction:
