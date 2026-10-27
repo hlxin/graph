@@ -63,6 +63,9 @@ states consistently, and required costs only for edges actually in scope. Revisi
   edges (subgraph monomorphism: substructure search), enumerated over the semi-join-reduced candidates; every pattern
   request now states `injective`, so pattern requests made before have other `request_id`s and `result_id`s, with the
   same answers (section 4)
+- the `min_cost_flow` operation: a given amount (or as much as possible) from the sources to the targets at least
+  cost, by successive shortest paths with potentials, proven by the residual potentials and, for a maximum flow, a cut
+  (section 4)
 - the `k_shortest_paths` operation: the first k simple paths from a source to a target in the order of (cost, hops,
   start node and edge IDs), by Yen's algorithm, each a checked witness (section 4)
 - the `spanning_forest` operation: a minimum (or maximum) spanning forest by Kruskal's algorithm in the order of
@@ -187,6 +190,7 @@ no wildcard: a scope lists what it follows.
 | `critical_path` | `scope` (a hop from u to v: u comes first), `sources` (only what they reach; null: every node), `costs` (as for shortest paths; null: every hop takes 1), `answer` (`path`, the default: the makespan and a critical path; `schedule`: every node's times too), `certificate` (default false) | `max_expansions` |
 | `d_separation` | `x`, `y`, `given` (default none; the three disjoint), `scope` (a hop from u to v: u is a parent, a direct cause, of v), `certificate` (default false) | `max_expansions` |
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
+| `min_cost_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as for `max_flow`; null: every edge 1), `costs` (as for shortest paths, non-negative), `value` (how much to send, as a capacity; null: as much as possible), `certificate` (default false) | `max_expansions` |
 | `k_shortest_paths` | `sources`, `targets`, `scope`, `costs` (as for shortest paths, non-negative; null: every hop 1), `k` (1 to 1,000,000; default 10) | `max_expansions` |
 | `cycle_basis` | `scope` (each edge in it a link between its ends, either way), `weights` (as costs: non-negative; null: every link 1), `certificate` (default false) | `max_expansions` |
 | `spanning_forest` | `scope` (each edge in it a link between its ends, either way), `weights` (as weights: any finite numbers; null: every link 1), `objective` (`min`, the default, or `max`) | `max_expansions` |
@@ -814,6 +818,29 @@ whose trees join the ends of every other link in scope (so they span each piece)
 comes after every edge of the tree path between its ends in that order, are the forest Kruskal's algorithm keeps.
 A checker finds those paths' last edges by binary lifting, in O((n + m) log n).
 
+**Minimum-cost flow.** Sends `value` (or, when null, as much as the capacities allow) from the sources to the targets
+at least total cost: supply chains, the cheapest routes for a total throughput. Each hop in scope carries at most its
+edge's capacity at its edge's cost per unit (an edge in scope both ways carries flow either way, up to its capacity
+each way); a loop carries nothing. Capacities, costs and the value are exact (floats as exact rationals). Successive
+shortest paths (Jewell, 1958; Busacker and Gowen, 1960; with potentials, Edmonds and Karp, 1972, and Tomizawa,
+1971): a virtual source feeds the sources and a virtual sink drains the targets; each phase is Dijkstra's search
+from the virtual source over the residual network on costs reduced by potentials (states by distance, then node
+index), an augmentation along the cheapest path by all it carries or all that is still wanted, and the potentials
+raised by the search's distances (the sink's for a node not settled). Reading each node's hops is one expansion, and
+so is each settled state. The flow of each value reached is a cheapest one of that value. When the value asked for
+cannot be sent, the answer is a maximum flow at least cost, `feasible` false.
+
+Answer: `{"value", ["value_exact"], "feasible", "cost", ["cost_exact"], "optimal", "flows": [{"edge", "relation",
+"direction", "from", "to", "flow", ["flow_exact"]}], "certificate"}`, flows by (edge, direction). An interrupted search
+keeps the flow sent, valid but never claimed cheapest or largest (`feasible` null, `optimal` false). With
+`certificate: true`, a complete answer carries `{"kind": "potentials", "potentials": [{"node", "value"}], "source",
+"sink", "source_side"}`: potentials for every node with a hop in scope (and every source and target) and for the
+virtual source and sink. Every arc of the residual network costs nothing negative once reduced by them (a hop with
+room left; a hop with flow, backwards at minus its cost; the virtual source to every source, and back from one that
+sends; every target to the virtual sink, and back from one that receives), so no flow of the same value is cheaper.
+When the flow is a maximum one (no value asked, or `feasible` false), `source_side` is a minimum cut's: every source
+and no target, every hop out of it full and every hop into it empty, so its capacity is the value; otherwise null.
+
 **K shortest paths.** The first k simple paths from a source to a target: alternative reaction pathways, backup routes,
 the next best derivations. A path visits no node twice; other sources and targets may lie on it, and a source that is
 a target is a path of no hops. Paths are ranked in a strict order: by cost (as for shortest paths, non-negative and
@@ -916,6 +943,10 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that shortest-path costs are the exact sum of the hop costs; with a negative cost, that a negative cycle's three
     walks chain from a source to its start, around it at the negative cost it states, and on to a target, and that
     an interrupted answer gives no lower bound
+  - for a minimum-cost flow, each flow a hop in scope within its capacity, conservation at every other node, the
+    value the sources' net output and the exact cost; from the certificate, every residual arc non-negative once
+    reduced, and a maximum flow's cut holding every source and no target with every hop out full and every hop in
+    empty
   - for k shortest paths, each path's hops chaining in scope from a source to a target, no node twice, at the exact
     cost of its hops; the paths distinct and in the strict order; k of them unless `exhausted`
   - for a cycle basis, each cycle a simple cycle of links in scope through the nodes it lists in order, with its exact
@@ -972,7 +1003,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 185 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 188 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -1010,8 +1041,8 @@ A spanning forest holds while it is still the forest the new records prove (its 
 pieces it spans, as `verify_result` checks them); an edit that breaks any of these refutes it. It is always checked in
 full.
 
-Components, biconnectivity, a maximum flow, a matching, dominators, incidence, critical paths, d-separation, cycle
-bases and support are revalidated by their certificates, which
+Components, biconnectivity, a maximum flow, a minimum-cost flow, a matching, dominators, incidence, critical paths,
+d-separation, cycle bases and support are revalidated by their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
 kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest

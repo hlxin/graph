@@ -54,7 +54,8 @@ VERDICTS = (HOLDS, FAILS, UNKNOWN)
 REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
 _RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators",   # by verifying the certificate
-              "incidence", "critical_path", "d_separation", "support", "spanning_forest", "cycle_basis")
+              "incidence", "critical_path", "d_separation", "support", "spanning_forest", "cycle_basis",
+              "min_cost_flow")
 _SELF_PROVEN = {"critical_path": ("acyclic", False), "d_separation": ("separated", False)}   # a witness is the proof
 _PROVEN_BY_ANSWER = ("spanning_forest",)       # what the answer claims, checked against the records, is the proof
 _NODE_FIELDS = frozenset({"node", "nodes", "left", "right", "idom", "source", "target", "from", "to", "dominators"})

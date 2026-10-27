@@ -61,6 +61,9 @@ Operations (docs/API_CONTRACT.md):
 * ``spanning_forest``: ``scope`` (each edge in it a link between its ends, either way), ``weights`` (any finite numbers,
   by relation or by edge; null: every link weighs 1), ``objective`` (``min``, the default, or ``max``); limit
   ``max_expansions``.
+* ``min_cost_flow``: ``sources``, ``targets`` (disjoint), ``scope``, ``capacities`` (as a maximum flow's; null: every
+  edge 1), ``costs`` (as a shortest path's, non-negative), ``value`` (how much to send; null: as much as possible),
+  ``certificate``; limit ``max_expansions``.
 * ``k_shortest_paths``: ``sources``, ``targets``, ``scope``, ``costs`` (as a shortest path's, non-negative; null: every
   hop costs 1), ``k`` (how many paths; default 10); limit ``max_expansions``.
 * ``cycle_basis``: ``scope`` (each edge in it a link between its ends, either way), ``weights`` (as costs: non-negative;
@@ -90,7 +93,7 @@ from .projection import CONTRACT, DIRECTIONS
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
               "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path", "d_separation",
-              "spanning_forest", "cycle_basis", "k_shortest_paths")
+              "spanning_forest", "cycle_basis", "k_shortest_paths", "min_cost_flow")
 FOREST_OBJECTIVES = ("min", "max")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
@@ -123,7 +126,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "d_separation": ("max_expansions",),
            "spanning_forest": ("max_expansions",),
            "cycle_basis": ("max_expansions",),
-           "k_shortest_paths": ("max_expansions",)}
+           "k_shortest_paths": ("max_expansions",),
+           "min_cost_flow": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -145,7 +149,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "d_separation": (("x", "y", "scope"), ("given", "certificate")),
            "spanning_forest": (("scope",), ("weights", "objective")),
            "cycle_basis": (("scope",), ("weights", "certificate")),
-           "k_shortest_paths": (("sources", "targets", "scope"), ("costs", "k"))}
+           "k_shortest_paths": (("sources", "targets", "scope"), ("costs", "k")),
+           "min_cost_flow": (("sources", "targets", "scope", "costs"), ("capacities", "value", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -371,6 +376,18 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         if overlap:
             raise _fail("invalid_request", f"x, y and given are disjoint; {sorted(overlap)[:10]} is in two of them")
         data["scope"] = _scope(raw["scope"], "scope")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "min_cost_flow":
+        data["sources"] = _ids(raw["sources"], "sources")
+        data["targets"] = _ids(raw["targets"], "targets")
+        both = sorted(set(data["sources"]) & set(data["targets"]))
+        if both:
+            raise _fail("invalid_request", f"sources and targets are disjoint; both name {both[:10]}")
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["capacities"] = None if raw.get("capacities") is None else _capacities(raw["capacities"])
+        data["costs"] = _costs(raw["costs"])
+        value = raw.get("value")
+        data["value"] = None if value is None else _capacity(value, "value")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "k_shortest_paths":
         data["sources"] = _ids(raw["sources"], "sources")

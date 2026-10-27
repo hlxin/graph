@@ -455,6 +455,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_cycle_problems(request, answer, status))
     elif op == "k_shortest_paths":
         out.extend(_kpaths_problems(request, answer, status))
+    elif op == "min_cost_flow":
+        out.extend(_mincost_problems(request, answer, status))
     elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
         nc = answer["negative_cycle"]
         start = nc["cycle"]["source"]
@@ -1325,6 +1327,68 @@ def _bottleneck_problems(request: dict, answer: dict, status: str) -> list[str]:
     bound = answer.get("bound")
     if status == INTERRUPTED and bound is not None and value is not None and _better(request["objective"], value, bound):
         out.append("an interrupted answer's value is never better than its bound")
+    return out
+
+
+def _mincost_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A minimum-cost flow's own consistency, read without the records: its numbers written as costs are (exact
+    beside the nearest float in rational mode), flows positive and by (edge, direction), each once; feasible and
+    optimal known exactly when complete, the value no more than asked and feasible exactly when it is all that was
+    asked; a certificate exactly when asked for on a complete answer, with exact potentials, and a cut exactly when
+    the flow claims to be a maximum one."""
+    out = []
+    capacities, costs, value = request["capacities"], request["costs"], request["value"]
+    rational = isinstance(value, float) or any(isinstance(x, float) for t in ((capacities or {}), costs)
+                                               for table in t.values() for x in table.values())
+
+    def number(owner: dict, field: str) -> Any:
+        if rational != (f"{field}_exact" in owner):
+            raise ValueError(f"{field}_exact appears exactly in rational mode")
+        if not rational:
+            if type(owner[field]) is not int or owner[field] < 0:
+                raise ValueError(f"{field} is a non-negative integer")
+            return owner[field]
+        exact = Fraction(owner[f"{field}_exact"])
+        try:
+            nearest = float(exact)
+        except OverflowError:
+            nearest = None
+        if str(exact) != owner[f"{field}_exact"] or exact < 0 or owner[field] != nearest:
+            raise ValueError(f"{field} is the nearest float to {field}_exact, an exact non-negative rational")
+        return exact
+    complete = status == COMPLETED
+    try:
+        sent = number(answer, "value")
+        number(answer, "cost")
+        amounts = [number(f, "flow") for f in answer["flows"]]
+    except (ValueError, TypeError, ZeroDivisionError) as exc:
+        return [str(exc)]
+    keys = [(f["edge"], f["direction"]) for f in answer["flows"]]
+    if keys != sorted(set(keys)) or any(a <= 0 for a in amounts):
+        out.append("flows are positive, by (edge, direction), each once")
+    if answer["optimal"] is not complete or (answer["feasible"] is None) == complete:
+        out.append("feasible and optimal are known exactly when the search completed")
+    if value is not None and (sent > Fraction(value) or complete and answer["feasible"] is not (sent == Fraction(value))):
+        out.append("the value is at most what was asked, and feasible says whether it is all of it")
+    if value is None and complete and answer["feasible"] is not True:
+        out.append("as much as possible is always feasible")
+    cert = answer["certificate"]
+    if (cert is not None) != (bool(request["certificate"]) and complete):
+        out.append("a certificate comes exactly when asked for, on a complete answer")
+    elif cert is not None:
+        names = [e["node"] for e in cert["potentials"]]
+        if names != sorted(set(names)):
+            out.append("potentials are unique, by node ID")
+        try:
+            for x in [e["value"] for e in cert["potentials"]] + [cert["source"], cert["sink"]]:
+                _exact_value(x, rational, signed=True)
+        except (ValueError, TypeError, ZeroDivisionError) as exc:
+            out.append(f"certificate numbers: {exc}")
+        side = cert["source_side"]
+        if (side is not None) != (value is None or answer["feasible"] is False):
+            out.append("a cut comes exactly when the flow claims to be a maximum one")
+        elif side is not None and side != sorted(set(side)):
+            out.append("the cut's source side is unique, in ascending ID")
     return out
 
 

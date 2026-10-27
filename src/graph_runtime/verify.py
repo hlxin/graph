@@ -114,6 +114,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.cycle_basis(request, answer, status)
         elif op == "k_shortest_paths":
             check.k_shortest_paths(request, answer, status)
+        elif op == "min_cost_flow":
+            check.min_cost_flow(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -362,6 +364,116 @@ class _Checker:
             elif not key[eid] > heaviest(s, t):
                 self.bad(f"the link {eid} comes before an edge of the tree path between its ends: a lighter forest "
                          "(or one earlier in edge ID) keeps it")
+
+    def min_cost_flow(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """A flow against the records: each hop in scope in its direction carrying at most its edge's capacity, the
+        other nodes conserving it, no source taking in and no target giving out more than it passes on, the value the
+        sources' net output and the cost the exact sum of flow times cost. With the certificate: the potentials leave
+        no arc of the residual network negative once reduced (a hop with room left, a hop with flow backwards at
+        minus its cost, the virtual source to every source and back from one that sends, every target to the virtual
+        sink and back from one that receives), so no flow of the same value is cheaper; and, when the flow claims to
+        be a maximum one, the cut's source side holds every source and no target, every hop out of it is full and
+        every hop into it empty, so no flow is larger."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        capacities, costs, value = request["capacities"], request["costs"], request["value"]
+        ckind, ctable = next(iter(capacities.items())) if capacities else (None, None)
+        (wkind, wtable), = costs.items()
+        rational = isinstance(value, float) or any(isinstance(x, float) for t in (ctable or {}, wtable)
+                                                   for x in t.values())
+        number = (lambda x: Fraction(x)) if rational else (lambda x: x)
+        sources, targets = set(request["sources"]), set(request["targets"])
+
+        def read(owner: Mapping, field: str) -> Any:
+            if rational:
+                return Fraction(owner[f"{field}_exact"]) if isinstance(owner.get(f"{field}_exact"), str) else None
+            return owner.get(field)
+
+        def capacity(eid: str, rel: str) -> Any:
+            if ctable is None:
+                return 1
+            x = ctable.get(rel if ckind == "by_relation" else eid)
+            return number(x) if x is not None else None
+
+        def price(eid: str, rel: str) -> Any:
+            x = wtable.get(rel if wkind == "by_relation" else eid)
+            return number(x) if x is not None else None
+        hops = []                                         # (edge, direction, from, to, relation): every hop in scope
+        for eid, (s, t, rel) in self.edge_of.items():
+            if s == t:
+                continue
+            for direction, a, b in (("forward", s, t), ("reverse", t, s)):
+                if self.in_scope(rel, direction, allowed):
+                    hops.append((eid, direction, a, b, rel))
+        known = {(h[0], h[1]): h for h in hops}
+        flow: dict = {}
+        balance: dict = {}
+        total = Fraction(0) if rational else 0
+        for i, f in enumerate(answer.get("flows") or ()):
+            hop = known.get((f.get("edge"), f.get("direction")))
+            amount = read(f, "flow")
+            if hop is None or (f.get("from"), f.get("to"), f.get("relation")) != (hop[2], hop[3], hop[4]) \
+                    or (hop[0], hop[1]) in flow:
+                self.bad(f"flow {i}: not a hop in scope from {f.get('from')!r} to {f.get('to')!r} by its edge's "
+                         "relation, once")
+                return
+            cap, cost = capacity(hop[0], hop[4]), price(hop[0], hop[4])
+            if cap is None or cost is None or amount is None or not 0 < amount <= cap:
+                self.bad(f"flow {i}: carries {amount!r}, beyond its capacity {cap!r} (or no capacity or cost)")
+                return
+            flow[(hop[0], hop[1])] = amount
+            balance[hop[2]] = balance.get(hop[2], 0) + amount
+            balance[hop[3]] = balance.get(hop[3], 0) - amount
+            total += amount * cost
+        for node, out in balance.items():
+            if node not in sources and node not in targets and out != 0:
+                self.bad(f"the flow is not conserved at {node!r}")
+            if (node in sources and out < 0) or (node in targets and out > 0):
+                self.bad(f"{node!r} takes in or gives out more than a source or a target can")
+        sent = sum((balance.get(s, 0) for s in sources), Fraction(0) if rational else 0)
+        if read(answer, "value") != sent or read(answer, "cost") != total:
+            self.bad(f"the flow sends {sent} at cost {total}, not what the answer says")
+        if value is not None and sent > number(value):
+            self.bad(f"the flow sends {sent}, more than the {value} asked for")
+        cert = self.proof(answer)
+        if cert is None:
+            return
+        pi = {e["node"]: number(e["value"]) for e in cert.get("potentials") or ()}
+        top, bottom = number(cert["source"]), number(cert["sink"])
+        missing = sorted({x for h in hops for x in h[2:4]} - set(pi) | (sources | targets) - set(pi), key=str)
+        if missing:
+            self.bad(f"certificate: no potential for {missing[:5]}")
+            return
+
+        def arc(where: str, reduced: Any) -> None:
+            if reduced < 0:
+                self.bad(f"certificate: the residual arc {where} costs {reduced} once reduced")
+        for eid, direction, a, b, rel in hops:
+            f, cap, cost = flow.get((eid, direction), 0), capacity(eid, rel), price(eid, rel)
+            if f < cap:
+                arc(f"{a!r} -> {b!r} by {eid}", cost + pi[a] - pi[b])
+            if f > 0:
+                arc(f"{b!r} -> {a!r} back by {eid}", -cost + pi[b] - pi[a])
+        for s in sorted(sources, key=str):
+            arc(f"source -> {s!r}", top - pi[s])
+            if balance.get(s, 0) > 0:
+                arc(f"{s!r} -> source", pi[s] - top)
+        for t in sorted(targets, key=str):
+            arc(f"{t!r} -> sink", pi[t] - bottom)
+            if balance.get(t, 0) < 0:
+                arc(f"sink -> {t!r}", bottom - pi[t])
+        side = cert.get("source_side")
+        if (side is not None) != (value is None or answer.get("feasible") is False):
+            self.bad("certificate: a cut proves the flow a maximum one exactly when it claims to be")
+        elif side is not None:
+            inside = set(side)
+            if not sources <= inside or targets & inside:
+                self.bad("certificate: the cut's source side holds every source and no target")
+            for eid, direction, a, b, rel in hops:
+                f = flow.get((eid, direction), 0)
+                if a in inside and b not in inside and f != capacity(eid, rel):
+                    self.bad(f"certificate: the hop {eid} leaves the cut's source side with room left")
+                if a not in inside and b in inside and f != 0:
+                    self.bad(f"certificate: the hop {eid} brings flow back into the cut's source side")
 
     def k_shortest_paths(self, request: Mapping, answer: Mapping, status: str) -> None:
         """Each path against the records: hops in scope chaining from a source to a target, no node twice, each hop at

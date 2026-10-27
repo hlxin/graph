@@ -473,6 +473,14 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             assert exp['total'] == len(rows), case['name']
             if exp.get('rows') and raw.get('answer', 'rows') == 'rows':
                 assert exp['rows'] == [[b, links] for b, links in rows], case['name']
+        elif op == 'min_cost_flow':
+            from test_min_cost_flow import oracle
+            want = oracle(g['edges'], r['sources'], r['targets'], r['scope'], r.get('capacities'), r['costs'],
+                          r.get('value'))
+            if want is None:                      # infeasible: a maximum flow at least cost instead
+                want = oracle(g['edges'], r['sources'], r['targets'], r['scope'], r.get('capacities'), r['costs'],
+                              None)
+            assert (exp['flow_value'], exp['flow_cost']) == want, case['name']
         elif op == 'k_shortest_paths':
             from test_k_shortest_paths import every_simple_path
             want = every_simple_path(g['nodes'], g['edges'], set(r['sources']), set(r['targets']), r['scope'],

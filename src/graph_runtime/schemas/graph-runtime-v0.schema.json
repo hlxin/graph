@@ -5032,6 +5032,123 @@
             }
           },
           "description": "k_shortest_paths: simple paths from a source to a target, in the order of (cost, hops, start node and edge IDs); costs as a shortest path's (null: every hop 1)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "sources",
+            "targets",
+            "scope",
+            "capacities",
+            "costs",
+            "value",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "min_cost_flow"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "sources": {
+              "$ref": "#/$defs/ids"
+            },
+            "targets": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "capacities": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "properties": {
+                    "by_relation": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/capacity"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    },
+                    "by_edge": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/capacity"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "costs": {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "maxProperties": 1,
+              "properties": {
+                "by_relation": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/cost"
+                  },
+                  "propertyNames": {
+                    "$ref": "#/$defs/id"
+                  }
+                },
+                "by_edge": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/cost"
+                  },
+                  "propertyNames": {
+                    "$ref": "#/$defs/id"
+                  }
+                }
+              }
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/capacity"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "min_cost_flow: send value (null: as much as possible) from the sources to the targets at least cost; capacities as a maximum flow's, costs as a shortest path's."
         }
       ]
     },
@@ -5587,7 +5704,8 @@
                   "d_separation",
                   "spanning_forest",
                   "cycle_basis",
-                  "k_shortest_paths"
+                  "k_shortest_paths",
+                  "min_cost_flow"
                 ]
               }
             }
@@ -6816,6 +6934,49 @@
             "properties": {
               "operation": {
                 "const": "k_shortest_paths"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "min_cost_flow"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/mincost_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "min_cost_flow"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "min_cost_flow"
               }
             }
           }
@@ -8138,6 +8299,153 @@
         }
       },
       "description": "The paths in order, their number, and whether fewer than k exist (null when interrupted)."
+    },
+    "mincost_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "feasible",
+        "cost",
+        "optimal",
+        "flows",
+        "certificate"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "value_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "feasible": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cost": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "cost_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "optimal": {
+          "type": "boolean"
+        },
+        "flows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "edge",
+              "relation",
+              "direction",
+              "from",
+              "to",
+              "flow"
+            ],
+            "properties": {
+              "edge": {
+                "$ref": "#/$defs/id"
+              },
+              "relation": {
+                "$ref": "#/$defs/id"
+              },
+              "direction": {
+                "$ref": "#/$defs/direction"
+              },
+              "from": {
+                "$ref": "#/$defs/id"
+              },
+              "to": {
+                "$ref": "#/$defs/id"
+              },
+              "flow": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "flow_exact": {
+                "$ref": "#/$defs/exact"
+              }
+            }
+          }
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "potentials",
+                "source",
+                "sink",
+                "source_side"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "potentials"
+                },
+                "potentials": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "node",
+                      "value"
+                    ],
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "value": {
+                        "$ref": "#/$defs/signed_certificate_number"
+                      }
+                    }
+                  }
+                },
+                "source": {
+                  "$ref": "#/$defs/signed_certificate_number"
+                },
+                "sink": {
+                  "$ref": "#/$defs/signed_certificate_number"
+                },
+                "source_side": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/id"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "The value sent, whether it is all that was asked (null when interrupted), its exact cost, the flow on each hop (by edge and direction), and the certificate: residual potentials, and a cut when the flow is a maximum one."
     }
   }
 }

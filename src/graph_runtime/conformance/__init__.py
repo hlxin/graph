@@ -294,6 +294,13 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
         elif "negative_cycle_cost" in exp and _cost(cycle["cycle"], "cost") != exp["negative_cycle_cost"]:
             problems.append(f"negative cycle cost {_cost(cycle['cycle'], 'cost')!r}, expected "
                             f"{exp['negative_cycle_cost']!r}")
+    if "flow_amounts" in exp and done:                      # a minimum-cost flow: what each hop carries, its cost
+        got = {f["edge"]: _cost(f, "flow") for f in answer.get("flows") or []}
+        if got != exp["flow_amounts"] or (_cost(answer, "value"), _cost(answer, "cost"), answer.get("feasible")) != \
+                (exp["flow_value"], exp["flow_cost"], exp["feasible"]):
+            problems.append(f"flow {got}, value {answer.get('value')}, cost {answer.get('cost')}, feasible "
+                            f"{answer.get('feasible')}; expected {exp['flow_amounts']}, {exp['flow_value']}, "
+                            f"{exp['flow_cost']}, {exp['feasible']}")
     if "path_edges" in exp:                                 # the k shortest paths: exactly these, in this order
         got = [[h["edge"] for h in x["hops"]] for x in answer.get("paths") or []]
         want = exp["path_edges"] if done else exp["path_edges"][:len(got)]
