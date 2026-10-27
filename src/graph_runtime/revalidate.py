@@ -55,7 +55,7 @@ REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
 _RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators",   # by verifying the certificate
               "incidence", "critical_path", "d_separation", "support", "spanning_forest", "cycle_basis",
-              "min_cost_flow")
+              "min_cost_flow", "reachability_pairs")
 _SELF_PROVEN = {"critical_path": ("acyclic", False), "d_separation": ("separated", False)}   # a witness is the proof
 _PROVEN_BY_ANSWER = ("spanning_forest",)       # what the answer claims, checked against the records, is the proof
 _NODE_FIELDS = frozenset({"node", "nodes", "left", "right", "idom", "source", "target", "from", "to", "dominators"})
@@ -614,6 +614,14 @@ def _recheck(ctx: SimpleNamespace) -> None:
     if claims:
         out.append({"code": "answer_refuted", "problem": claims[0][:300]})
         return
+    if ctx.data["operation"] == "reachability_pairs":
+        unproven = not ctx.request["witnesses"] and any(x["reachable"] and x["source"] != x["target"]
+                                                        for x in answer["pairs"])
+        if unproven:                              # a positive needs its witness: closures prove only negatives
+            out.append({"code": "no_certificate"})
+            return
+        if all(x["reachable"] for x in answer["pairs"]):
+            return                                # every pair a checked witness (or a node reaching itself)
     field_value = _SELF_PROVEN.get(ctx.data["operation"])
     if field_value is not None and answer.get(field_value[0]) is field_value[1] \
             or ctx.data["operation"] in _PROVEN_BY_ANSWER:

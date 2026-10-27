@@ -19,7 +19,7 @@ INSTRUCTIONS = (
     "of a consumer's records, with witnesses, bounded work and reproducible result_ids. Call graph_status first. Build "
     "a projection from nodes and edges with graph_projection; run requests on it with graph_execute (reachability, "
     "typed_path, shortest_path, bottleneck_path, regular_path, derivation, personalized_pagerank, "
-    "dependency_impact, pattern, support, components, biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, spanning_forest, cycle_basis, k_shortest_paths, min_cost_flow; on "
+    "dependency_impact, pattern, support, components, biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, spanning_forest, cycle_basis, k_shortest_paths, min_cost_flow, reachability_pairs; on "
     "a periodic cell, whose edges carry image shifts, periodicity); "
     "check a result against the records with graph_verify; after the records change, ask graph_revalidate which "
     "cached results still hold. An interrupted answer never certifies a negative, and a complete negative is scoped "

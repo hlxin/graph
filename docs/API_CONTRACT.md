@@ -81,6 +81,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
   sum of products), a generic join inside each bag; `answer: rows` lists rows only up to `max_results` and counts the
   rest. Totals and rows are unchanged; the expansions spent, and so the `result_id`s of cyclic pattern requests, are
   not (section 4)
+- the `reachability_pairs` operation: whether each of many sources reaches its target, from a 2-hop index of the
+  projection and the scope (pruned landmark labelling) built once and kept on the projection, every request charged
+  its full cost so that a kept index changes nothing but the time; a simple path for each reachable pair, and on
+  request the closure of each unreachable pair's source (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -196,6 +200,7 @@ no wildcard: a scope lists what it follows.
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
 | `min_cost_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as for `max_flow`; null: every edge 1), `costs` (as for shortest paths, non-negative), `value` (how much to send, as a capacity; null: as much as possible), `certificate` (default false) | `max_expansions` |
 | `k_shortest_paths` | `sources`, `targets`, `scope`, `costs` (as for shortest paths, non-negative; null: every hop 1), `k` (1 to 1,000,000; default 10) | `max_expansions` |
+| `reachability_pairs` | `pairs` (`[{"source", "target"}]`, a pair `[source, target]` read as one; sorted and de-duplicated), `scope`, `witnesses` (default true), `certificate` (default false) | `max_expansions` |
 | `cycle_basis` | `scope` (each edge in it a link between its ends, either way), `weights` (as costs: non-negative; null: every link 1), `certificate` (default false) | `max_expansions` |
 | `spanning_forest` | `scope` (each edge in it a link between its ends, either way), `weights` (as weights: any finite numbers; null: every link 1), `objective` (`min`, the default, or `max`) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
@@ -879,6 +884,42 @@ sends; every target to the virtual sink, and back from one that receives), so no
 When the flow is a maximum one (no value asked, or `feasible` false), `source_side` is a minimum cut's: every source
 and no target, every hop out of it full and every hop into it empty, so its capacity is the value; otherwise null.
 
+**Reachability between pairs.** Whether each source reaches its target in scope, for many pairs at once: provenance
+checks, dependency questions asked again and again of one projection. A node reaches itself, by the empty walk. The
+answer comes from a 2-hop index (Cohen, Halperin, Kaplan and Zwick, 2003): for each node, the hubs it reaches (its
+out-label) and the hubs that reach it (its in-label); a source reaches a target exactly when the source's out-label and
+the target's in-label share a hub. The index is built by pruned landmark labelling (Akiba, Iwata and Yoshida, 2013;
+for reachability, Yano, Akiba, Iwata and Yoshida, 2013): the nodes in order of the product of one more than their in-
+and out-degrees in scope, descending, then by ID; each in turn a hub, whose breadth-first search backwards labels every
+node that reaches it and whose search forwards labels every node it reaches, except that a node whose labels already
+share an earlier hub with the hub's is neither labelled nor searched through. Each label entry keeps the hop its search
+came by, so a reachable pair's witness is the walk from the source to the first common hub (by order) and on to the
+target, with every loop cut: a simple path.
+
+The index is a function of the projection and the scope. It is built once and kept on the projection (in memory, with
+it; the last four indexes built), and every request is charged its full cost, one expansion per node whose hops it
+reads and one per label entry, whether it is built then or was kept: the same request gets the same expansions,
+status and result either way, and a budget smaller than the index is exhausted the same way both times. A deadline or a
+cancellation that stops the building keeps nothing. Then each pair, in order: one expansion, plus one per entry of
+the smaller of the two labels read, plus, for a witness, one per hop of the walk through the hub it is cut from, charged
+before each hop is followed (loops included: a witness can be short while that walk is long).
+With `certificate: true`, each source of an unreachable pair gets its closure, every node it reaches (one expansion per
+node): a set holding the source and not the target, from which every hop in scope stays inside, which a checker
+verifies against the records.
+
+The index pays when it is reused, or when many pairs reach far: on a random graph of 100,000 nodes and 300,000 edges
+(one giant strong component, 390,000 label entries), 10,000 pairs take 1.5 s with the build and 0.4 s with the index
+kept. Labels stay small when some nodes are hubs; a random layered DAG without hubs (100,000 nodes, 46 million
+entries) takes minutes to index, then answers 10,000 pairs in 0.3 s. Where most pairs are unreachable and reach sets
+are small, a search per pair is cheaper than any index.
+
+Answer: `{"pairs": [{"source", "target", "reachable", "witness"}], "count", "reachable", "index": {"entries",
+"largest"}, "certificate"}`, in the request's (canonical) order; `witness` is `{"source", "target", "length", "hops"}`
+for a reachable pair when witnesses are asked for, else null; `index` gives the label entries and the largest pair of
+labels (null until built). An interruption keeps the pairs answered, a prefix, each decided; its certificate is null.
+The certificate is `{"kind": "closures", "closures": [{"source", "nodes"}]}`, one per source of an unreachable pair,
+in ascending order.
+
 **K shortest paths.** The first k simple paths from a source to a target: alternative reaction pathways, backup routes,
 the next best derivations. A path visits no node twice; other sources and targets may lie on it, and a source that is
 a target is a path of no hops. Paths are ranked in a strict order: by cost (as for shortest paths, non-negative and
@@ -987,6 +1028,10 @@ The result contract reports how an execution ended. It carries no scientific ans
     empty
   - for k shortest paths, each path's hops chaining in scope from a source to a target, no node twice, at the exact
     cost of its hops; the paths distinct and in the strict order; k of them unless `exhausted`
+  - for reachability between pairs, the request's pairs in order (a prefix when interrupted), a node reaching itself,
+    each reachable pair's witness a path in scope from its source to its target, no node twice; from the certificate,
+    each closure holding its source and none of the targets it is said not to reach, and closed under every hop in
+    scope
   - for a cycle basis, each cycle a simple cycle of links in scope through the nodes it lists in order, with its exact
     weight; the cycles independent (by GF(2) elimination) and, when complete, `rank` of them, the dimension the
     records give; and with witnesses, each cycle odd against its own and every earlier cycle even against it, its
@@ -1080,13 +1125,15 @@ pieces it spans, as `verify_result` checks them); an edit that breaks any of the
 full.
 
 Components, biconnectivity, a maximum flow, a minimum-cost flow, a matching, dominators, incidence, critical paths,
-d-separation, cycle bases and support are revalidated by their certificates, which
+d-separation, cycle bases, reachability between pairs and support are revalidated by their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
 kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest
 the sources, a support count that an added or removed support changed); otherwise it holds exactly when its certificate still checks against the new projection's records (as
 `verify_result` checks it), and is unknown (`certificate_broken`, with the first problem found) when it does not, or
-(`no_certificate`) when it has none, unless its witness alone proves it (a cycle, an active trail). These are always checked in full.
+(`no_certificate`) when it has none, unless its witness alone proves it (a cycle, an active trail, the witnesses of
+pairs that are all reachable). Pairs need both proofs: a closure proves only negatives, so a reachable pair asked for
+without its witness leaves the answer unknown (`no_certificate`). These are always checked in full.
 
 A derivation holds while every listed node keeps its rule and every use is still a hop in scope, and its certificate's
 conditions still hold over the targets' region in the new projection. An edit far from the answer can join the

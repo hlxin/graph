@@ -301,6 +301,21 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             problems.append(f"flow {got}, value {answer.get('value')}, cost {answer.get('cost')}, feasible "
                             f"{answer.get('feasible')}; expected {exp['flow_amounts']}, {exp['flow_value']}, "
                             f"{exp['flow_cost']}, {exp['feasible']}")
+    if "pairs_reachable" in exp:                            # pairs: each decided; a prefix when interrupted
+        got = {f"{x['source']}->{x['target']}": x["reachable"] for x in answer.get("pairs") or []}
+        want = exp["pairs_reachable"]
+        if any(want.get(k) is not v for k, v in got.items()) or (done and got != want) \
+                or (done and answer.get("reachable") != sum(want.values())):
+            problems.append(f"pairs {got}, expected {want}")
+        for k, edges in (exp.get("pair_witness_edges") or {}).items():
+            pair = next((x for x in answer.get("pairs") or [] if f"{x['source']}->{x['target']}" == k), None)
+            if pair is not None and [h["edge"] for h in (pair["witness"] or {}).get("hops", [])] != edges:
+                problems.append(f"the witness of {k} is not {edges}")
+        if "closures" in exp and done:
+            cert = answer.get("certificate") or {}
+            got_closures = {c["source"]: list(c["nodes"]) for c in cert.get("closures") or []}
+            if got_closures != exp["closures"]:
+                problems.append(f"closures {got_closures}, expected {exp['closures']}")
     if "path_edges" in exp:                                 # the k shortest paths: exactly these, in this order
         got = [[h["edge"] for h in x["hops"]] for x in answer.get("paths") or []]
         want = exp["path_edges"] if done else exp["path_edges"][:len(got)]
