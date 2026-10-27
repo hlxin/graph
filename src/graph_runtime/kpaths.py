@@ -15,8 +15,17 @@ the sources makes the choice of source the first step, so several sources work t
 extending a path extends its key the same way for every path to the same node, so the least path to a node extends
 a least path to its predecessor, and the first target settled ends the least path.
 
-Each listed path is a witness a checker confirms; that no other simple path comes before the last one listed is
-Yen's theorem, which oracle tests check, not a certificate.
+Each listed path is a witness a checker confirms. With ``certificate: true`` a complete answer also proves that no
+other simple path comes before the last one listed (or, when fewer than k exist, that there are no others), from two
+parts. The potentials are, for every node that reaches a target, a lower bound on the (cost, hops) of reaching one:
+no hop in scope lowers them by more than its own (cost, 1), every target is at (0, 0), and a node not listed reaches
+none. The listed paths' prefixes form a tree, and every simple path not listed leaves it somewhere: at a prefix, by
+a hop no listed path with that prefix takes (or, at the start, from a source none starts at). For each prefix, the
+walks that leave it this way and avoid its nodes are explored as far as the potentials allow a walk to still come
+before the last path: each node so reached is labelled with its least (cost, hops, side), where side says whether,
+on a tie of cost and hops, the walk's IDs come before the last path's or after them (fixed by where it left the
+tree). No labelled node is a target, so no unlisted path comes before the last one. A checker confirms each label by
+its hops alone, without searching.
 """
 
 from __future__ import annotations
@@ -34,7 +43,7 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
     """Yen's loop over Dijkstra's searches (each settled state one expansion). An interruption keeps the paths already
     accepted: each is valid, and all are in order."""
     from .engine import _sides
-    st = SimpleNamespace(interruption=None, examined=0, discovered=0, paths=[])
+    st = SimpleNamespace(interruption=None, examined=0, discovered=0, paths=[], certificate=None)
     sides, rel = _sides(p, plan.fwd, plan.rev), p._edge_rel
     eids, ids = p._edge_ids, p._node_ids
     targets, cost = plan.targets, plan.cost
@@ -138,11 +147,141 @@ def search(p: Any, plan: SimpleNamespace, ctl: Any) -> SimpleNamespace:
                 found = least([(start_key, spur)], set(nodes[:j]), banned, stopped, bound())
                 if found is not None:
                     offer((found[0], source, root + found[2]), j)
+        if plan.certificate:
+            st.certificate = certify(p, plan, accepted, hops, ctl)
     except _Stop as stop:
         st.interruption = str(stop)
+        st.certificate = None
     st.paths = accepted
     st.discovered = len(known)
     return st
+
+
+def certify(p: Any, plan: SimpleNamespace, accepted: list[tuple], hops: Any, ctl: Any) -> dict:
+    """The certificate of a complete ranking: potentials by a reverse search from the targets, then, for the start
+    and every prefix of the listed paths, the walks that leave the prefix tree there, explored by A* with those
+    potentials while they could still come before the last path (all of them, when fewer than k paths exist). Each
+    settled node is one expansion."""
+    from .engine import _back_sides
+    ids, eids, targets, cost = p._node_ids, p._edge_ids, plan.targets, plan.cost
+    rel = p._edge_rel
+    back = _back_sides(p, plan.fwd, plan.rev)
+
+    def into(v: int) -> list[tuple[int, int]]:
+        out = []
+        for lists, base, marks, ends, _ in back:
+            hs = lists[v]
+            if hs is None:
+                hs = lists[v] = [ei for ei in base[v] if marks[rel[ei]]]
+            out.extend((ei, ends[ei]) for ei in hs)
+        return out
+
+    pi: dict[int, tuple] = {}                             # node: least (cost, hops) to a target
+    heap = [((0, 0), t) for t in sorted(targets)]
+    best = {t: (0, 0) for t in targets}
+    while heap:
+        key, v = heapq.heappop(heap)
+        if v in pi or best[v] != key:
+            continue
+        why = ctl.stop()
+        if why:
+            raise _Stop(why)
+        pi[v] = key
+        for ei, u in into(v):
+            nkey = (key[0] + cost(ei), key[1] + 1)
+            if u not in pi and (u not in best or nkey < best[u]):
+                best[u] = nkey
+                heapq.heappush(heap, (nkey, u))
+
+    full = len(accepted) == plan.k
+    if full:
+        last_key, last_source, last_path = accepted[-1]
+        tau = (last_key[0], last_key[1], 1)               # the last path: cost, hops, and walks after it on a tie
+        last_seq = last_key[2]
+    else:
+        tau = last_seq = None
+
+    def pruned(val: tuple, v: int) -> bool:
+        """Whether every walk through ``v`` with ``val`` so far comes after the last path (or reaches no target)."""
+        bound = pi.get(v)
+        if bound is None:
+            return True
+        return tau is not None and ahead(val, bound) >= tau
+
+    explored = []
+
+    def ahead(val: tuple, bound: tuple) -> tuple:
+        return val[0] + bound[0], val[1] + bound[1], val[2]
+
+    def explore(where: tuple, starts: list[tuple[tuple, int]], avoid: set) -> None:
+        best: dict[int, tuple] = {}
+        heap = []
+        for val, v in starts:
+            if not pruned(val, v) and (v not in best or val < best[v]):
+                best[v] = val
+                heapq.heappush(heap, (ahead(val, pi[v]), val, v))
+        labels: dict[int, tuple] = {}
+        while heap:
+            _, val, v = heapq.heappop(heap)
+            if v in labels or best[v] != val:
+                continue
+            why = ctl.stop()
+            if why:
+                raise _Stop(why)
+            if v in targets:
+                raise AssertionError(f"k shortest paths: a path reaching {ids[v]} the ranking missed")
+            labels[v] = val
+            for ei, z, _ in hops(v):
+                if z in avoid or z in labels:
+                    continue
+                nval = (val[0] + cost(ei), val[1] + 1, val[2])
+                if not pruned(nval, z) and (z not in best or nval < best[z]):
+                    best[z] = nval
+                    heapq.heappush(heap, (ahead(nval, pi[z]), nval, z))
+        if labels:
+            explored.append((where, labels))
+
+    used = {s for _, s, _ in accepted}
+    explore((None, None), [((0, 0, int(tau is not None and ids[s] > last_seq[0])), s)
+                           for s in plan.sources if s not in used], set())
+    roots: dict = {}                                      # the prefix tree: [children by (edge, flag), explored]
+    along = []
+    for _, source, path in accepted:
+        at = roots.setdefault(source, [{}, False])
+        nodes = [at]
+        for _, ei, flag, _ in path:
+            at = at[0].setdefault((ei, flag), [{}, False])
+            nodes.append(at)
+        along.append(nodes)
+    for i, (_, source, path) in enumerate(accepted):
+        nodes = [source] + [v for *_, v in path]
+        same = 0                                          # how many leading IDs it shares with the last path
+        if tau is not None and ids[source] == last_seq[0]:
+            same = 1
+            while same <= len(path) and same < len(last_seq) and eids[path[same - 1][1]] == last_seq[same]:
+                same += 1
+        avoid: set = set()
+        c_root = 0
+        for j, tree in enumerate(along[i]):
+            avoid.add(nodes[j])
+            if j:
+                c_root += cost(path[j - 1][1])
+            if tree[1]:
+                continue                                  # a prefix an earlier path explored
+            tree[1] = True
+            if tau is None:
+                side = lambda ei: 0                        # noqa: E731 - no last path to tie with
+            elif j + 1 <= same:                           # a prefix of the last path: the next edge decides
+                side = ((lambda ei: 1) if j == len(last_path)
+                        else (lambda ei, nxt=last_seq[j + 1]: int(eids[ei] > nxt)))
+            else:                                         # it already differs from the last path's IDs
+                mine = ids[source] if same == 0 else eids[path[same - 1][1]]
+                fixed = int(same >= len(last_seq) or mine > last_seq[same])
+                side = lambda ei, fixed=fixed: fixed       # noqa: E731
+            starts = [((c_root + cost(ei), j + 1, side(ei)), v) for ei, v, flag in hops(nodes[j])
+                      if v not in avoid and (ei, flag) not in tree[0]]
+            explore((i, j), starts, avoid)
+    return {"pi": pi, "explored": explored}
 
 
 def answer(p: Any, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
@@ -155,13 +294,30 @@ def answer(p: Any, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, li
         return {"source": ids[source], "target": ids[steps[-1][3]] if steps else ids[source], "length": len(steps),
                 "hops": [{**_via(p, u, ei, flag), "to": ids[v], "cost": plan.given(ei)} for u, ei, flag, v in steps],
                 "cost": value, **({"cost_exact": exact} if plan.rational else {})}
+    def exact(x: Any) -> Any:
+        return _number(plan.exact(x), True)[1] if plan.rational else x
+
     complete = st.interruption is None
     paths = [path(e) for e in st.paths]
-    return ({"paths": paths, "count": len(paths), "exhausted": (len(paths) < plan.k) if complete else None},
-            [RANKING_NOTE] + ([EXHAUSTED_NOTE] if complete and len(paths) < plan.k else []))
+    cert = None
+    if complete and st.certificate is not None:
+        sides = (None, "before", "after") if len(paths) == plan.k else (None, None, None)
+        cert = {"kind": "deviations",
+                "potentials": [{"node": ids[v], "cost": exact(c), "hops": h} for v, (c, h) in sorted(
+                    st.certificate["pi"].items())],
+                "explored": [{"path": i, "at": j, "labels": [
+                    {"node": ids[v], "cost": exact(c), "hops": h, "side": sides[1 + b]}
+                    for v, (c, h, b) in sorted(labels.items())]} for (i, j), labels in st.certificate["explored"]]}
+    return ({"paths": paths, "count": len(paths), "exhausted": (len(paths) < plan.k) if complete else None,
+             "certificate": cert},
+            ([CERTIFIED_NOTE] if cert else [RANKING_NOTE]) + ([EXHAUSTED_NOTE] if complete and len(paths) < plan.k
+                                                              else []))
 
 
 RANKING_NOTE = ("Each path is a witness (a simple path from a source to a target, at the cost it states); they come in "
                 "the order of (cost, hops, start node and edge IDs). That no other simple path comes before the last "
-                "one listed is Yen's theorem, not a certificate.")
+                "one listed is Yen's theorem, proven only when a certificate is asked for.")
+CERTIFIED_NOTE = ("Each path is a witness, and the certificate proves the ranking: its potentials bound the cost of "
+                  "reaching a target from every node, and its labels show that no walk leaving the listed paths' "
+                  "prefixes reaches a target before the last path (or at all, when fewer than k paths exist).")
 EXHAUSTED_NOTE = "Fewer than k simple paths exist: these are all of them, in order."

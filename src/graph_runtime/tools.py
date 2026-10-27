@@ -524,7 +524,8 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
     elif op == "k_shortest_paths":
         summary = {"count": a["count"], "exhausted": a["exhausted"],
                    "paths": [{"cost": x.get("cost_exact", x["cost"]), "length": x["length"],
-                              "edges": [h["edge"] for h in x["hops"][:limit]]} for x in a["paths"][:limit]]}
+                              "edges": [h["edge"] for h in x["hops"][:limit]]} for x in a["paths"][:limit]],
+                   "certificate": kind(a["certificate"])}
     elif op == "cycle_basis":
         summary = {k: a[k] for k in ("rank", "count", "weight", "weight_exact") if k in a}
         summary["cycles"] = {"items": [c["nodes"] for c in a["cycles"][:limit]], "more": len(a["cycles"]) > limit}

@@ -67,7 +67,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
   cost, by successive shortest paths with potentials, proven by the residual potentials and, for a maximum flow, a cut
   (section 4)
 - the `k_shortest_paths` operation: the first k simple paths from a source to a target in the order of (cost, hops,
-  start node and edge IDs), by Yen's algorithm, each a checked witness (section 4)
+  start node and edge IDs), by Yen's algorithm, each a checked witness, and with `certificate: true` the ranking
+  proven by potentials and the walks that leave the listed paths' prefixes, so that such answers are revalidated;
+  every k shortest paths request now states `certificate`, so requests made before have other `request_id`s and
+  `result_id`s, with the same paths (section 4)
 - the `spanning_forest` operation: a minimum (or maximum) spanning forest by Kruskal's algorithm in the order of
   (weight, edge ID), unique in that order, which proves itself against the records by the cycle property (section 4)
 - the `cycle_basis` operation: a minimum cycle basis (ring perception: the smallest set of smallest rings, for every
@@ -210,7 +213,7 @@ no wildcard: a scope lists what it follows.
 | `d_separation` | `x`, `y`, `given` (default none; the three disjoint), `scope` (a hop from u to v: u is a parent, a direct cause, of v), `certificate` (default false) | `max_expansions` |
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
 | `min_cost_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as for `max_flow`; null: every edge 1), `costs` (as for shortest paths, non-negative), `value` (how much to send, as a capacity; null: as much as possible), `certificate` (default false) | `max_expansions` |
-| `k_shortest_paths` | `sources`, `targets`, `scope`, `costs` (as for shortest paths, non-negative; null: every hop 1), `k` (1 to 1,000,000; default 10) | `max_expansions` |
+| `k_shortest_paths` | `sources`, `targets`, `scope`, `costs` (as for shortest paths, non-negative; null: every hop 1), `k` (1 to 1,000,000; default 10), `certificate` | `max_expansions` |
 | `flux_modes` | `rows` (species), `columns` (reactions), `scope`, `coefficients` (all as for `incidence`), `reversible` (reactions, column nodes, that may run backwards; default none), `certificate` (default false) | `max_expansions`, `max_results` |
 | `canonical_form` | `nodes` (the induced subgraph's), `scope` (the edges that count, by relation, with their own direction), `directed` (default true), `node_colors` (`types`, the default: each node's types with their ancestors; or `none`) | `max_expansions` |
 | `isomorphism` | `left`, `right` (two node sets, which may overlap), `scope`, `directed`, `node_colors` (as for `canonical_form`), `certificate` (default false) | `max_expansions` |
@@ -1056,11 +1059,43 @@ node, avoids the nodes before it, and leaves it neither by a hop nor by stopping
 root took is a candidate, and the least candidate is the next path. A virtual start before the sources makes the
 choice of source the first step. Each least path is Dijkstra's search on the full order (extending paths to a node by
 one hop keeps their order, so a least path extends a least path); each settled state is one expansion. Answer:
-`{"paths": [{"source", "target", "length", "hops", "cost", ["cost_exact"]}], "count", "exhausted"}`, hops as a
-shortest path's; `exhausted` is true when fewer than k simple paths exist (all of them are listed), false when k are
-listed, null when interrupted. An interrupted search lists the paths accepted so far: a prefix of the order. Each path
-is a witness a checker confirms; that no simple path is missing before the last one listed is Yen's theorem, checked
-by oracle tests, not a certificate, and such answers are not revalidated (`not_certified`).
+`{"paths": [{"source", "target", "length", "hops", "cost", ["cost_exact"]}], "count", "exhausted", "certificate"}`,
+hops as a shortest path's; `exhausted` is true when fewer than k simple paths exist (all of them are listed), false
+when k are listed, null when interrupted. An interrupted search lists the paths accepted so far: a prefix of the
+order. Each path is a witness a checker confirms; without a certificate, that no simple path is missing before the
+last one listed is Yen's theorem, checked by oracle tests, and such answers are not revalidated (`no_certificate`).
+
+**Certificate.** With `certificate: true`, a complete answer carries `{"kind": "deviations", "potentials": [{"node",
+"cost", "hops"}], "explored": [{"path", "at", "labels": [{"node", "cost", "hops", "side"}]}]}`, which proves the
+ranking: that no unlisted simple path comes before the last path listed, or, when `exhausted`, that there is none.
+Costs are written as a shortest path certificate's (integers, or exact `p/q` strings in rational mode).
+
+- *Potentials.* For every node that reaches a target in scope (in ascending ID order), a lower bound on the least
+  (cost, hops) of reaching one, compared by cost and then hops: every target is listed at (0, 0) or below, no hop
+  in scope from a listed node u to a listed node v leaves u above v's potential plus the hop's (cost, 1), and every
+  hop in scope into a listed node comes from a listed node. An unlisted node then reaches no target.
+- *The prefix tree.* The listed paths' prefixes (a source and its first j hops) form a tree. A simple path that is
+  not listed leaves it somewhere: at the start, from a source no listed path starts at, or at a prefix, by a hop
+  no listed path with that prefix takes next (a prefix that ends at a target is listed, since it comes before the
+  paths it begins: a prefix that ends at one unlisted refutes the ranking). Such a hop, and the rest of the path,
+  avoid the prefix's nodes.
+- *Explored prefixes.* For the start (`path` and `at` null) and for each prefix (the first `at` hops of path
+  `path`, the first listed path with that prefix), the walks that leave it this way and avoid its nodes are
+  followed while their potentials do not put them at or after the last path: each node they reach so is labelled
+  with its least (cost, hops, side). `side` says whether, on a tie of cost and hops, such a walk comes before the
+  last path or after it in the order of IDs, which is fixed where it leaves the tree (by the IDs the prefix and the
+  hop share with the last path, then the first that differs); it is null when the answer is `exhausted`, where
+  every path counts and no bound applies. Only prefixes with a label are listed, the start first, then by path and
+  `at`; labels in ascending node ID order.
+
+The check, from the records: for every leaving hop and every hop from a labelled node to a node off the prefix, the
+(cost, hops, side) it brings is either at or after the last path's (cost, hops, after) once the potential of the node
+it reaches is added (always so for a node without a potential; never so, unless it has none, when `exhausted`), or
+no less than that node's label; and no labelled node is a target. A walk that left the tree and reached a target
+before the last path would carry labels along it to that target, so there is none, and the listed paths are the
+first ones in the order. The certificate's own searches (a reverse Dijkstra search from the targets, then one A*
+search per prefix with those potentials) count against `max_expansions`: an answer whose certificate is cut short
+is interrupted, with no certificate. Revalidation checks the certificate against the new records.
 
 **Cycle basis.** A minimum cycle basis: the rings of a molecule, the independent loops of a reaction or citation
 network. Each edge in scope is a link between its ends, read undirected; a loop is a cycle of one link and two
@@ -1153,7 +1188,9 @@ The result contract reports how an execution ended. It carries no scientific ans
     reduced, and a maximum flow's cut holding every source and no target with every hop out full and every hop in
     empty
   - for k shortest paths, each path's hops chaining in scope from a source to a target, no node twice, at the exact
-    cost of its hops; the paths distinct and in the strict order; k of them unless `exhausted`
+    cost of its hops; the paths distinct and in the strict order; k of them unless `exhausted`; and from a
+    certificate, the potentials against every hop in scope into a listed node, and for the start and every prefix of
+    the listed paths, every hop leaving it and every hop from its labels, which proves the ranking
   - for flux modes, each vector's reactions columns of the matrix rebuilt from the records, its values non-zero
     integers without a common factor, irreversible reactions non-negative, S v = 0 exactly, the modes in order; from
     each certificate, a nonsingular (|J| − 1)-minor of the mode's support
@@ -1224,7 +1261,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 188 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 215 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -1266,7 +1303,7 @@ pieces it spans, as `verify_result` checks them); an edit that breaks any of the
 full.
 
 Components, biconnectivity, a maximum flow, a minimum-cost flow, a matching, dominators, incidence, critical paths,
-d-separation, cycle bases, reachability between pairs, Datalog, canonical forms, isomorphisms and support are
+d-separation, cycle bases, k shortest paths, reachability between pairs, Datalog, canonical forms, isomorphisms and support are
 revalidated by their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a

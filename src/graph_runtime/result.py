@@ -1587,7 +1587,9 @@ def _pairs_problems(request: dict, answer: dict, status: str) -> list[str]:
 def _kpaths_problems(request: dict, answer: dict, status: str) -> list[str]:
     """The k shortest paths' own consistency, read without the records: count their number, at most k; exhausted
     (fewer than k exist) known exactly when complete; each path's length its hops, its hops chaining from its source
-    to its target, no node twice, its cost written as costs are (exact beside the nearest float in rational mode)."""
+    to its target, no node twice, its cost written as costs are (exact beside the nearest float in rational mode); a
+    certificate exactly when asked for, on a complete answer, in its canonical form. Whether it proves the ranking is
+    checked against the records (:func:`graph_runtime.verify_result`)."""
     out = []
     paths = answer["paths"]
     if answer["count"] != len(paths) or len(paths) > request["k"]:
@@ -1618,12 +1620,49 @@ def _kpaths_problems(request: dict, answer: dict, status: str) -> list[str]:
                 out.append(f"path {n}: cost is the nearest float to cost_exact (null on overflow)")
         elif type(x["cost"]) is not int:
             out.append(f"path {n}: an integer-cost path costs an integer")
+    cert = answer["certificate"]
+    if (cert is not None) != (bool(request["certificate"]) and status == COMPLETED):
+        out.append("a certificate comes exactly when asked for, on a complete answer")
+    if cert is not None:
+        out.extend(_kpaths_certificate_problems(cert, paths, rational, len(paths) == request["k"]))
     if out:
         return out
     keys = [((Fraction(x["cost_exact"]) if rational else x["cost"]), x["length"],
              (x["source"],) + tuple(h["edge"] for h in x["hops"])) for x in paths]
     if any(a >= b for a, b in zip(keys, keys[1:])):
         out.append("the paths are distinct and in the order of (cost, hops, start node and edge IDs)")
+    return out
+
+
+def _kpaths_certificate_problems(cert: dict, paths: list, rational: bool, full: bool) -> list[str]:
+    """A k shortest paths certificate's own form: potentials unique by ascending node ID; explored prefixes unique and
+    ascending, the start (path and at null) first, each prefix within its path; labels unique by ascending node ID,
+    with a side exactly when k paths are listed (there is a last path to tie with); costs written as the request's
+    are (integers, or p/q in rational mode)."""
+    out = []
+
+    def written(x: Any) -> bool:
+        return isinstance(x, str) if rational else (type(x) is int)
+    names = [e["node"] for e in cert["potentials"]]
+    if names != sorted(set(names)) or not all(written(e["cost"]) for e in cert["potentials"]):
+        out.append("certificate potentials are unique, in ascending node ID order, with costs written as the "
+                   "request's are")
+    at = [(e["path"], e["at"]) for e in cert["explored"]]
+    if any((i is None) != (j is None) for i, j in at) or any(
+            i is not None and (i >= len(paths) or j > paths[i]["length"]) for i, j in at):
+        out.append("a certificate's explored prefix is the start (path and at null) or the first at hops of a "
+                   "listed path")
+        return out
+    order = [(-1, -1) if i is None else (i, j) for i, j in at]
+    if order != sorted(set(order)):
+        out.append("a certificate's explored prefixes are unique, the start first, then by path and hops")
+    for e in cert["explored"]:
+        names = [x["node"] for x in e["labels"]]
+        if names != sorted(set(names)) or not all(written(x["cost"]) for x in e["labels"]):
+            out.append("certificate labels are unique, in ascending node ID order, with costs written as the "
+                       "request's are")
+        if any((x["side"] is None) == full for x in e["labels"]):
+            out.append("a label has a side (before or after the last path) exactly when k paths are listed")
     return out
 
 

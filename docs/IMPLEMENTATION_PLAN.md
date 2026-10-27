@@ -178,8 +178,9 @@ contract, so it waits for a decision.
 
 1. Review the contract (work item 1) and settle anything it should change before a consumer depends on it.
 2. Certificates for patterns (their total and emptiness), so that every operation can be revalidated (support's,
-   both least fixpoints' ranks, are done); and witnesses inside negative certificates, so that an edit that breaks one can be shown to refute
-   it, not only to leave it unknown.
+   both least fixpoints' ranks, and the k shortest paths', potentials with the walks that leave the listed paths'
+   prefixes, are done); and witnesses inside negative certificates, so that an edit that breaks one can be shown to
+   refute it, not only to leave it unknown.
 3. Propose the SCALE adapter to SCALE as a pull request, under SCALE's process.
 4. Propose the STATES adapter to STATES, under its own process.
 5. Decide on the periodic projection proposed under Real consumer requests.

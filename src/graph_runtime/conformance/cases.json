@@ -2273,6 +2273,61 @@
     "Reaction",
     "Species"
    ]
+  },
+  "G27": {
+   "nodes": [
+    "a",
+    "b",
+    "c",
+    "s",
+    "t"
+   ],
+   "edges": [
+    {
+     "id": "e1",
+     "source": "s",
+     "target": "a",
+     "relation": "R"
+    },
+    {
+     "id": "e2",
+     "source": "a",
+     "target": "t",
+     "relation": "R"
+    },
+    {
+     "id": "e3",
+     "source": "a",
+     "target": "b",
+     "relation": "R"
+    },
+    {
+     "id": "e4",
+     "source": "b",
+     "target": "a",
+     "relation": "R"
+    },
+    {
+     "id": "e5",
+     "source": "s",
+     "target": "c",
+     "relation": "R"
+    },
+    {
+     "id": "e6",
+     "source": "c",
+     "target": "t",
+     "relation": "R"
+    }
+   ],
+   "relations": [
+    "R"
+   ],
+   "node_types": [],
+   "bindings": {
+    "source": "conformance-g27@1",
+    "policy": "public"
+   }
   }
  },
  "cases": [
@@ -10822,6 +10877,271 @@
      ]
     ],
     "exhausted": true
+   }
+  },
+  {
+   "name": "k-shortest-paths-certificate-nothing-left-to-explore",
+   "covers": [
+    "k shortest paths",
+    "certificate",
+    "potentials"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "k_shortest_paths",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "k": 3,
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "path_edges": [
+     [
+      "e3",
+      "e4"
+     ],
+     [
+      "e3",
+      "e5"
+     ],
+     [
+      "e1",
+      "e2",
+      "e4"
+     ]
+    ],
+    "exhausted": false,
+    "certificate": {
+     "kind": "deviations",
+     "potentials": [
+      {
+       "node": "a",
+       "cost": 2,
+       "hops": 2
+      },
+      {
+       "node": "b",
+       "cost": 2,
+       "hops": 2
+      },
+      {
+       "node": "c",
+       "cost": 1,
+       "hops": 1
+      },
+      {
+       "node": "d",
+       "cost": 0,
+       "hops": 0
+      }
+     ],
+     "explored": []
+    }
+   }
+  },
+  {
+   "name": "k-shortest-paths-certificate-a-detour-the-prefix-blocks",
+   "covers": [
+    "k shortest paths",
+    "certificate",
+    "labels",
+    "ties"
+   ],
+   "graph": "G27",
+   "request": {
+    "operation": "k_shortest_paths",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "e1": 1,
+      "e2": 5,
+      "e3": 0,
+      "e4": 0,
+      "e5": 3,
+      "e6": 4
+     }
+    },
+    "k": 2,
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "path_edges": [
+     [
+      "e1",
+      "e2"
+     ],
+     [
+      "e5",
+      "e6"
+     ]
+    ],
+    "exhausted": false,
+    "certificate": {
+     "kind": "deviations",
+     "potentials": [
+      {
+       "node": "a",
+       "cost": 5,
+       "hops": 1
+      },
+      {
+       "node": "b",
+       "cost": 5,
+       "hops": 2
+      },
+      {
+       "node": "c",
+       "cost": 4,
+       "hops": 1
+      },
+      {
+       "node": "s",
+       "cost": 6,
+       "hops": 2
+      },
+      {
+       "node": "t",
+       "cost": 0,
+       "hops": 0
+      }
+     ],
+     "explored": [
+      {
+       "path": 0,
+       "at": 1,
+       "labels": [
+        {
+         "node": "b",
+         "cost": 1,
+         "hops": 2,
+         "side": "before"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "k-shortest-paths-certificate-exhausted",
+   "covers": [
+    "k shortest paths",
+    "certificate",
+    "labels",
+    "exhausted"
+   ],
+   "graph": "G27",
+   "request": {
+    "operation": "k_shortest_paths",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "e1": 1,
+      "e2": 5,
+      "e3": 0,
+      "e4": 0,
+      "e5": 3,
+      "e6": 4
+     }
+    },
+    "k": 5,
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "path_edges": [
+     [
+      "e1",
+      "e2"
+     ],
+     [
+      "e5",
+      "e6"
+     ]
+    ],
+    "exhausted": true,
+    "certificate": {
+     "kind": "deviations",
+     "potentials": [
+      {
+       "node": "a",
+       "cost": 5,
+       "hops": 1
+      },
+      {
+       "node": "b",
+       "cost": 5,
+       "hops": 2
+      },
+      {
+       "node": "c",
+       "cost": 4,
+       "hops": 1
+      },
+      {
+       "node": "s",
+       "cost": 6,
+       "hops": 2
+      },
+      {
+       "node": "t",
+       "cost": 0,
+       "hops": 0
+      }
+     ],
+     "explored": [
+      {
+       "path": 0,
+       "at": 1,
+       "labels": [
+        {
+         "node": "b",
+         "cost": 1,
+         "hops": 2,
+         "side": null
+        }
+       ]
+      }
+     ]
+    }
    }
   },
   {

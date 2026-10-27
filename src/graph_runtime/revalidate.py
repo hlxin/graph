@@ -21,10 +21,11 @@ The verdict has three values:
   certificates (pattern), a negative or an optimum without its certificate, and a certificate an edit
   broke without refuting the answer.
 
-Components, biconnectivity, maximum flows, matchings, dominators, incidence, critical paths, d-separation and support
-are revalidated by their certificates: those prove the whole answer from the records alone (trees and an ordered
-closed partition, a depth-first forest, a cut, a vertex cover, a low-high order, a nonsingular minor with a kernel
-basis, a topological order with earliest times, Bayes-ball states, both least fixpoints' ranks), so the answer holds
+Components, biconnectivity, maximum flows, matchings, dominators, incidence, critical paths, d-separation, k shortest
+paths and support are revalidated by their certificates: those prove the whole answer from the records alone (trees
+and an ordered closed partition, a depth-first forest, a cut, a vertex cover, a low-high order, a nonsingular minor
+with a kernel basis, a topological order with earliest times, Bayes-ball states, potentials with the walks that leave
+the listed paths, both least fixpoints' ranks), so the answer holds
 on the new projection exactly when its certificate still checks
 against the new projection's records (:func:`graph_runtime.verify_result`), and a listed node or edge that is gone
 refutes it. These are always checked in full.
@@ -55,7 +56,8 @@ REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
 _RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators",   # by verifying the certificate
               "incidence", "critical_path", "d_separation", "support", "spanning_forest", "cycle_basis",
-              "min_cost_flow", "reachability_pairs", "datalog", "canonical_form", "isomorphism", "flux_modes")
+              "min_cost_flow", "reachability_pairs", "datalog", "canonical_form", "isomorphism", "flux_modes",
+              "k_shortest_paths")
 _SELF_PROVEN = {"critical_path": ("acyclic", False), "d_separation": ("separated", False),  # a witness is the proof
                 "isomorphism": ("isomorphic", True)}
 _PROVEN_BY_ANSWER = ("spanning_forest",)       # what the answer claims, checked against the records, is the proof
