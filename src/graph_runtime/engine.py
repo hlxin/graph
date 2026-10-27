@@ -28,7 +28,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import algebra, causal, cycles, dominators, flows, forest, kpaths, paths, ranking, schedule, structure
+from . import algebra, causal, cycles, dominators, flows, forest, kpaths, mincost, paths, ranking, schedule, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -320,6 +320,28 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.certificate = req["certificate"]
         plan.x, plan.y, plan.given = _nodes(p, req["x"], "x"), _nodes(p, req["y"], "y"), _nodes(p, req["given"], "given")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "min_cost_flow":
+        plan.certificate = req["certificate"]
+        plan.sources, plan.targets = _nodes(p, req["sources"], "sources"), _nodes(p, req["targets"], "targets")
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        caps = None if req["capacities"] is None else _costs(p, req["capacities"], plan.fwd, plan.rev, "capacities")
+        value = req["value"]
+        scale = caps.scale if caps is not None else 1     # capacities and the value: integers over one scale
+        if isinstance(value, float):
+            scale = max(scale, value.as_integer_ratio()[1])
+        plan.cap_scale = scale
+        plan.value = None if value is None else int(Fraction(value) * scale)
+        if caps is None:
+            plan.capacity = lambda ei: scale
+        else:
+            factor, edge, rel_cap, edge_rel = scale // caps.scale, caps.edge, caps.rel, p._edge_rel
+            plan.capacity = ((lambda ei: edge[ei] * factor) if edge is not None
+                             else (lambda ei: rel_cap[edge_rel[ei]] * factor))
+        table = _costs(p, req["costs"], plan.fwd, plan.rev)
+        plan.cost_scale = table.scale
+        edge_c, rel_c, edge_rel_c = table.edge, table.rel, p._edge_rel
+        plan.cost = (lambda ei: edge_c[ei]) if edge_c is not None else (lambda ei: rel_c[edge_rel_c[ei]])
+        plan.rational = table.rational or isinstance(value, float) or (caps is not None and caps.rational)
     elif op == "k_shortest_paths":
         plan.sources = _nodes(p, req["sources"], "sources")
         plan.targets = set(_nodes(p, req["targets"], "targets"))
@@ -2242,4 +2264,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "cycle_basis": (lambda p, plan, ctl: cycles.search(p, plan, ctl),
                                lambda p, plan, st: cycles.answer(p, plan, st)),
                "k_shortest_paths": (lambda p, plan, ctl: kpaths.search(p, plan, ctl),
-                                    lambda p, plan, st: kpaths.answer(p, plan, st))}
+                                    lambda p, plan, st: kpaths.answer(p, plan, st)),
+               "min_cost_flow": (lambda p, plan, ctl: mincost.search(p, plan, ctl),
+                                 lambda p, plan, st: mincost.answer(p, plan, st))}

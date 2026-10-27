@@ -1891,6 +1891,53 @@
    "bindings": {
     "source": "conformance-g21@1"
    }
+  },
+  "G22": {
+   "nodes": [
+    "s",
+    "t",
+    "x",
+    "y"
+   ],
+   "edges": [
+    {
+     "id": "a",
+     "source": "s",
+     "target": "x",
+     "relation": "PIPE"
+    },
+    {
+     "id": "b",
+     "source": "s",
+     "target": "y",
+     "relation": "PIPE"
+    },
+    {
+     "id": "c",
+     "source": "x",
+     "target": "t",
+     "relation": "PIPE"
+    },
+    {
+     "id": "d",
+     "source": "y",
+     "target": "t",
+     "relation": "PIPE"
+    },
+    {
+     "id": "e",
+     "source": "x",
+     "target": "y",
+     "relation": "PIPE"
+    }
+   ],
+   "relations": [
+    "PIPE"
+   ],
+   "node_types": [],
+   "bindings": {
+    "source": "conformance-g22@1"
+   }
   }
  },
  "cases": [
@@ -10440,6 +10487,174 @@
      ]
     ],
     "exhausted": true
+   }
+  },
+  {
+   "name": "min-cost-flow-value",
+   "covers": [
+    "min-cost flow",
+    "capacities"
+   ],
+   "graph": "G22",
+   "request": {
+    "operation": "min_cost_flow",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "PIPE",
+      "direction": "forward"
+     }
+    ],
+    "capacities": {
+     "by_edge": {
+      "a": 2,
+      "b": 1,
+      "c": 1,
+      "d": 2,
+      "e": 1
+     }
+    },
+    "costs": {
+     "by_edge": {
+      "a": 1,
+      "b": 4,
+      "c": 1,
+      "d": 1,
+      "e": 1
+     }
+    },
+    "certificate": true,
+    "value": 2
+   },
+   "expect": {
+    "status": "completed",
+    "flow_value": 2,
+    "flow_cost": 5,
+    "feasible": true,
+    "flow_amounts": {
+     "a": 2,
+     "c": 1,
+     "d": 1,
+     "e": 1
+    }
+   }
+  },
+  {
+   "name": "min-cost-flow-maximum",
+   "covers": [
+    "min-cost flow",
+    "maximum flow",
+    "cut"
+   ],
+   "graph": "G22",
+   "request": {
+    "operation": "min_cost_flow",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "PIPE",
+      "direction": "forward"
+     }
+    ],
+    "capacities": {
+     "by_edge": {
+      "a": 2,
+      "b": 1,
+      "c": 1,
+      "d": 2,
+      "e": 1
+     }
+    },
+    "costs": {
+     "by_edge": {
+      "a": 1,
+      "b": 4,
+      "c": 1,
+      "d": 1,
+      "e": 1
+     }
+    },
+    "certificate": true,
+    "value": null
+   },
+   "expect": {
+    "status": "completed",
+    "flow_value": 3,
+    "flow_cost": 10,
+    "feasible": true,
+    "flow_amounts": {
+     "a": 2,
+     "b": 1,
+     "c": 1,
+     "d": 2,
+     "e": 1
+    }
+   }
+  },
+  {
+   "name": "min-cost-flow-infeasible",
+   "covers": [
+    "min-cost flow",
+    "infeasible value"
+   ],
+   "graph": "G22",
+   "request": {
+    "operation": "min_cost_flow",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "PIPE",
+      "direction": "forward"
+     }
+    ],
+    "capacities": {
+     "by_edge": {
+      "a": 2,
+      "b": 1,
+      "c": 1,
+      "d": 2,
+      "e": 1
+     }
+    },
+    "costs": {
+     "by_edge": {
+      "a": 1,
+      "b": 4,
+      "c": 1,
+      "d": 1,
+      "e": 1
+     }
+    },
+    "certificate": true,
+    "value": 5
+   },
+   "expect": {
+    "status": "completed",
+    "flow_value": 3,
+    "flow_cost": 10,
+    "feasible": false,
+    "flow_amounts": {
+     "a": 2,
+     "b": 1,
+     "c": 1,
+     "d": 2,
+     "e": 1
+    }
    }
   }
  ]
