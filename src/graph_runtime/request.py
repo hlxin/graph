@@ -701,13 +701,16 @@ def _graph_pattern(match: Any, steps: Any) -> tuple[dict, list[dict]]:
     if isinstance(steps, (str, bytes, Mapping)) or not isinstance(steps, (list, tuple)):
         raise _fail("invalid_request", "steps is a list of steps")
     optional_vars: set[str] = set()
+    edge_vars: set[str] = set()                          # the names that bind edges, not nodes
     out = []
     for i, st in enumerate(steps):
         where = f"steps[{i}]"
         if not isinstance(st, Mapping):
             raise _fail("invalid_request", f"{where} is a mapping")
         if "to" in st:
-            out.append(_closing_step(st, where, taken, optional_vars, {x.get("edge_var") for x in out}))
+            out.append(_closing_step(st, where, taken, optional_vars, edge_vars))
+            if out[-1]["edge_var"] is not None:
+                edge_vars.add(out[-1]["edge_var"])
             continue
         stray = sorted(str(k) for k in st if k not in ("from", "var", "scope", "node_types", "nodes", "edges",
                                                          "edge_var", "optional"))
@@ -715,7 +718,7 @@ def _graph_pattern(match: Any, steps: Any) -> tuple[dict, list[dict]]:
             raise _fail("invalid_request", f"{where} takes from, var, scope, node_types, nodes, edges, edge_var and "
                         f"optional, not {stray}")
         src = st.get("from")
-        if src not in taken or src in {x.get("edge_var") for x in out}:
+        if src not in taken or src in edge_vars:
             raise _fail("invalid_request", f"{where}.from names {src!r}, which no earlier step or match binds to a node")
         optional = st.get("optional", False)
         if not isinstance(optional, bool):
@@ -732,6 +735,7 @@ def _graph_pattern(match: Any, steps: Any) -> tuple[dict, list[dict]]:
             step["edges"] = _ids(st["edges"], f"{where}.edges")
         if st.get("edge_var") is not None:
             step["edge_var"] = _var(st["edge_var"], f"{where}.edge_var", taken)
+            edge_vars.add(step["edge_var"])
         if optional:
             optional_vars.add(step["var"])
         out.append(step)

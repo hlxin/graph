@@ -19,6 +19,7 @@ certified absent. A search that needs no further expansion completes, whatever t
 from __future__ import annotations
 
 import heapq
+import itertools
 import math
 import threading
 import time
@@ -93,6 +94,23 @@ class _Control:
         self.budget, self.expansions = budget, 0
         self.deadline, self.clock, self.cancelled = deadline, clock, cancelled
         self.interval, self.countdown = interval, 1          # the first expansion checks the clock and the token
+
+    def take(self, k: int) -> str | None:
+        """``k`` expansions at once, exactly as ``k`` calls of ``stop`` would take them: the budget, and the deadline
+        and cancellation at every interval the batch crosses. Why one must not happen (those before it are counted),
+        or None."""
+        while k:
+            free = min(k, self.countdown - 1, self.budget - self.expansions)    # expansions before the next check
+            if free > 0:
+                self.countdown -= free
+                self.expansions += free
+                k -= free
+                continue
+            why = self.stop()
+            if why:
+                return why
+            k -= 1
+        return None
 
     def stop(self) -> str | None:
         """Why the next expansion must not happen, or None (and it is counted)."""
@@ -1287,6 +1305,19 @@ class _Stop(Exception):
     """Ends the enumeration of a cyclic pattern when a limit, a deadline or a cancellation stops it."""
 
 
+class _Enough(Exception):
+    """Ends the listing of a cyclic pattern's rows one past max_results: the rest are counted, not listed."""
+
+
+def _ticker(ctl: _Control) -> Callable[[], None]:
+    """One expansion, or a stop: what each candidate a join tries costs."""
+    def tick() -> None:
+        why = ctl.stop()
+        if why:
+            raise _Stop(why)
+    return tick
+
+
 def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace, ctl: _Control) -> None:
     """The rows of a pattern with cycles, by a generic join over the pruned tree (Ngo, Porat, Re and Rudra's worst-
     case optimal join; Veldhuizen's Leapfrog Triejoin).
@@ -1296,13 +1327,14 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
     candidate read). Rows are then built step by step in canonical order. When a step binds the later of a closing
     step's two variables, its candidates are intersected with what that closing step allows, iterating the smallest
     of the sets involved and restoring the canonical order of the rest; a closing step then lists its hops between
-    the two nodes. Each candidate tried is one expansion. A cycle defeats counting without listing, so every row is
-    enumerated: ``total`` is known only when the enumeration ends.
+    the two nodes. Each candidate tried is one expansion. Rows are listed only for ``answer: rows``, and only up to
+    one past ``max_results``: ``total`` is then counted without listing them (``_count_rows``), and when every row
+    fits, it is the number listed.
 
     An injective pattern (subgraph monomorphism) is enumerated the same way, over the same pruned candidates (a
     match with distinct nodes is a match), skipping a node another variable holds and an edge another step uses.
-    Distinctness is a global constraint that no count over the kept hops can respect, so it is enumerated too, tree
-    or not; the problem is NP-complete, and the expansion budget bounds the search."""
+    Distinctness is a global constraint that no count over the kept hops can respect, so it is enumerated to the end
+    and counted as it goes, tree or not; the problem is NP-complete, and the expansion budget bounds the search."""
     steps, kept, rel = plan.steps, st.kept, p._edge_rel
     st.rows_raw, st.total, st.closing_hops = [], None, {}
     index: dict[int, dict[int, dict[int, list]]] = {}        # closing step -> from node -> to node -> hops
@@ -1352,7 +1384,17 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
     val: list = [None] * len(plan.vars)
     link: list = [None] * len(steps)
     cap = plan.max_results if plan.answer == "rows" else 0
-    count = 0
+    count = found = 0
+    listing = not plan.injective                             # list one past max_results, then count without listing
+    if listing and plan.answer != "rows":                    # nothing to list: count without listing
+        try:
+            st.total = st.found_rows = _count_rows(plan, st, index, ctl)
+            return
+        except _Stop as stop:
+            st.interruption, st.total, st.found_rows = str(stop), None, 0
+            return
+        except _Wide:                                        # too dense to decompose narrowly: count by listing
+            listing = False
     loops = {j: {u for u, by in index[j].items() if u in by}       # a closing step from a variable to itself
              for j, s in enumerate(steps) if s.closing and s.parent == s.child}
     injective = plan.injective
@@ -1385,10 +1427,7 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
         picked = [k for w in smallest if w in position and all(w in x for x in sets) for k in position[w]]
         return [hs[k] for k in sorted(picked)]
 
-    def tick() -> None:
-        why = ctl.stop()
-        if why:
-            raise _Stop(why)
+    tick = _ticker(ctl)
 
     def options(i: int) -> list:
         """The choices of step i, given what is bound: (edge, node) for a tree step's hops (after what its closing
@@ -1435,6 +1474,8 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
             count += 1
             if len(st.rows_raw) < cap:
                 st.rows_raw.append((tuple(val), tuple(link)))
+            elif listing:
+                raise _Enough
             return
         frames = [[0, options(0), 0, False]]
         while frames:
@@ -1459,25 +1500,360 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
             count += 1
             if len(st.rows_raw) < cap:
                 st.rows_raw.append((tuple(val), tuple(link)))
+            elif listing:
+                raise _Enough
 
     roots = sorted(kept[0])
     if checks.get(-1):
         roots = [h[1] for h in admit((-1,), [(None, u, None) for u in roots], [allowed(j, r) for j, r in checks[-1]])]
-    try:
+    def sweep() -> None:
         for u in roots:
             tick()
             val[0] = u
             held.add(u)
             run()
             held.discard(u)
+    try:
+        try:
+            sweep()
+        except _Enough:                                      # more rows than max_results: count them, unlisted
+            found = count
+            try:
+                count = _count_rows(plan, st, index, ctl)
+            except _Wide:                                    # too dense to decompose narrowly: list them all again
+                listing, count = False, 0
+                sweep()
     except _Stop as stop:
         st.interruption = str(stop)
         st.total = None
-        st.found_rows = count
+        st.found_rows = max(found, count)
         return
     st.total, st.found_rows = count, count
     if plan.answer == "rows" and count > cap:
         st.interruption = "output_limit"
+
+
+_FILL_DEGREE = 16                        # a variable with more neighbours goes after the rest, by width, unfilled
+_SUBSET_SCOPE = 10                       # a bag of up to this many neighbours looks up each subset's factor
+_WIDEST = 32                             # an order with a bag of more neighbours counts by listing instead
+
+
+class _Wide(Exception):
+    """The elimination order needs a bag wider than _WIDEST: the rows are counted by listing them."""
+
+
+def _count_rows(plan: SimpleNamespace, st: SimpleNamespace, index: dict, ctl: _Control) -> int:
+    """The number of rows of a pattern with cycles, exactly, without listing them: a sum of products (FAQ, Abo Khamis,
+    Ngo and Rudra, 2016) over the required variables, eliminated one by one along a tree decomposition.
+
+    Each required step is a factor of its two variables, valued by the number of kept hops between their nodes (a
+    closing step from a variable to itself, by its loops); each optional branch folds into its required variable as the
+    number of ways it continues (one, unbound, when it has no hop), as a tree's total does; each variable's own weights
+    fold into one factor of it, and factors of the same variables multiply into one.
+
+    The order comes first, from the pattern alone: a weighted min-fill order (the variable whose neighbours need the
+    fewest new links, each weighted by its ends' candidates; then the least sum of its neighbours' candidates in bits;
+    then the earliest). A variable with more than sixteen neighbours (a hub) goes after the rest, by that sum alone. The
+    order is kept as it changes, and a fill is computed only when no other variable can come first: planning a star or
+    a fan costs its spokes, not its hub's pairs. An order that needs a bag of more than 32 neighbours raises _Wide.
+
+    Then each variable in turn: the factors that hold it, and those within its neighbours, are joined by a generic join
+    and summed out into one factor of the neighbours (all of the bag, for the last one), a bag of the decomposition
+    (InsideOut). A triangle costs the triangles' join, a longer cycle the paths around it, never the rows. Every part
+    of the work is charged to the budget before it is done (the contract, section 4, lists the charges)."""
+    steps, kept, hops = plan.steps, st.kept, st.hops
+
+    def charge(k: int) -> None:
+        why = ctl.take(k)
+        if why:
+            raise _Stop(why)
+    charge(1 + sum(len(c) for c in kept))                  # the setup: its candidates
+    required = [0] + [s.child for s in steps if not s.closing and not s.optional]
+    unary = {v: dict.fromkeys(kept[v], 1) for v in required}
+    ways = {s.child: dict.fromkeys(kept[s.child], 1) for s in steps if not s.closing and s.optional}
+    for i, s in enumerate(steps):                            # a node a loop step misses first, before any product
+        if s.closing and s.parent == s.child:
+            table = unary[s.parent]
+            charge(1 + len(table))
+            for u in [u for u in table if u not in index[i].get(u, {})]:
+                del table[u]
+            if not table:
+                return 0
+    scope_of: dict[int, tuple] = {}                          # factor -> its variables, ascending
+    table_of: dict[int, dict] = {}                           # factor -> its nonzero values, keyed in that order
+    by_scope: dict[tuple, int] = {}
+    factors_of: dict[int, set[int]] = {v: set() for v in required}
+    made = itertools.count()
+
+    def add(scope: tuple, table: dict) -> None:
+        """A factor, multiplied into the one of the same variables when there is one."""
+        f = by_scope.get(scope)
+        if f is not None:
+            other = table_of[f]
+            table_of[f] = {key: c * other[key] for key, c in table.items() if key in other}
+            return
+        f = next(made)
+        scope_of[f], table_of[f], by_scope[scope] = scope, table, f
+        for a in scope:
+            factors_of[a].add(f)
+
+    def pair(a: int, b: int, table: dict) -> None:
+        add((a, b), table) if a < b else add((b, a), {(w, u): c for (u, w), c in table.items()})
+    for i in range(len(steps) - 1, -1, -1):
+        s = steps[i]
+        if s.closing and s.parent == s.child:
+            table = unary[s.parent]
+            charge(1 + len(table))
+            for u in table:
+                table[u] *= len(index[i][u][u])
+            continue
+        if s.optional:
+            charge(1 + len(unary[s.parent] if s.parent in unary else ways[s.parent]))
+        else:
+            charge(1)
+        if s.closing:
+            pair(s.parent, s.child, {(u, w): len(hs) for u, by in index[i].items() for w, hs in by.items()})
+        elif s.optional:
+            table, child = unary[s.parent] if s.parent in unary else ways[s.parent], ways[s.child]
+            for u in table:
+                hs = hops[i].get(u)
+                if hs:
+                    table[u] *= sum(child[w] for _, w, _ in hs)
+        else:
+            counts: dict[tuple, int] = {}
+            for u, hs in hops[i].items():
+                for _, w, _ in hs:
+                    counts[u, w] = counts.get((u, w), 0) + 1
+            pair(s.parent, s.child, counts)
+    for v in required:                                       # a variable's weights, into its first factor
+        weight = unary[v]
+        if not factors_of[v]:
+            add((v,), {(u,): c for u, c in weight.items() if c})
+            continue
+        f = min(factors_of[v])
+        k = scope_of[f].index(v)
+        table_of[f] = {key: c * weight[key[k]] for key, c in table_of[f].items() if weight.get(key[k])}
+    size = {v: min(len({key[scope_of[f].index(v)] for key in table_of[f]}) for f in factors_of[v]) for v in required}
+    order = _elimination_order(required, list(scope_of.values()), size, charge)
+    total = 1
+    for k, (x, ns) in enumerate(order):
+        bag = ns | {x}
+        last = k == len(order) - 1                           # the last bag sums out everything
+        if last:
+            inside = sorted(scope_of)
+        else:                                                # and the factors within the neighbours, which filter it
+            inside_set = set(factors_of[x])
+            if len(ns) <= _SUBSET_SCOPE:                     # one factor per scope: look each subset up
+                ordered = sorted(ns)
+                charge((1 << len(ordered)) - 1)
+                for mask in range(1, 1 << len(ordered)):
+                    f = by_scope.get(tuple(a for j, a in enumerate(ordered) if mask >> j & 1))
+                    if f is not None:
+                        inside_set.add(f)
+            inside = sorted(inside_set)
+        scope = () if last else tuple(sorted(ns))
+        message = _sum_join([(scope_of[f], table_of[f]) for f in inside], bag, scope, size, ctl)
+        for f in inside:
+            sc = scope_of.pop(f)
+            del by_scope[sc], table_of[f]
+            for a in sc:
+                factors_of[a].discard(f)
+        if not message:
+            return 0
+        if last:
+            return total * message[()]
+        add(scope, message)
+    return total
+
+
+def _elimination_order(variables: list[int], scopes: list[tuple], size: dict, charge: Callable[[int], None]) -> list:
+    """The variables in elimination order, each with its neighbours when it goes, until one bag holds every variable
+    left (the last). Raises _Wide when a bag would have more than _WIDEST neighbours."""
+    digits = {v: size[v].bit_length() for v in variables}   # a neighbour's weight in a width: log2 of its candidates
+    near: dict[int, set[int]] = {v: set() for v in variables}
+    for sc in scopes:
+        for a in sc:
+            near[a].update(sc)
+    for v in variables:
+        near[v].discard(v)
+    charge(len(variables) + sum(len(sc) for sc in scopes))
+    width = {v: sum(digits[a] for a in near[v]) for v in variables}
+
+    def fill(v: int) -> int:
+        ns = sorted(near[v])
+        charge(1 + len(ns) * (len(ns) - 1) // 2)
+        return sum(size[a] * size[b] for k, a in enumerate(ns) for b in ns[k + 1:] if b not in near[a])
+
+    def bound(v: int) -> tuple:
+        """(hub, fill, width, variable): a lower bound, its fill 0, until the fill is computed (never for a hub)."""
+        return (int(len(near[v]) > _FILL_DEGREE), 0, width[v], v)
+    stamp = dict.fromkeys(variables, 0)
+    heap = [(bound(v), 0, False) for v in variables]          # (key, stamp, exact)
+    heapq.heapify(heap)
+    alive, order = set(variables), []
+    while alive:
+        while True:
+            key, version, exact = heapq.heappop(heap)
+            x = key[3]
+            if x not in alive or version != stamp[x]:
+                continue
+            if exact or key[0]:
+                break
+            f = fill(x)
+            if f == 0:                                       # its lower bound: nothing can come first
+                break
+            heapq.heappush(heap, ((0, f) + key[2:], version, True))
+        ns = near.pop(x)
+        if len(ns) > _WIDEST:
+            raise _Wide
+        charge(1 + len(ns) * len(ns))                        # the bag, and the clique its neighbours become
+        order.append((x, ns))
+        if len(ns) + 1 == len(alive):                        # the last bag holds every variable left
+            break
+        alive.discard(x)
+        linked = []                                          # the neighbours now form a clique: the pairs it adds
+        for a in ns:
+            near[a].discard(x)
+            width[a] -= digits[x]
+            fresh = ns - near[a]
+            fresh.discard(a)
+            if fresh:
+                near[a] |= fresh
+                width[a] += sum(digits[b] for b in fresh)
+                linked.extend((a, b) for b in fresh if a < b)
+        changed = set(ns)
+        if linked:                                           # whoever neighbours both ends of a new pair fills less
+            charge(sum(min(len(near[a]), len(near[b])) for a, b in linked))
+            for a, b in linked:
+                small, large = (near[a], near[b]) if len(near[a]) <= len(near[b]) else (near[b], near[a])
+                changed.update(v for v in small if v in large)
+        charge(len(changed))
+        for v in changed:
+            stamp[v] += 1
+            heapq.heappush(heap, (bound(v), stamp[v], False))
+    return order
+
+
+def _sum_join(factors: list, bag: set, scope: tuple, size: dict, ctl: _Control) -> dict:
+    """Sum out the bag's variables outside ``scope`` from the product of the factors: for each binding of ``scope``
+    that every factor allows, the sum of the products of their values (a missing entry is a zero). A generic join
+    (Ngo, Porat, Ré and Rudra, 2012; Veldhuizen, 2014) on tries in one order: first the variable with the fewest
+    candidates, then always one a factor links to those bound (no Cartesian product while one is linked), the fewest
+    candidates first, the earliest on ties. Each binding intersects its tries' sets from the smallest; the
+    intersection and each value it yields are one expansion each."""
+    why = ctl.take(len(bag) + sum(len(sc) for sc, _ in factors))     # the order, and a trie per factor
+    if why:
+        raise _Stop(why)
+    order: list[int] = []
+    links = dict.fromkeys(bag, 0)                              # per variable: the factors linking it to those bound
+    holding: dict[int, list[int]] = {v: [] for v in bag}
+    for f, (sc, _) in enumerate(factors):
+        for a in sc:
+            holding[a].append(f)
+    linked: set[int] = set()
+    heap = [(0, size[v], v) for v in bag]
+    heapq.heapify(heap)
+    while heap:
+        n_links, _, v = heapq.heappop(heap)
+        if v in links and -n_links == links[v]:
+            order.append(v)
+            del links[v]
+            for f in holding[v]:
+                if f not in linked:
+                    linked.add(f)
+                    for a in factors[f][0]:
+                        if a in links:
+                            links[a] += 1
+                            heapq.heappush(heap, (-links[a], size[a], a))
+    at = {v: k for k, v in enumerate(order)}
+    levels: list[list[tuple[int, bool]]] = [[] for _ in order]   # per depth: (factor, its last level here)
+    cur: list = []
+    for f, (sc, table) in enumerate(factors):
+        perm = sorted(range(len(sc)), key=lambda k: at[sc[k]])
+        root: dict = {}
+        for key, c in table.items():
+            node = root
+            for k in perm[:-1]:
+                node = node.setdefault(key[k], {})
+            node[key[perm[-1]]] = c
+        cur.append(root)
+        for lvl, k in enumerate(perm):
+            levels[at[sc[k]]].append((f, lvl == len(perm) - 1))
+    out: dict = {}
+    val = [None] * len(order)
+    where = [at[v] for v in scope]                             # the message's key, read from the bound values
+    last = len(order) - 1
+    summed = order[last] not in scope                          # the deepest variable is summed out there
+
+    def values(d: int) -> Any:
+        """The values every trie at depth d allows, from the smallest set: the intersection and each value it yields
+        are an expansion each."""
+        sets = [cur[f] for f, _ in levels[d]]
+        smallest = min(sets, key=len)
+        common: Any = smallest
+        for t in sets:
+            if t is not smallest and common:
+                common = common & t.keys() if common is not smallest else smallest.keys() & t.keys()
+        why = ctl.take(1 + len(common))
+        if why:
+            raise _Stop(why)
+        return common
+
+    frames = [[0, None, None, 1, None]]                        # [depth, values, their iterator, product, saved]
+    while frames:
+        frame = frames[-1]
+        d, vs, it, product, saved = frame
+        if saved is not None:                                  # back from the deeper level: restore the tries
+            for f, node in saved:
+                cur[f] = node
+            frame[4] = None
+        if vs is None:
+            vs = frame[1] = values(d)
+            if d == last:
+                leaves = [cur[f] for f, _ in levels[d]]
+                if summed:
+                    if len(leaves) == 1:
+                        t = leaves[0]
+                        total = sum(t.values()) if vs is t else sum(t[w] for w in vs)
+                    elif len(leaves) == 2:
+                        a, b = leaves
+                        total = sum(a[w] * b[w] for w in vs)
+                    else:
+                        total = 0
+                        for w in vs:
+                            c = 1
+                            for t in leaves:
+                                c *= t[w]
+                            total += c
+                    if total:
+                        key = tuple(val[j] for j in where)
+                        out[key] = out.get(key, 0) + product * total
+                else:
+                    for w in vs:
+                        c = product
+                        for t in leaves:
+                            c *= t[w]
+                        val[d] = w
+                        key = tuple(val[j] for j in where)
+                        out[key] = out.get(key, 0) + c
+                frames.pop()
+                continue
+            it = frame[2] = iter(vs)
+        w = next(it, None)
+        if w is None:
+            frames.pop()
+            continue
+        val[d] = w
+        p, keep = product, []
+        for f, leaf in levels[d]:
+            if leaf:
+                p *= cur[f][w]
+            else:
+                keep.append((f, cur[f]))
+                cur[f] = cur[f][w]
+        frame[4] = keep
+        frames.append([d + 1, None, None, p, None])
+    return out
 
 
 def _pattern_total(plan: SimpleNamespace, st: SimpleNamespace) -> int:
