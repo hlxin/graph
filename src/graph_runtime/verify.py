@@ -120,6 +120,10 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.reachability_pairs(request, answer, status)
         elif op == "datalog":
             check.datalog(request, answer, status)
+        elif op == "canonical_form":
+            check.canonical_form(request, answer)
+        elif op == "isomorphism":
+            check.isomorphism(request, answer)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -375,6 +379,120 @@ class _Checker:
             elif not key[eid] > heaviest(s, t):
                 self.bad(f"the link {eid} comes before an edge of the tree path between its ends: a lighter forest "
                          "(or one earlier in edge ID) keeps it")
+
+    def induced(self, nodes: list, request: Mapping) -> tuple[dict, list]:
+        """A node set's graph from the records: each node's color (its types, with their ancestors, or none) and the
+        edges whose relation (or one above it) the scope names, either way, with both ends in the set."""
+        names = {e["relation"] for e in request["scope"]}
+        inside = set(nodes)
+        colors = {n: (tuple(sorted(self.types_of.get(n, ()))) if request["node_colors"] == "types" else ())
+                  for n in nodes}
+        edges = [(eid, s, t, rel) for eid, (s, t, rel) in sorted(self.edge_of.items())
+                 if s in inside and t in inside and (rel in names or names & set(self.relation_up.get(rel, ())))]
+        return colors, edges
+
+    def missing(self, nodes: Iterable) -> bool:
+        gone = sorted(n for n in nodes if n not in self.types_of)
+        if gone:
+            self.bad(f"the node set names nodes the records do not hold: {gone[:5]}")
+        return bool(gone)
+
+    def canonical_form(self, request: Mapping, answer: Mapping) -> None:
+        """The encoding against the records: the order a permutation of the node set, and the encoding the set's
+        graph relabeled by it (each node's color by position; each edge as [i, j, relation] between positions, the
+        smaller first when undirected, sorted), its identity the digest of it. That it is the least encoding over
+        every order is not checked here (the search; the oracle tests)."""
+        order = answer.get("order")
+        if order is None:
+            return
+        nodes = request["nodes"]
+        if self.missing(nodes):
+            return
+        if sorted(order) != sorted(nodes) or len(set(order)) != len(order):
+            self.bad("the order is a permutation of the node set")
+            return
+        colors, edges = self.induced(nodes, request)
+        pos = {n: i for i, n in enumerate(order)}
+        listed = []
+        for _, s, t, rel in edges:
+            i, j = pos[s], pos[t]
+            if not request["directed"] and i > j:
+                i, j = j, i
+            listed.append([i, j, rel])
+        want = {"nodes": [list(colors[n]) for n in order], "edges": sorted(listed), "directed": request["directed"]}
+        got = answer.get("encoding") or {}
+        if any(not (_is_int(e[0]) and _is_int(e[1])) for e in got.get("edges") or () if len(e) == 3):
+            self.bad("the encoding's positions are integers")
+            return
+        if [list(x) for x in got.get("nodes") or ()] != want["nodes"] or \
+                [list(x) for x in got.get("edges") or ()] != want["edges"] or got.get("directed") != want["directed"]:
+            self.bad("the encoding is not the node set's graph relabeled by the order")
+            return
+        from ._canonical import digest
+        if answer.get("canonical_id") != digest({"kind": "graph_runtime.canonical_form", **want}):
+            self.bad("the canonical_id is not the digest of the encoding")
+
+    def isomorphism(self, request: Mapping, answer: Mapping) -> None:
+        """An isomorphism against the records: the node mapping a bijection from the left set onto the right one that
+        keeps colors, and the edge mapping a bijection between their graphs' edges that keeps relations and maps ends
+        to mapped ends (in order when directed). With the certificate, a non-isomorphism: other node or edge counts,
+        or color refinement of the two graphs side by side giving them other color histograms after the rounds it
+        names (recomputed here)."""
+        if self.missing(request["left"]) or self.missing(request["right"]):
+            return
+        left_colors, left_edges = self.induced(request["left"], request)
+        right_colors, right_edges = self.induced(request["right"], request)
+        if answer.get("isomorphic") is True:
+            pairs = [(x.get("left"), x.get("right")) for x in answer.get("mapping") or ()]
+            m = dict(pairs)
+            if len(m) != len(pairs) or set(m) != set(left_colors) or sorted(m.values()) != sorted(right_colors) \
+                    or any(left_colors[a] != right_colors.get(b) for a, b in m.items()):
+                self.bad("the mapping is a bijection from the left set onto the right one that keeps colors")
+                return
+            epairs = [(x.get("left"), x.get("right")) for x in answer.get("edge_mapping") or ()]
+            em = dict(epairs)
+            lrec = {e[0]: e for e in left_edges}
+            rrec = {e[0]: e for e in right_edges}
+            if len(em) != len(epairs) or set(em) != set(lrec) or sorted(em.values()) != sorted(rrec):
+                self.bad("the edge mapping is a bijection between the two graphs' edges")
+                return
+            for a, b in em.items():
+                _, s, t, rel = lrec[a]
+                _, s2, t2, rel2 = rrec[b]
+                ends = (m[s], m[t]) == (s2, t2) if request["directed"] else sorted((m[s], m[t])) == sorted((s2, t2))
+                if rel != rel2 or not ends:
+                    self.bad(f"the edge mapping sends {a} to {b}, which another relation or other ends hold")
+                    return
+            return
+        cert = self.proof(answer)
+        if cert is None or answer.get("isomorphic") is not False:
+            return
+        if cert.get("kind") == "counts":
+            if len(left_colors) == len(right_colors) and len(left_edges) == len(right_edges):
+                self.bad("certificate: the two graphs have the same numbers of nodes and edges")
+            return
+        rounds = cert.get("rounds")
+        if not _is_int(rounds) or rounds < 0 or rounds > len(left_colors) + len(right_colors):
+            self.bad("certificate: refinement names a number of rounds")
+            return
+        keys = [("L", n) for n in request["left"]] + [("R", n) for n in request["right"]]
+        color = {k: (left_colors if k[0] == "L" else right_colors)[k[1]] for k in keys}
+        out: dict = {k: [] for k in keys}
+        inn: dict = {k: [] for k in keys}
+        for side, edges in (("L", left_edges), ("R", right_edges)):
+            for _, s, t, rel in edges:
+                out[(side, s)].append(((side, t), rel))
+                if request["directed"]:
+                    inn[(side, t)].append(((side, s), rel))
+                elif s != t:
+                    out[(side, t)].append(((side, s), rel))
+        for _ in range(rounds):
+            sig = {k: (color[k], tuple(sorted((color[w], r) for w, r in out[k])),
+                       tuple(sorted((color[w], r) for w, r in inn[k]))) for k in keys}
+            rank = {s: i for i, s in enumerate(sorted(set(sig.values())))}
+            color = {k: rank[sig[k]] for k in keys}
+        if sorted(color[k] for k in keys if k[0] == "L") == sorted(color[k] for k in keys if k[0] == "R"):
+            self.bad(f"certificate: after {rounds} rounds of refinement the two graphs have the same colors")
 
     def datalog(self, request: Mapping, answer: Mapping, status: str) -> None:
         """Each listed fact's derivation against the records: its rule, its head matching the fact and each body atom

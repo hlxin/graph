@@ -29,8 +29,8 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import (algebra, causal, cycles, datalog, dominators, flows, forest, kpaths, mincost, paths, ranking,
-               reachindex, schedule, structure)
+from . import (algebra, canon, causal, cycles, datalog, dominators, flows, forest, kpaths, mincost, paths,
+               ranking, reachindex, schedule, structure)
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -339,6 +339,14 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.certificate = req["certificate"]
         plan.x, plan.y, plan.given = _nodes(p, req["x"], "x"), _nodes(p, req["y"], "y"), _nodes(p, req["given"], "given")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op in ("canonical_form", "isomorphism"):
+        plan.directed, plan.node_colors = req["directed"], req["node_colors"]
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        if op == "canonical_form":
+            plan.nodes = _nodes(p, req["nodes"], "nodes")
+        else:
+            plan.left, plan.right = _nodes(p, req["left"], "left"), _nodes(p, req["right"], "right")
+            plan.certificate = req["certificate"]
     elif op == "datalog":
         plan.answer, plan.derivations, plan.certificate = req["answer"], req["derivations"], req["certificate"]
         plan.rules = [SimpleNamespace(index=k, id=r["id"], plans={},
@@ -2660,4 +2668,8 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "reachability_pairs": (lambda p, plan, ctl: reachindex.search(p, plan, ctl),
                                       lambda p, plan, st: reachindex.answer(p, plan, st)),
                "datalog": (lambda p, plan, ctl: datalog.search(p, plan, ctl),
-                           lambda p, plan, st: datalog.answer(p, plan, st))}
+                           lambda p, plan, st: datalog.answer(p, plan, st)),
+               "canonical_form": (lambda p, plan, ctl: canon.search_form(p, plan, ctl),
+                                  lambda p, plan, st: canon.answer_form(p, plan, st)),
+               "isomorphism": (lambda p, plan, ctl: canon.search_iso(p, plan, ctl),
+                               lambda p, plan, st: canon.answer_iso(p, plan, st))}

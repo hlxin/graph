@@ -96,8 +96,8 @@ TOOLS: list[dict] = [
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
                        "biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, "
-                       "spanning_forest, cycle_basis, k_shortest_paths, min_cost_flow, reachability_pairs, datalog, or "
-                       "on "
+                       "spanning_forest, cycle_basis, k_shortest_paths, min_cost_flow, reachability_pairs, datalog, "
+                       "canonical_form, isomorphism, or on "
                        "a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
@@ -496,6 +496,13 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
         if a["trail"] is not None:
             summary.update(trail=[{k: s[k] for k in ("edge", "from", "to", "travel")} for s in a["trail"][:limit]],
                            colliders=[c["node"] for c in a["colliders"][:limit]])
+    elif op == "canonical_form":
+        summary = {"canonical_id": a["canonical_id"], "nodes": None if a["order"] is None else len(a["order"]),
+                   "edges": None if a["encoding"] is None else len(a["encoding"]["edges"])}
+    elif op == "isomorphism":
+        summary = {"isomorphic": a["isomorphic"],
+                   "mapping": {"items": a["mapping"][:limit], "more": len(a["mapping"]) > limit},
+                   "certificate": kind(a["certificate"])}
     elif op == "datalog":
         summary = {"count": a["count"], "total": a["total"], "exists": a["exists"], "model": a["model"],
                    "rows": {"items": [x["values"] for x in a["rows"][:limit]], "more": len(a["rows"]) > limit},

@@ -461,6 +461,10 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_pairs_problems(request, answer, status))
     elif op == "datalog":
         out.extend(_datalog_problems(request, answer, status, data.get("interruption")))
+    elif op == "canonical_form":
+        out.extend(_form_problems(request, answer, status))
+    elif op == "isomorphism":
+        out.extend(_iso_problems(request, answer, status))
     elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
         nc = answer["negative_cycle"]
         start = nc["cycle"]["source"]
@@ -1394,6 +1398,49 @@ def _mincost_problems(request: dict, answer: dict, status: str) -> list[str]:
         elif side is not None and side != sorted(set(side)):
             out.append("the cut's source side is unique, in ascending ID")
     return out
+
+
+def _form_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A canonical form's own consistency: complete exactly when it has an order (a permutation of the node set), an
+    encoding of as many nodes, its edges sorted between valid positions, and an identity."""
+    order, enc = answer["order"], answer["encoding"]
+    if (order is None) != (status != COMPLETED) or (enc is None) != (order is None) \
+            or (answer["canonical_id"] is None) != (order is None):
+        return ["a complete canonical form has an order, an encoding and an identity; an interrupted one none"]
+    if order is None:
+        return []
+    n = len(order)
+    if any(type(e[0]) is not int or type(e[1]) is not int for e in enc["edges"]):
+        return ["the encoding's positions are integers"]
+    edges = [tuple(e) for e in enc["edges"]]
+    if sorted(order) != sorted(request["nodes"]) or len(set(order)) != n or len(enc["nodes"]) != n \
+            or enc["directed"] is not request["directed"] or edges != sorted(edges) \
+            or any(not (0 <= e[0] < n and 0 <= e[1] < n) or (not request["directed"] and e[0] > e[1]) for e in edges):
+        return ["the order is a permutation of the nodes, and the encoding their colors and sorted edges between them"]
+    return []
+
+
+def _iso_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """An isomorphism answer's own consistency: decided exactly when complete; a mapping (and an edge mapping) only
+    when isomorphic, the mapping from every left node to a distinct right node; a certificate only for a complete
+    negative that asked for it."""
+    iso, cert = answer["isomorphic"], answer["certificate"]
+    if (iso is None) != (status != COMPLETED):
+        return ["an answer is decided exactly when it is complete"]
+    if iso is not True and (answer["mapping"] or answer["edge_mapping"]):
+        return ["only an isomorphism has mappings"]
+    if iso is True:
+        lefts = [x["left"] for x in answer["mapping"]]
+        rights = [x["right"] for x in answer["mapping"]]
+        el = [x["left"] for x in answer["edge_mapping"]]
+        er = [x["right"] for x in answer["edge_mapping"]]
+        if sorted(lefts) != sorted(request["left"]) or sorted(rights) != sorted(request["right"]) \
+                or lefts != sorted(set(lefts)) or el != sorted(set(el)) or len(set(er)) != len(er):
+            return ["an isomorphism maps every left node to a distinct right node and every left edge to a distinct "
+                    "right edge, by left ID"]
+    if cert is not None and (iso is not False or not request["certificate"]):
+        return ["a certificate comes only with a negative that asked for it"]
+    return []
 
 
 def _datalog_problems(request: dict, answer: dict, status: str, interruption: dict | None) -> list[str]:

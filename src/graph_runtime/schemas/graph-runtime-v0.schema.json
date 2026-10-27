@@ -5394,6 +5394,110 @@
             }
           },
           "description": "datalog: a positive, range-restricted program over the inputs node(N), type(N, T) and edge(E, S, T, R); the query's facts in its least model, each with a derivation, and on request the whole model as certificate."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "nodes",
+            "scope",
+            "directed",
+            "node_colors"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "directed": {
+              "type": "boolean"
+            },
+            "node_colors": {
+              "enum": [
+                "types",
+                "none"
+              ]
+            },
+            "operation": {
+              "const": "canonical_form"
+            },
+            "nodes": {
+              "$ref": "#/$defs/ids"
+            }
+          },
+          "description": "canonical_form: the canonical order and encoding of a node set's induced subgraph (edges in scope, with their relations), by individualization and refinement."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "left",
+            "right",
+            "scope",
+            "directed",
+            "node_colors",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "directed": {
+              "type": "boolean"
+            },
+            "node_colors": {
+              "enum": [
+                "types",
+                "none"
+              ]
+            },
+            "operation": {
+              "const": "isomorphism"
+            },
+            "left": {
+              "$ref": "#/$defs/ids"
+            },
+            "right": {
+              "$ref": "#/$defs/ids"
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "isomorphism: whether two node sets' induced subgraphs are isomorphic, with node and edge bijections, or a counts or refinement certificate for a negative."
         }
       ]
     },
@@ -5952,7 +6056,9 @@
                   "k_shortest_paths",
                   "min_cost_flow",
                   "reachability_pairs",
-                  "datalog"
+                  "datalog",
+                  "canonical_form",
+                  "isomorphism"
                 ]
               }
             }
@@ -7310,6 +7416,92 @@
             "properties": {
               "operation": {
                 "const": "datalog"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "canonical_form"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/form_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "canonical_form"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "canonical_form"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "isomorphism"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/iso_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "isomorphism"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "isomorphism"
               }
             }
           }
@@ -9131,6 +9323,185 @@
         }
       },
       "description": "The query's matching facts in the least model (ascending, up to max_results), their total and whether any exists (null when interrupted), the facts their derivations use (or, with the certificate, the whole model) in rank order, each with its rule and premises, and the model's size and rounds."
+    },
+    "form_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "encoding",
+        "canonical_id"
+      ],
+      "properties": {
+        "order": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "encoding": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "nodes",
+                "edges",
+                "directed"
+              ],
+              "properties": {
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "edges": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "prefixItems": [
+                      {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "directed": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canonical_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "The canonical order of the nodes, the encoding (colors by position and sorted edges between positions), and its identity; null when interrupted."
+    },
+    "iso_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isomorphic",
+        "mapping",
+        "edge_mapping",
+        "certificate"
+      ],
+      "properties": {
+        "isomorphic": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mapping": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "left",
+              "right"
+            ],
+            "properties": {
+              "left": {
+                "$ref": "#/$defs/id"
+              },
+              "right": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        "edge_mapping": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "left",
+              "right"
+            ],
+            "properties": {
+              "left": {
+                "$ref": "#/$defs/id"
+              },
+              "right": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "counts"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "rounds"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "refinement"
+                },
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Whether the two graphs are isomorphic (null when interrupted); the node and edge bijections when they are; and for a negative, on request, a counts or refinement certificate."
     }
   }
 }

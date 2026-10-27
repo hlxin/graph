@@ -484,6 +484,30 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 want = oracle(g['edges'], r['sources'], r['targets'], r['scope'], r.get('capacities'), r['costs'],
                               None)
             assert (exp['flow_value'], exp['flow_cost']) == want, case['name']
+        elif op == 'isomorphism':
+            from test_canonical import oracle as iso_oracle
+            def side(ids):
+                inside = set(ids)
+                nodes = [{"id": node_id(n), "types": [] if isinstance(n, str) else list(n.get("types") or [])}
+                         for n in suite['graphs'][case['graph']]['nodes'] if node_id(n) in inside]
+                names = {e['relation'] for e in r['scope']}
+                edges = [e for e in g['edges'] if e['source'] in inside and e['target'] in inside
+                         and e['relation'] in names]
+                return nodes, edges
+            assert exp['isomorphic'] is iso_oracle(side(r['left']), side(r['right']), r.get('directed', True)), \
+                case['name']
+        elif op == 'canonical_form':                # the edges are the induced subgraph relabeled by the order
+            pos = {n: i for i, n in enumerate(exp['canonical_order'])}
+            names = {e['relation'] for e in r['scope']}
+            listed = []
+            for e in g['edges']:
+                if e['source'] in pos and e['target'] in pos and e['relation'] in names:
+                    i, j = pos[e['source']], pos[e['target']]
+                    if not r.get('directed', True) and i > j:
+                        i, j = j, i
+                    listed.append([i, j, e['relation']])
+            assert sorted(exp['canonical_order']) == sorted(r['nodes']), case['name']
+            assert exp['canonical_edges'] == sorted(listed), case['name']
         elif op == 'datalog':
             from test_datalog import matches, naive_model
             model = naive_model(g['nodes'], g['edges'], r['program'], rp)

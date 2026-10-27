@@ -55,8 +55,9 @@ REVALIDATION_KIND = "graph_runtime.revalidation"
 MAX_REASONS = 100
 _RECHECKED = ("components", "biconnectivity", "max_flow", "matching", "dominators",   # by verifying the certificate
               "incidence", "critical_path", "d_separation", "support", "spanning_forest", "cycle_basis",
-              "min_cost_flow", "reachability_pairs", "datalog")
-_SELF_PROVEN = {"critical_path": ("acyclic", False), "d_separation": ("separated", False)}   # a witness is the proof
+              "min_cost_flow", "reachability_pairs", "datalog", "canonical_form", "isomorphism")
+_SELF_PROVEN = {"critical_path": ("acyclic", False), "d_separation": ("separated", False),  # a witness is the proof
+                "isomorphism": ("isomorphic", True)}
 _PROVEN_BY_ANSWER = ("spanning_forest",)       # what the answer claims, checked against the records, is the proof
 _NODE_FIELDS = frozenset({"node", "nodes", "left", "right", "idom", "source", "target", "from", "to", "dominators"})
 _EDGE_FIELDS = frozenset({"edge", "edges"})
@@ -601,7 +602,10 @@ def _recheck(ctx: SimpleNamespace) -> None:
     p, answer, out = ctx.p, ctx.answer, ctx.out
     nodes: set = set()
     edges: set = set()
-    _names({k: v for k, v in answer.items() if k != "certificate"}, None, nodes, edges)
+    skip = {"certificate", "encoding", "edge_mapping"}      # an encoding's nodes are colors; mapped edges are edges
+    _names({k: v for k, v in answer.items() if k not in skip}, None, nodes, edges)
+    for x in answer.get("edge_mapping") or ():
+        edges.update((x["left"], x["right"]))
     out.extend({"code": "node_gone", "node": n} for n in sorted(n for n in nodes if n not in p._node_index))
     out.extend({"code": "witness_gone", "edge": e} for e in sorted(e for e in edges if e not in p._edge_index))
     if out:

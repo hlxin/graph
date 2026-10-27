@@ -89,6 +89,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
   and `edge` as input predicates, with the hierarchies), evaluated semi-naively to its least model; every fact with a
   derivation of strictly increasing ranks, and on request the whole model as a certificate a checker proves closed
   under every rule (section 4)
+- the `canonical_form` and `isomorphism` operations: a node set's induced subgraph put in canonical order by
+  individualization and refinement with automorphism pruning, its encoding checked as a relabeling; and whether two
+  node sets' graphs are isomorphic, proven by node and edge bijections, or not, proven by other counts or color
+  refinement histograms when those separate them (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -204,6 +208,8 @@ no wildcard: a scope lists what it follows.
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
 | `min_cost_flow` | `sources`, `targets` (disjoint from the sources), `scope`, `capacities` (as for `max_flow`; null: every edge 1), `costs` (as for shortest paths, non-negative), `value` (how much to send, as a capacity; null: as much as possible), `certificate` (default false) | `max_expansions` |
 | `k_shortest_paths` | `sources`, `targets`, `scope`, `costs` (as for shortest paths, non-negative; null: every hop 1), `k` (1 to 1,000,000; default 10) | `max_expansions` |
+| `canonical_form` | `nodes` (the induced subgraph's), `scope` (the edges that count, by relation, with their own direction), `directed` (default true), `node_colors` (`types`, the default: each node's types with their ancestors; or `none`) | `max_expansions` |
+| `isomorphism` | `left`, `right` (two node sets, which may overlap), `scope`, `directed`, `node_colors` (as for `canonical_form`), `certificate` (default false) | `max_expansions` |
 | `datalog` | `program` (rules `{"id", "head", "body"}`, atoms `{"predicate", "args"}`; a term `"?name"` is a variable, any other text, or `{"const": text}`, a constant), `query` (an atom of a derived predicate), `answer` (`rows`, `count` or `exists`; default `rows`), `derivations` (default true), `certificate` (default false) | `max_expansions`, `max_results` |
 | `reachability_pairs` | `pairs` (`[{"source", "target"}]`, a pair `[source, target]` read as one; sorted and de-duplicated), `scope`, `witnesses` (default true), `certificate` (default false) | `max_expansions` |
 | `cycle_basis` | `scope` (each edge in it a link between its ends, either way), `weights` (as costs: non-negative; null: every link 1), `certificate` (default false) | `max_expansions` |
@@ -889,6 +895,45 @@ sends; every target to the virtual sink, and back from one that receives), so no
 When the flow is a maximum one (no value asked, or `feasible` false), `source_side` is a minimum cut's: every source
 and no target, every hop out of it full and every hop into it empty, so its capacity is the value; otherwise null.
 
+**Canonical form and isomorphism.** Whether two fragments are the same structure, and one name for every copy of a
+structure: deduplicating molecules, motifs and provenance fragments. The graph of a node set is its induced subgraph:
+its nodes, each colored by its types (with their ancestors; `node_colors: none` colors all alike), and the edges in
+scope (by relation, or one above it; the scope's directions do not matter) with both ends in the set, each with its own
+relation, directed from source to target or, with `directed: false`, as an undirected link. Parallel edges and loops
+count with their multiplicity.
+
+Color refinement (one-dimensional Weisfeiler-Leman) gives a node, in each round, the rank, in sorted order, of its old
+color with the sorted multiset of (neighbour's color, relation) over its out-edges and, separately, its in-edges (a
+loop in both), or over its links when undirected (a loop once); it stops when no class splits. Colors depend on
+structure alone, never on IDs. The canonical form comes from individualization and refinement (McKay and Piperno,
+2014): refine; take the smallest class of several nodes (the lowest color on ties); for each of its nodes in turn (by
+ID), give that node a color of its own just before the rest of its class, and search on. Every leaf (every class one
+node) orders the nodes; its encoding is the nodes' colors in that order and the sorted edges `[i, j, relation]`
+between positions (the smaller first when undirected); the least encoding over the leaves is canonical, and the first
+leaf reaching it gives the order. Two leaves with the same encoding give an automorphism; a node in the orbit of one
+already searched, under the automorphisms found that fix the current prefix, has the same leaves and is skipped. The
+least encoding is the same for every isomorphic copy; only which order achieving it is reported depends on IDs. Reading
+the set costs one expansion per node, per edge leaving it and per type it has, charged before they are read; each
+refinement round one per node and per arc read; each individualization one per node; each leaf one per node and edge;
+each orbit computation one per node and usable automorphism. Worst cases stay exponential, and the
+budget bounds them.
+
+`canonical_form` answers `{"order", "encoding": {"nodes", "edges", "directed"}, "canonical_id"}`, the identity the
+digest of the encoding; all null when interrupted. A checker confirms that the encoding is the set's graph relabeled by
+the order (so equal identities prove isomorphism); that it is the least is the search's, not certified.
+
+`isomorphism` answers `{"isomorphic", "mapping": [{"left", "right"}], "edge_mapping": [{"left", "right"}],
+"certificate"}` (each canonical identity, proven, is `canonical_form`'s). It first tries the easy proofs of a negative: other numbers of nodes or edges (`{"kind":
+"counts"}`), or color refinement of the two graphs side by side, as one disjoint union, giving their sides other color
+histograms after some round (`{"kind": "refinement", "rounds"}`); with `certificate: true` a negative so found carries
+it, and a checker recomputes it. Otherwise both canonical forms are computed: equal identities give the mapping by
+position and the edge mapping by (positions, relation, edge ID), which prove the isomorphism; other identities answer
+false, proven by the exact search alone (`certificate` null). Interrupted: `isomorphic` null, nothing mapped.
+
+A random 3-regular graph on 500 nodes against a relabeled copy is decided in 3.4 s (networkx's VF2 matcher: 114 s), a
+random graph of 1,000 nodes and 3,000 edges in 0.05 s (0.76 s); highly symmetric small graphs (a hypercube, a complete
+graph) take VF2 milliseconds and this search a little longer.
+
 **Datalog.** Rules that derive facts from the records, recursively: provenance closures, lineage, "supported through
 a dataset", any question that is a fixpoint of joins. A program is a list of rules, `head :- body`, each atom a
 predicate over terms, a variable `"?x"` or a constant. It is positive (no negation), function-free and range-restricted
@@ -1076,6 +1121,10 @@ The result contract reports how an execution ended. It carries no scientific ans
     empty
   - for k shortest paths, each path's hops chaining in scope from a source to a target, no node twice, at the exact
     cost of its hops; the paths distinct and in the strict order; k of them unless `exhausted`
+  - for a canonical form, the order a permutation of the node set and the encoding the set's graph relabeled by it,
+    with its digest; for an isomorphism, the node mapping a color-keeping bijection and the edge mapping a bijection
+    keeping relations and mapped ends, and for a certified negative, the counts or the refinement histograms
+    recomputed
   - for Datalog, each listed fact's derivation: its rule, its head and every body atom matching the fact and its
     premises under one substitution, each premise a record (with the hierarchies) or an earlier fact of lower rank;
     each row a match of the query with that derivation; from the certificate, every rule fired over the inputs and the
@@ -1148,7 +1197,10 @@ The result contract reports how an execution ended. It carries no scientific ans
 ## 7. Revalidation
 
 `graph_runtime.revalidate` decides whether a cached result still holds on another projection, such as one built
-after the records were edited, without searching again.
+after the records were edited, without searching again. It trusts a result to be GRAPH's own answer for the projection
+it names, and checks what an edit could change: on that same projection a result holds without a check, and
+`verify_result` is the check for a result from elsewhere. So a canonical form, whose minimality no certificate proves,
+holds on its own projection and is otherwise refuted or unknown.
 
 - `revalidate(result, projection)` checks the result's answer and certificate against the new projection, in time
   proportional to the answer and the hops from what it lists.
@@ -1178,15 +1230,17 @@ pieces it spans, as `verify_result` checks them); an edit that breaks any of the
 full.
 
 Components, biconnectivity, a maximum flow, a minimum-cost flow, a matching, dominators, incidence, critical paths,
-d-separation, cycle bases, reachability between pairs, Datalog and support are revalidated by their certificates,
-which
+d-separation, cycle bases, reachability between pairs, Datalog, canonical forms, isomorphisms and support are
+revalidated by their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
 kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest
 the sources, a support count that an added or removed support changed); otherwise it holds exactly when its certificate still checks against the new projection's records (as
 `verify_result` checks it), and is unknown (`certificate_broken`, with the first problem found) when it does not, or
 (`no_certificate`) when it has none, unless its witness alone proves it (a cycle, an active trail, the witnesses of
-pairs that are all reachable). Pairs need both proofs: a closure proves only negatives, so a reachable pair asked for
+pairs that are all reachable, an isomorphism's mappings). A canonical form is refuted when its encoding is no longer
+the set's graph relabeled by its order, and otherwise unknown (`no_certificate`): that it is the least encoding is not
+certified. Pairs need both proofs: a closure proves only negatives, so a reachable pair asked for
 without its witness leaves the answer unknown (`no_certificate`). These are always checked in full.
 
 A derivation holds while every listed node keeps its rule and every use is still a hop in scope, and its certificate's
