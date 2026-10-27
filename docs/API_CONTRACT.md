@@ -63,6 +63,8 @@ states consistently, and required costs only for edges actually in scope. Revisi
   edges (subgraph monomorphism: substructure search), enumerated over the semi-join-reduced candidates; every pattern
   request now states `injective`, so pattern requests made before have other `request_id`s and `result_id`s, with the
   same answers (section 4)
+- the `spanning_forest` operation: a minimum (or maximum) spanning forest by Kruskal's algorithm in the order of
+  (weight, edge ID), unique in that order, which proves itself against the records by the cycle property (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -176,6 +178,7 @@ no wildcard: a scope lists what it follows.
 | `critical_path` | `scope` (a hop from u to v: u comes first), `sources` (only what they reach; null: every node), `costs` (as for shortest paths; null: every hop takes 1), `answer` (`path`, the default: the makespan and a critical path; `schedule`: every node's times too), `certificate` (default false) | `max_expansions` |
 | `d_separation` | `x`, `y`, `given` (default none; the three disjoint), `scope` (a hop from u to v: u is a parent, a direct cause, of v), `certificate` (default false) | `max_expansions` |
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
+| `spanning_forest` | `scope` (each edge in it a link between its ends, either way), `weights` (as weights: any finite numbers; null: every link 1), `objective` (`min`, the default, or `max`) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
@@ -768,6 +771,23 @@ example from a claim to its evidence items, or from an item to the source it cit
 Answer: `{"failed", "lost": [{"node", "supports", "standing", "failing": [hop], "causes"}], "weakened": [...],
 "counts": {"lost", "weakened", "ungrounded"}, "certificate"}`.
 
+**Spanning forest.** The lightest set of links that keeps every connected piece connected (Kruskal, 1956). Each edge in
+scope is a link between its ends, whichever way the scope follows it, as for biconnectivity; a loop never joins
+anything. The forest holds one tree per piece of the projection's nodes (a node with no link is a tree of its own),
+with the piece's node count less one links. Kruskal's algorithm takes the links in the order of (weight, edge ID), or
+of weight descending then edge ID for `objective: max`, and keeps each that joins two trees. Weights are compared
+exactly (floats as exact rationals, any sign), so the forest is the one least in that strict order: unique, of least
+(or greatest) total weight, ties broken by edge ID. Without weights every link weighs 1, and the forest is the first
+in edge ID order. Reading each node's links is one expansion; an interrupted search claims nothing (every field null).
+Answer: `{"edges", "count", "trees", "weight", ["weight_exact"]}`: the forest's edges in ascending ID, their number,
+the number of trees (nodes less edges) and the exact total, as costs are written (the nearest float and `p/q` in
+rational mode).
+
+The answer proves itself, with no certificate (Tarjan's cycle property): links in scope with no cycle among them,
+whose trees join the ends of every other link in scope (so they span each piece), and in which every link left out
+comes after every edge of the tree path between its ends in that order, are the forest Kruskal's algorithm keeps.
+A checker finds those paths' last edges by binary lifting, in O((n + m) log n).
+
 ## 5. Results
 
 | Field | Meaning |
@@ -829,6 +849,9 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that shortest-path costs are the exact sum of the hop costs; with a negative cost, that a negative cycle's three
     walks chain from a source to its start, around it at the negative cost it states, and on to a target, and that
     an interrupted answer gives no lower bound
+  - for a spanning forest, its edges against the records: links in scope, no loop and no cycle, spanning every
+    piece, and every link left out after every edge of its tree path in the order of (weight, edge ID); then its
+    count, trees and exact weight
   - that every pattern row's links are input edges in their steps' scopes joining the variables they bind, and that an
     injective pattern's rows bind no node and link no edge twice
   - that a complete reachability or impact answer is closed: every hop in scope from a node it expanded (a changed
@@ -875,7 +898,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 176 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 180 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -908,6 +931,10 @@ witness of its own, so an edit that breaks the certificate leaves the answer unk
 A ranking holds while its estimates still prove it on the new projection, as `verify_result` checks it: put into the
 new walk's equation they leave no negative residual, and the residual, intervals and certified prefix they prove are
 exactly the ones the answer gives (tighter ones would leave its exact numbers false). It is always checked in full.
+
+A spanning forest holds while it is still the forest the new records prove (its links, the cycle property and the
+pieces it spans, as `verify_result` checks them); an edit that breaks any of these refutes it. It is always checked in
+full.
 
 Components, biconnectivity, a maximum flow, a matching, dominators, incidence, critical paths, d-separation and
 support are revalidated by their certificates, which

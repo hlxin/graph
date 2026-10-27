@@ -449,6 +449,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_critical_problems(request, answer, status))
     elif op == "d_separation":
         out.extend(_separation_problems(request, answer, status))
+    elif op == "spanning_forest":
+        out.extend(_forest_problems(request, answer, status))
     elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
         nc = answer["negative_cycle"]
         start = nc["cycle"]["source"]
@@ -1290,6 +1292,42 @@ def _bottleneck_problems(request: dict, answer: dict, status: str) -> list[str]:
     bound = answer.get("bound")
     if status == INTERRUPTED and bound is not None and value is not None and _better(request["objective"], value, bound):
         out.append("an interrupted answer's value is never better than its bound")
+    return out
+
+
+def _forest_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """A spanning forest's own consistency, read without the records: nothing claimed when interrupted; edges unique
+    in ascending ID, counted; trees a count; the weight an integer, or in rational mode (a float weight) the nearest
+    float beside its exact value."""
+    fields = ("edges", "count", "trees", "weight")
+    if status != COMPLETED:
+        return [] if all(answer[k] is None for k in fields) and "weight_exact" not in answer else \
+            ["an interrupted spanning forest claims nothing"]
+    out = []
+    edges = answer["edges"]
+    if edges is None or edges != sorted(set(edges)) or answer["count"] != len(edges):
+        out.append("the forest's edges are unique, in ascending ID, and count is their number")
+    if type(answer["trees"]) is not int or answer["trees"] < 0:
+        out.append("trees is a non-negative integer")
+    weights = request["weights"]
+    rational = weights is not None and any(isinstance(x, float) for t in weights.values() for x in t.values())
+    if rational != ("weight_exact" in answer):
+        out.append("weight_exact appears exactly in rational mode (a float weight)")
+    elif rational:
+        try:
+            exact = Fraction(answer["weight_exact"])
+        except (ValueError, ZeroDivisionError, TypeError):
+            return out + ["weight_exact is p, -p, p/q or -p/q in lowest terms"]
+        if str(exact) != answer["weight_exact"]:
+            out.append("weight_exact is in lowest terms")
+        try:
+            nearest = float(exact)
+        except OverflowError:
+            nearest = None
+        if answer["weight"] != nearest:
+            out.append("weight is the nearest float to weight_exact (null on overflow)")
+    elif type(answer["weight"]) is not int:
+        out.append("an integer-weight forest weighs an integer")
     return out
 
 

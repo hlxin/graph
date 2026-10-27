@@ -95,7 +95,8 @@ TOOLS: list[dict] = [
         "name": "graph_execute",
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
-                       "biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, or on "
+                       "biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, "
+                       "spanning_forest, or on "
                        "a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
@@ -494,6 +495,10 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
         if a["trail"] is not None:
             summary.update(trail=[{k: s[k] for k in ("edge", "from", "to", "travel")} for s in a["trail"][:limit]],
                            colliders=[c["node"] for c in a["colliders"][:limit]])
+    elif op == "spanning_forest":
+        summary = {k: a[k] for k in ("count", "trees", "weight", "weight_exact") if k in a}
+        if a["edges"] is not None:
+            summary["edges"] = {"items": a["edges"][:limit], "more": len(a["edges"]) > limit}
     elif op == "critical_path":
         summary = {k: a[k] for k in ("acyclic", "cost", "cost_exact") if k in a}
         if a["path"] is not None:

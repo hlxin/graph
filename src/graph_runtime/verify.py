@@ -107,6 +107,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.critical_path(request, answer, status)
         elif op == "d_separation":
             check.d_separation(request, answer, status)
+        elif op == "spanning_forest":
+            check.spanning_forest(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -252,6 +254,110 @@ class _Checker:
     def bad(self, message: str) -> None:
         self.problems.append(message)
 
+    def spanning_forest(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """The forest against the records, which prove it (Tarjan's cycle property): its edges are links in scope, no
+        loop and no cycle among them; every other link in scope joins two nodes of one of its trees (so they span
+        every piece) and comes after every edge of the tree path between its ends in the order of (weight, edge ID)
+        (weight descending for a maximum), the path's last edge found by binary lifting; the count, the trees and
+        the exact total weight are the forest's. Such a forest is the one Kruskal's algorithm keeps."""
+        if status != COMPLETED:
+            return
+        if not isinstance(answer.get("edges"), (list, tuple)):      # a frozen answer holds tuples
+            self.bad("a complete spanning forest lists its edges")
+            return
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        weights = request["weights"]
+        kind, table = next(iter(weights.items())) if weights else (None, None)
+        rational = table is not None and any(isinstance(x, float) for x in table.values())
+        sign = -1 if request["objective"] == "max" else 1
+
+        def weight(eid: str, rel: str) -> Any:
+            if table is None:
+                return 1
+            x = table.get(rel if kind == "by_relation" else eid)
+            if x is None:
+                self.bad(f"the link {eid} in scope has no weight in the request")
+                return 0
+            return Fraction(x) if rational else x
+
+        links = {eid: (s, t, rel) for eid, (s, t, rel) in self.edge_of.items()
+                 if s != t and (self.in_scope(rel, "forward", allowed) or self.in_scope(rel, "reverse", allowed))}
+        key = {eid: (sign * weight(eid, rel), eid) for eid, (_, _, rel) in links.items()}
+        chosen = answer["edges"]
+        up: dict = {}
+
+        def root(x: Any) -> Any:
+            while up.get(x, x) != x:
+                up[x] = up.get(up[x], up[x])            # path halving
+                x = up[x]
+            return x
+        for eid in chosen:
+            if eid not in links:
+                self.bad(f"the forest edge {eid!r} is not a link in scope (or is a loop)")
+                return
+            a, b = root(links[eid][0]), root(links[eid][1])
+            if a == b:
+                self.bad(f"the forest edge {eid} closes a cycle")
+                return
+            up[a] = b
+        if answer.get("count") != len(chosen) or answer.get("trees") != len(self.types_of) - len(chosen):
+            self.bad("count is the forest's edges and trees the nodes less them")
+        total = sum((weight(eid, links[eid][2]) for eid in chosen), Fraction(0) if rational else 0)
+        stated = Fraction(answer["weight_exact"]) if rational and isinstance(answer.get("weight_exact"), str) \
+            else answer.get("weight")
+        if stated != total:
+            self.bad(f"the forest weighs {total}, but the answer says {stated!r}")
+        adjacent: dict = {}
+        for eid in chosen:
+            s, t, _ = links[eid]
+            adjacent.setdefault(s, []).append((t, key[eid]))
+            adjacent.setdefault(t, []).append((s, key[eid]))
+        depth: dict = {}
+        lift: list[dict] = [{}]                 # lift[j][x]: (the node 2^j hops above x, the largest key on the way)
+        for start in adjacent:
+            if start in depth:
+                continue
+            depth[start] = 0
+            stack = [start]
+            while stack:
+                x = stack.pop()
+                for y, k in adjacent[x]:
+                    if y not in depth:
+                        depth[y] = depth[x] + 1
+                        lift[0][y] = (x, k)
+                        stack.append(y)
+        while any(x in lift[-1] and lift[-1][x][0] in lift[-1] for x in lift[-1]):
+            prev = lift[-1]
+            lift.append({x: (prev[a][0], max(k, prev[a][1])) for x, (a, k) in prev.items() if a in prev})
+
+        def heaviest(u: Any, v: Any) -> Any:
+            """The largest key on the tree path between u and v."""
+            best = None
+            if depth[u] < depth[v]:
+                u, v = v, u
+            gap, j = depth[u] - depth[v], 0
+            while gap:
+                if gap & 1:
+                    u, k = lift[j][u]
+                    best = k if best is None else max(best, k)
+                gap, j = gap >> 1, j + 1
+            if u == v:
+                return best
+            for j in range(len(lift) - 1, -1, -1):
+                if u in lift[j] and lift[j][u][0] != lift[j][v][0]:
+                    best = max(x for x in (best, lift[j][u][1], lift[j][v][1]) if x is not None)
+                    u, v = lift[j][u][0], lift[j][v][0]
+            return max(x for x in (best, lift[0][u][1], lift[0][v][1]) if x is not None)
+        kept = set(chosen)
+        for eid, (s, t, _) in sorted(links.items()):
+            if eid in kept:
+                continue
+            if root(s) != root(t):
+                self.bad(f"the link {eid} joins two trees: the forest does not span its piece")
+            elif not key[eid] > heaviest(s, t):
+                self.bad(f"the link {eid} comes before an edge of the tree path between its ends: a lighter forest "
+                         "(or one earlier in edge ID) keeps it")
+
     def in_scope(self, rel: str, direction: str, allowed: set) -> bool:
         return (rel, direction) in allowed or any((up, direction) in allowed for up in self.relation_up.get(rel, ()))
 
@@ -301,7 +407,7 @@ class _Checker:
 
     def chain(self, where: str, witness: Any, sources: set, targets: Any, scopes: list[set],
               node_types: list | None = None) -> list[Mapping]:
-        if not isinstance(witness, Mapping) or not isinstance(witness.get("hops"), list):
+        if not isinstance(witness, Mapping) or not isinstance(witness.get("hops"), (list, tuple)):
             self.bad(f"{where}: a found answer gives its witness, with its hops")
             return []
         hops = witness["hops"]
@@ -340,7 +446,7 @@ class _Checker:
         allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
         max_depth = request.get("max_depth")
         entries = answer.get(key)
-        if not isinstance(entries, list):
+        if not isinstance(entries, (list, tuple)):
             self.bad(f"the answer lists {key}")
             return
         if answer.get("count") != len(entries) or not _is_int(answer.get("count")):
@@ -748,7 +854,7 @@ class _Checker:
         without a rank (all of them, or one for an ``all_of`` node); such nodes are unfounded, so none is in the
         least fixpoint. The certificate must classify the region (the failed nodes and everything that depends on
         them) and every support of the region; nothing else can change."""
-        if not isinstance(cert, Mapping) or cert.get("kind") != "fixpoints" or not isinstance(cert.get("nodes"), list):
+        if not isinstance(cert, Mapping) or cert.get("kind") != "fixpoints" or not isinstance(cert.get("nodes"), (list, tuple)):
             self.bad("certificate: a support answer's certificate is the two fixpoints' ranks (kind fixpoints)")
             return None
         ranks: list[dict] = [{}, {}]                          # before, after: node -> rank or None

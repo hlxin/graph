@@ -4728,6 +4728,74 @@
             }
           },
           "description": "d_separation: x, y and given are disjoint; a hop in scope from u to v reads as u a parent (direct cause) of v."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "scope",
+            "weights",
+            "objective"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "spanning_forest"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "weights": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "additionalProperties": false,
+                  "properties": {
+                    "by_relation": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/weight"
+                      }
+                    },
+                    "by_edge": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/weight"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "objective": {
+              "enum": [
+                "min",
+                "max"
+              ]
+            }
+          },
+          "description": "spanning_forest: each edge in scope a link between its ends, either way; weights any finite numbers (null: every link 1); the forest least (min) or greatest (max) in the order of (weight, edge ID)."
         }
       ]
     },
@@ -5280,7 +5348,8 @@
                   "dominators",
                   "incidence",
                   "critical_path",
-                  "d_separation"
+                  "d_separation",
+                  "spanning_forest"
                 ]
               }
             }
@@ -6383,6 +6452,49 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "spanning_forest"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/forest_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "spanning_forest"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "spanning_forest"
+              }
+            }
+          }
         }
       ],
       "description": "The runtime additionally checks digests, normalized request identity and binding, counts, limits, exact arithmetic, and witness structure. verify_result checks witnesses against input records; it does not prove completeness or minimality."
@@ -7475,6 +7587,62 @@
           "$ref": "#/$defs/signed_cost"
         }
       }
+    },
+    "forest_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edges",
+        "count",
+        "trees",
+        "weight"
+      ],
+      "properties": {
+        "edges": {
+          "oneOf": [
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trees": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "weight_exact": {
+          "$ref": "#/$defs/signed_exact"
+        }
+      },
+      "description": "The forest's edges (ascending ID), their number, the number of trees (nodes less edges) and the total weight (weight_exact, the exact value, in rational mode). An interrupted answer: all null."
     }
   }
 }
