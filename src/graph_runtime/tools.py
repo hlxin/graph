@@ -97,7 +97,7 @@ TOOLS: list[dict] = [
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
                        "biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, "
                        "spanning_forest, cycle_basis, k_shortest_paths, min_cost_flow, reachability_pairs, datalog, "
-                       "canonical_form, isomorphism, or on "
+                       "canonical_form, isomorphism, flux_modes, or on "
                        "a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
@@ -496,6 +496,10 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
         if a["trail"] is not None:
             summary.update(trail=[{k: s[k] for k in ("edge", "from", "to", "travel")} for s in a["trail"][:limit]],
                            colliders=[c["node"] for c in a["colliders"][:limit]])
+    elif op == "flux_modes":
+        summary = {"count": a["count"], "total": a["total"], "species": a["species"], "reactions": a["reactions"],
+                   "modes": {"items": [{x["reaction"]: x["value"] for x in m["vector"]} for m in a["modes"][:limit]],
+                             "more": len(a["modes"]) > limit}}
     elif op == "canonical_form":
         summary = {"canonical_id": a["canonical_id"], "nodes": None if a["order"] is None else len(a["order"]),
                    "edges": None if a["encoding"] is None else len(a["encoding"]["edges"])}

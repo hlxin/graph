@@ -5498,6 +5498,133 @@
             }
           },
           "description": "isomorphism: whether two node sets' induced subgraphs are isomorphic, with node and edge bijections, or a counts or refinement certificate for a negative."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "rows",
+            "columns",
+            "scope",
+            "coefficients",
+            "reversible",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_sets"
+            },
+            "rows": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "node_types",
+                "nodes"
+              ],
+              "properties": {
+                "node_types": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nodes": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "node_types",
+                "nodes"
+              ],
+              "properties": {
+                "node_types": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nodes": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ids"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "coefficients": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 1,
+              "properties": {
+                "by_relation": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/weight"
+                  }
+                },
+                "by_edge": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/weight"
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "certificate": {
+              "type": "boolean"
+            },
+            "operation": {
+              "const": "flux_modes"
+            },
+            "reversible": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          },
+          "description": "flux_modes: the elementary flux modes of the stoichiometric matrix of rows (species) by columns (reactions), by exact double description; each mode proven elementary by a support-rank minor on request."
         }
       ]
     },
@@ -6058,7 +6185,8 @@
                   "reachability_pairs",
                   "datalog",
                   "canonical_form",
-                  "isomorphism"
+                  "isomorphism",
+                  "flux_modes"
                 ]
               }
             }
@@ -7502,6 +7630,49 @@
             "properties": {
               "operation": {
                 "const": "isomorphism"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "flux_modes"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/modes_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "flux_modes"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "flux_modes"
               }
             }
           }
@@ -9502,6 +9673,110 @@
         }
       },
       "description": "Whether the two graphs are isomorphic (null when interrupted); the node and edge bijections when they are; and for a negative, on request, a counts or refinement certificate."
+    },
+    "modes_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "species",
+        "reactions",
+        "modes",
+        "count",
+        "total"
+      ],
+      "properties": {
+        "species": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reactions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "vector",
+              "support",
+              "certificate"
+            ],
+            "properties": {
+              "vector": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "reaction",
+                    "value"
+                  ],
+                  "properties": {
+                    "reaction": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "value": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "support": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "certificate": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "rows",
+                      "columns"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "const": "support_rank"
+                      },
+                      "rows": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/id"
+                        }
+                      },
+                      "columns": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/id"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "description": "The network's size, its elementary flux modes (primitive integer vectors by reaction, ordered by support size then by reactions and values), how many are listed and their total (null when interrupted), each mode with its support-rank minor on request."
     }
   }
 }

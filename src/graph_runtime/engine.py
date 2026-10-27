@@ -29,8 +29,8 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import (algebra, canon, causal, cycles, datalog, dominators, flows, forest, kpaths, mincost, paths,
-               ranking, reachindex, schedule, structure)
+from . import (algebra, canon, causal, cycles, datalog, dominators, flows, fluxmodes, forest, kpaths, mincost,
+               paths, ranking, reachindex, schedule, structure)
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -417,8 +417,10 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
             edge, rel_cost, edge_rel = table.edge, table.rel, p._edge_rel
             plan.rational, plan.given, plan.exact = table.rational, table.given, table.exact
             plan.cost_of = ((lambda ei: edge[ei]) if edge is not None else (lambda ei: rel_cost[edge_rel[ei]]))
-    elif op == "incidence":
-        plan.certificate, plan.left, plan.right = req["certificate"], "left" in req["kernels"], "right" in req["kernels"]
+    elif op in ("incidence", "flux_modes"):
+        if op == "incidence":
+            plan.left, plan.right = "left" in req["kernels"], "right" in req["kernels"]
+        plan.certificate = req["certificate"]
         masks = p._node_mask
         chosen = []
         for field in ("rows", "columns"):
@@ -433,6 +435,13 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
         table = _costs(p, req["coefficients"], plan.fwd, plan.rev, "coefficients", scaled=False)
         plan.coefficient = lambda ei: Fraction(table.given(ei))
+        if op == "flux_modes":
+            backwards = set(_nodes(p, req["reversible"], "reversible")) if req["reversible"] else set()
+            stray = sorted(backwards - set(plan.columns))
+            if stray:
+                raise RequestError(FAILED, "invalid_request", f"reversible names nodes that are not reactions (columns): "
+                                   f"{[p._node_ids[u] for u in stray[:10]]}")
+            plan.reversible = [c in backwards for c in plan.columns]
     elif op == "periodicity":
         raise RequestError("unsupported", "unsupported_operation", "periodicity runs on a periodic projection: the "
                            "translation lattice of a component of an infinite periodic graph",
@@ -2672,4 +2681,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "canonical_form": (lambda p, plan, ctl: canon.search_form(p, plan, ctl),
                                   lambda p, plan, st: canon.answer_form(p, plan, st)),
                "isomorphism": (lambda p, plan, ctl: canon.search_iso(p, plan, ctl),
-                               lambda p, plan, st: canon.answer_iso(p, plan, st))}
+                               lambda p, plan, st: canon.answer_iso(p, plan, st)),
+               "flux_modes": (lambda p, plan, ctl: fluxmodes.search(p, plan, ctl),
+                              lambda p, plan, st: fluxmodes.answer(p, plan, st))}

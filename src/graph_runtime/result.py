@@ -465,6 +465,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_form_problems(request, answer, status))
     elif op == "isomorphism":
         out.extend(_iso_problems(request, answer, status))
+    elif op == "flux_modes":
+        out.extend(_modes_problems(request, answer, status, data.get("interruption")))
     elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
         nc = answer["negative_cycle"]
         start = nc["cycle"]["source"]
@@ -1398,6 +1400,33 @@ def _mincost_problems(request: dict, answer: dict, status: str) -> list[str]:
         elif side is not None and side != sorted(set(side)):
             out.append("the cut's source side is unique, in ascending ID")
     return out
+
+
+def _modes_problems(request: dict, answer: dict, status: str, interruption: dict | None) -> list[str]:
+    """Flux modes' own consistency: counted; the total known exactly when the enumeration finished (an output limit
+    finishes it), then the first max_results modes listed; none listed when interrupted otherwise; each mode's support
+    its number of reactions, by ascending ID, each value a non-zero integer; a support-rank certificate exactly when
+    asked for, of |J| - 1 rows and columns."""
+    modes, total = answer["modes"], answer["total"]
+    finished = status == COMPLETED or (interruption or {}).get("reason") == "output_limit"
+    if answer["count"] != len(modes):
+        return ["count is the number of modes listed"]
+    if finished:
+        if type(total) is not int or len(modes) != min(total, request["limits"]["max_results"]) \
+                or (status != COMPLETED) != (total > request["limits"]["max_results"]):
+            return ["a finished enumeration gives its total and lists its first modes, up to max_results"]
+    elif total is not None or modes:
+        return ["an interrupted enumeration lists no mode and knows no total"]
+    for n, m in enumerate(modes):
+        names = [e["reaction"] for e in m["vector"]]
+        if m["support"] != len(names) or names != sorted(set(names)) or any(
+                type(e["value"]) is not int or e["value"] == 0 for e in m["vector"]):
+            return [f"mode {n}: its support is its number of reactions, by ID, each with a non-zero integer"]
+        cert = m["certificate"]
+        if (cert is not None) != request["certificate"] or (cert is not None and not (
+                len(cert["rows"]) == len(cert["columns"]) == m["support"] - 1)):
+            return [f"mode {n}: a support-rank certificate of |J| - 1 rows and columns exactly when asked for"]
+    return []
 
 
 def _form_problems(request: dict, answer: dict, status: str) -> list[str]:

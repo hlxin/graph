@@ -2163,6 +2163,116 @@
     "S"
    ],
    "node_types": []
+  },
+  "G26": {
+   "nodes": [
+    {
+     "id": "A",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "B",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "C",
+     "types": [
+      "Species"
+     ]
+    },
+    {
+     "id": "r0",
+     "types": [
+      "Reaction"
+     ]
+    },
+    {
+     "id": "r1",
+     "types": [
+      "Reaction"
+     ]
+    },
+    {
+     "id": "r2",
+     "types": [
+      "Reaction"
+     ]
+    },
+    {
+     "id": "r3",
+     "types": [
+      "Reaction"
+     ]
+    },
+    {
+     "id": "r4",
+     "types": [
+      "Reaction"
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "id": "r0>A",
+     "source": "r0",
+     "target": "A",
+     "relation": "PRODUCES"
+    },
+    {
+     "id": "A>r1",
+     "source": "A",
+     "target": "r1",
+     "relation": "CONSUMES"
+    },
+    {
+     "id": "r1>B",
+     "source": "r1",
+     "target": "B",
+     "relation": "PRODUCES"
+    },
+    {
+     "id": "B>r2",
+     "source": "B",
+     "target": "r2",
+     "relation": "CONSUMES"
+    },
+    {
+     "id": "r2>C",
+     "source": "r2",
+     "target": "C",
+     "relation": "PRODUCES"
+    },
+    {
+     "id": "A>r3",
+     "source": "A",
+     "target": "r3",
+     "relation": "CONSUMES"
+    },
+    {
+     "id": "r3>C",
+     "source": "r3",
+     "target": "C",
+     "relation": "PRODUCES"
+    },
+    {
+     "id": "C>r4",
+     "source": "C",
+     "target": "r4",
+     "relation": "CONSUMES"
+    }
+   ],
+   "relations": [
+    "CONSUMES",
+    "PRODUCES"
+   ],
+   "node_types": [
+    "Reaction",
+    "Species"
+   ]
   }
  },
  "cases": [
@@ -12179,6 +12289,191 @@
       2,
       "S"
      ]
+    ]
+   }
+  },
+  {
+   "name": "flux-modes-two-routes",
+   "covers": [
+    "flux modes",
+    "double description",
+    "support-rank certificate"
+   ],
+   "graph": "G26",
+   "request": {
+    "operation": "flux_modes",
+    "rows": {
+     "node_types": [
+      "Species"
+     ]
+    },
+    "columns": {
+     "node_types": [
+      "Reaction"
+     ]
+    },
+    "scope": [
+     {
+      "relation": "CONSUMES",
+      "direction": "forward"
+     },
+     {
+      "relation": "PRODUCES",
+      "direction": "forward"
+     }
+    ],
+    "coefficients": {
+     "by_relation": {
+      "CONSUMES": -1,
+      "PRODUCES": 1
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "total": 2,
+    "count": 2,
+    "flux_modes": [
+     {
+      "r0": 1,
+      "r3": 1,
+      "r4": 1
+     },
+     {
+      "r0": 1,
+      "r1": 1,
+      "r2": 1,
+      "r4": 1
+     }
+    ]
+   }
+  },
+  {
+   "name": "flux-modes-reversible-cycle",
+   "covers": [
+    "flux modes",
+    "reversible reactions"
+   ],
+   "graph": "G26",
+   "request": {
+    "operation": "flux_modes",
+    "rows": {
+     "node_types": [
+      "Species"
+     ]
+    },
+    "columns": {
+     "node_types": [
+      "Reaction"
+     ]
+    },
+    "scope": [
+     {
+      "relation": "CONSUMES",
+      "direction": "forward"
+     },
+     {
+      "relation": "PRODUCES",
+      "direction": "forward"
+     }
+    ],
+    "coefficients": {
+     "by_relation": {
+      "CONSUMES": -1,
+      "PRODUCES": 1
+     }
+    },
+    "reversible": [
+     "r1",
+     "r2",
+     "r3"
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "total": 4,
+    "flux_modes": [
+     {
+      "r0": 1,
+      "r3": 1,
+      "r4": 1
+     },
+     {
+      "r1": -1,
+      "r2": -1,
+      "r3": 1
+     },
+     {
+      "r1": 1,
+      "r2": 1,
+      "r3": -1
+     },
+     {
+      "r0": 1,
+      "r1": 1,
+      "r2": 1,
+      "r4": 1
+     }
+    ]
+   }
+  },
+  {
+   "name": "flux-modes-output-limit",
+   "covers": [
+    "flux modes",
+    "output limit"
+   ],
+   "graph": "G26",
+   "request": {
+    "operation": "flux_modes",
+    "rows": {
+     "node_types": [
+      "Species"
+     ]
+    },
+    "columns": {
+     "node_types": [
+      "Reaction"
+     ]
+    },
+    "scope": [
+     {
+      "relation": "CONSUMES",
+      "direction": "forward"
+     },
+     {
+      "relation": "PRODUCES",
+      "direction": "forward"
+     }
+    ],
+    "coefficients": {
+     "by_relation": {
+      "CONSUMES": -1,
+      "PRODUCES": 1
+     }
+    },
+    "limits": {
+     "max_results": 1
+    }
+   },
+   "expect": {
+    "status": "interrupted",
+    "interruption": "output_limit",
+    "total": 2,
+    "count": 1,
+    "flux_modes": [
+     {
+      "r0": 1,
+      "r3": 1,
+      "r4": 1
+     },
+     {
+      "r0": 1,
+      "r1": 1,
+      "r2": 1,
+      "r4": 1
+     }
     ]
    }
   }
