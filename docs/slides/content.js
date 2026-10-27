@@ -18,7 +18,7 @@ const meta = {
   date: "October 2026",
   version: "0.1.0.dev0",
   contract: "graph-runtime/v0.2",
-  operations: 19, // the request operations (src/graph_runtime/request.py, OPERATIONS)
+  operations: 20, // the request operations (src/graph_runtime/request.py, OPERATIONS)
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -147,26 +147,37 @@ const families = [
   {
     key: "patterns",
     family: "Patterns",
-    slideTitle: "Patterns: multi-step questions",
-    lede: "SCALE's query plans in generic form: variables, steps, optional steps; trees and cycles.",
+    slideTitle: "Patterns: multi-step questions, substructures",
+    lede: "SCALE's query plans in generic form: variables, steps, optional steps; trees, cycles and injective matches.",
     icon: "LuNetwork",
-    source: "docs/API_CONTRACT.md §4: Pattern; §6; git log 8b79971, 7b39f7d",
+    source: "docs/API_CONTRACT.md §4: Pattern, Injective patterns; §6; tests/test_injective_pattern.py; git log 8b79971, 7b39f7d, b7e4f12",
     ops: [
       {
         name: "pattern · trees",
         title: "Tree patterns without dead ends",
-        theory: "Variables bound by types (through the hierarchy) or explicit IDs, then steps, each one hop from an earlier variable; optional steps keep their row.",
-        algorithm: "Yannakakis' semi-join reduction: discover down, prune up, prune down. Rows in canonical order; the exact total is counted without listing (60⁴ rows in well under a second).",
+        theory: "Variables bound by types (through the hierarchy) or IDs, then steps, each one hop from an earlier variable; optional steps keep their row.",
+        algorithm: "Yannakakis' semi-join reduction: discover down, prune up, prune down. Totals are counted exactly without listing the rows.",
         proofLabel: "Checked by",
-        proof: "`verify_result` checks every row against the records; rows and totals match a brute-force enumerator (400 random patterns) and SCALE's own engine.",
+        proof: "`verify_result` checks every row; rows and totals match a brute-force enumerator (400 random patterns) and SCALE's own engine.",
+        notes: "Rows come in canonical order; counting without listing handles 60⁴ rows in well under a second (git log 8b79971).",
       },
       {
         name: "pattern · cycles",
         title: "Corroboration and contradiction motifs",
         theory: "A step may close a cycle between bound variables: two supports of a claim from one dataset, a triangle of citations.",
-        algorithm: "Worst-case optimal join (Ngo, Porat, Ré and Rudra; Veldhuizen's Leapfrog Triejoin): intersect candidates with what every closing step allows, smallest set first.",
+        algorithm: "Worst-case optimal join (Ngo, Porat, Ré and Rudra; Leapfrog Triejoin): candidates meet what every closing step allows.",
         proofLabel: "Checked by",
-        proof: "Row for row against a brute-force enumerator (300 random cyclic patterns). An interruption keeps a prefix of the rows and never denies.",
+        proof: "Row for row against a brute-force enumerator (300 random cyclic patterns). An interruption keeps a prefix of the rows, never denies.",
+        notes: "The join intersects a variable's candidates with what every closing step allows, iterating the smallest set first (Veldhuizen's Leapfrog Triejoin).",
+      },
+      {
+        name: "pattern · injective",
+        title: "Substructure search",
+        theory: "`injective: true`: distinct variables bind distinct nodes, distinct steps distinct edges. Motifs, catalytic sites, rings. No optional steps yet.",
+        algorithm: "Over the same Yannakakis-pruned candidates, skipping held nodes and used edges. NP-complete: budget-bounded; exact totals when done.",
+        proofLabel: "Checked by",
+        proof: "Brute force filtered for distinctness, row for row (400 random patterns); networkx's monomorphisms. Interrupted: no absence claimed.",
+        notes: "Subgraph monomorphism (docs/API_CONTRACT.md §4, Injective patterns): it counts every binding, so a pattern with automorphisms matches one subgraph several times (a hexagon twelve times). The rows are those of the same pattern without injective that use no node or edge twice, in the same canonical order. Distinctness is global, so no count along the kept hops respects it: an injective pattern, tree or cycle, is enumerated as a cycle's is, over the same semi-join-reduced candidates (a match with distinct nodes is a match). Totals are exact when the enumeration ends; an interruption leaves total null and claims no absence. No optional steps yet (unsupported, unsupported_mode): which node an optional step would bind among those left is not yet defined. The verifier and the contract checks reject a row that repeats a node or an edge. Every pattern request now states injective, so earlier pattern requests have new request and result IDs with the same answers (the golden workload's 160 pattern results regenerated). Row enumeration (cycles, injective patterns, tree rows) runs on an explicit stack: a Codex adversarial review found a 1,100-step chain hit Python's recursion limit. Tests (tests/test_injective_pattern.py): 400 random patterns row for row against the brute-force oracle filtered for distinctness; five shapes (a path, a star, a triangle, a square with a chord, a two-cycle) agree with networkx's subgraph monomorphisms (DiGraphMatcher); 3 hand-worked conformance cases. Benchmark (git log b7e4f12): 7,200 hexagon matches (600 rings × 12 symmetries) in a 1,300-atom graphene-like sheet in 0.05 s; networkx's GraphMatcher 0.54 s.",
       },
     ],
   },
@@ -238,26 +249,37 @@ const families = [
   {
     key: "structure",
     family: "Structure",
-    slideTitle: "Structure: pieces and weak points",
-    lede: "Recommended by both literature surveys. Both answers prove themselves on request, from the records alone.",
+    slideTitle: "Structure: pieces, weak points, backbones",
+    lede: "Recommended by the literature surveys. Each answer proves itself from the records alone: two on request, the forest always.",
     icon: "LuSplit",
-    source: "docs/API_CONTRACT.md §4: Components, Biconnectivity; git log 99fb868",
+    source: "docs/API_CONTRACT.md §4: Components, Biconnectivity, Spanning forest; §6; §7; tests/test_spanning_forest.py; git log 99fb868, 741c2dd",
     ops: [
       {
         name: "components",
         title: "How a graph falls into pieces",
-        theory: "Weak (hops either way: fragments) or strong (a walk each way: feedback loops, circular derivations), flagged initial, terminal and cyclic. A terminal class is one a walk never leaves.",
+        theory: "Weak (fragments) or strong (feedback loops, circular derivations), flagged initial, terminal and cyclic.",
         algorithm: "Breadth-first search (weak) or Tarjan's depth-first search (1972) for strong components. Linear time.",
         proofLabel: "Certificate proves",
         proof: "Spanning trees prove each listed component connected (strong: one out, one in); a closed partition in topological order proves nothing outside belongs with it.",
+        notes: "Weak: hops either way. Strong: a walk each way. A terminal class is one a walk never leaves.",
       },
       {
         name: "biconnectivity",
         title: "Where a single failure splits a structure",
-        theory: "Articulation points (with the pieces each leaves), bridges and blocks. Parallel edges are distinct links, so two between the same nodes are never bridges.",
+        theory: "Articulation points (with the pieces each leaves), bridges and blocks. Parallel edges are distinct links, never bridges.",
         algorithm: "One depth-first search with low points (Hopcroft and Tarjan, 1973). Linear time.",
         proofLabel: "Certificate proves",
         proof: "The depth-first forest: a checker confirms it is one, recomputes every low point from the records, and each claim follows.",
+        notes: "Parallel edges are distinct links, so two between the same nodes are never bridges.",
+      },
+      {
+        name: "spanning_forest",
+        title: "Backbones, single-linkage clusters",
+        theory: "The minimum (or maximum) spanning forest: one tree per piece. Any finite exact weights; ties go to the smaller edge ID.",
+        algorithm: "Kruskal (1956) with a union-find, links in the order of (weight, edge ID): the forest is unique in that order.",
+        proofLabel: "Proves itself by",
+        proof: "Tarjan's cycle property: each link left out comes after every edge of its tree path (path maxima by binary lifting). Revalidation re-checks it.",
+        notes: "docs/API_CONTRACT.md §4, Spanning forest: each edge in scope is a link between its ends, whichever way the scope follows it; a loop never joins anything; a node with no link is a tree of its own. Weights are compared exactly (floats as exact rationals, negatives allowed); without weights every link weighs 1 and the forest is the first in edge ID order. objective max takes weights descending, then edge ID. Reading each node's links is one expansion; an interrupted search claims nothing (every field null). Answer: the forest's edges in ascending ID, their count, the number of trees and the exact total weight. No certificate is needed: links in scope with no cycle, spanning every piece, and every link left out after every edge of its tree path in that order, are the forest Kruskal's algorithm keeps; the verifier finds those path maxima by binary lifting in O((n + m) log n). Revalidation (§7) re-verifies these claims on the new records, so a lighter or earlier new link refutes a cached forest. A Codex adversarial review found that the verifier skipped a forest given as a tuple (a Result's frozen answer), which let a stale forest revalidate as holding; fixed, with regression tests (a Result, a plain dict, a frozen answer). Tests (tests/test_spanning_forest.py): 800 random cases agree with an independent Kruskal; weights and trees agree with networkx's minimum and maximum spanning edges; forged forests are refused (ties, gaps, cycles, loops, weights, objective); revalidation agrees with fresh runs on 400 random edits; 4 hand-worked conformance cases. Benchmark (git log 741c2dd): 100,000 nodes and 300,000 edges in 0.89 s (networkx minimum_spanning_edges: 0.92 s); the verifier proves the forest in 3.05 s.",
       },
     ],
   },
@@ -312,10 +334,10 @@ const families = [
 const overview = [
   { family: "Paths", icon: "LuSpline", ops: ["reachability", "dependency_impact", "typed_path", "shortest_path", "bottleneck_path", "regular_path"], answers: "What connects to what, and the best way there." },
   { family: "Reasoning and order", icon: "LuGitMerge", ops: ["support", "derivation", "critical_path", "d_separation"], answers: "AND/OR rules, schedules and slack, causal independence." },
-  { family: "Patterns", icon: "LuNetwork", ops: ["pattern"], answers: "Multi-step questions: trees counted exactly, cycles by a worst-case optimal join." },
+  { family: "Patterns", icon: "LuNetwork", ops: ["pattern"], answers: "Multi-step questions counted exactly, cycles by a worst-case optimal join, injective substructure search." },
   { family: "Ranking and algebra", icon: "LuBarChart3", ops: ["personalized_pagerank", "incidence"], answers: "Relevance as proven intervals; exact rank and conservation laws." },
   { family: "Periodic", icon: "LuAtom", ops: ["periodicity"], answers: "Periodic projections: crystals, slabs and polymers searched from one cell." },
-  { family: "Structure and flows", icon: "LuSplit", ops: ["components", "biconnectivity", "max_flow", "matching", "dominators"], answers: "Pieces, weak points, throughput, pairings and unavoidable nodes." },
+  { family: "Structure and flows", icon: "LuSplit", ops: ["components", "biconnectivity", "spanning_forest", "max_flow", "matching", "dominators"], answers: "Pieces, weak points, backbones, flows, pairings and unavoidable nodes." },
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -342,13 +364,15 @@ const statesChart = {
 // in scope for the structure runs); matching on 50k + 50k nodes with 250k candidate edges; dominators on 100k nodes /
 // 300k edges, 94k of them reached (networkx immediate_dominators); critical path on 100k nodes / 400k edges (networkx
 // dag_longest_path_length, which gives no order certificate); negative costs on 20k nodes / 100k edges, 31% of them
-// negative, no negative cycle (networkx bellman_ford; GRAPH with its certificate).
+// negative, no negative cycle (networkx bellman_ford; GRAPH with its certificate); hexagon search: every injective match
+// of a six-ring in a 1,300-atom graphene-like sheet (networkx GraphMatcher's subgraph monomorphisms); spanning forest on
+// 100k nodes / 300k edges (networkx minimum_spanning_edges).
 const networkxChart = {
-  labels: ["Strong components", "Articulation points", "Max flow", "Matching", "Dominators", "Critical path", "Negative costs"],
-  graph: [0.38, 0.57, 4.5, 2.5, 0.65, 0.67, 0.10],
-  networkx: [0.34, 0.36, 6.4, 2.1, 0.93, 0.26, 0.13],
-  caption: "100k nodes, 500k edges; matching 50k + 50k, 250k edges; dominators 300k edges; critical path 400k edges (networkx: no order certificate). Negative costs: 20k nodes, 100k edges, 31% negative; GRAPH with its certificate, networkx goldberg_radzik 0.39 s. A negative cycle planted near the source: networkx 0.002 s, GRAPH 0.042 s.",
-  source: "Structure benchmark (99fb868 increment), git log 573ce2b, 1e8678d and 1d6dbbf; flows, matching, dominators and critical path measured on the owner's machine. Also: weak components 0.45 s, unit-capacity max flow 3.8 s. Negative costs (git log 97723bb; measured on an Apple M4): 20,000 nodes and 100,000 edges, 31% negative, no negative cycle; GRAPH 0.10 s with its feasible-potentials certificate, networkx bellman_ford 0.13 s and goldberg_radzik 0.39 s, the same cost. With a negative cycle planted near the source, networkx find_negative_cycle takes 0.002 s and GRAPH 0.042 s: GRAPH first computes the corridor between the sources and the targets (one linear pass), so that a cycle that cannot reach a target is ignored",
+  labels: ["Strong components", "Articulation points", "Max flow", "Matching", "Dominators", "Critical path", "Negative costs", "Hexagon search", "Spanning forest"],
+  graph: [0.38, 0.57, 4.5, 2.5, 0.65, 0.67, 0.10, 0.05, 0.89],
+  networkx: [0.34, 0.36, 6.4, 2.1, 0.93, 0.26, 0.13, 0.54, 0.92],
+  caption: "100k nodes, 500k edges; matching 50k + 50k, 250k edges; dominators and forest 300k edges; critical path 400k edges (networkx: no order certificate). Negative costs: 20k nodes, 100k edges, 31% negative. Hexagons: 7,200 matches in a 1,300-atom sheet.",
+  source: "Structure benchmark (99fb868 increment), git log 573ce2b, 1e8678d and 1d6dbbf; flows, matching, dominators and critical path measured on the owner's machine. Also: weak components 0.45 s, unit-capacity max flow 3.8 s. Negative costs (git log 97723bb; measured on an Apple M4): 20,000 nodes and 100,000 edges, 31% negative, no negative cycle; GRAPH 0.10 s with its feasible-potentials certificate, networkx bellman_ford 0.13 s and goldberg_radzik 0.39 s, the same cost. With a negative cycle planted near the source, networkx find_negative_cycle takes 0.002 s and GRAPH 0.042 s: GRAPH first computes the corridor between the sources and the targets (one linear pass), so that a cycle that cannot reach a target is ignored. Hexagon search (git log b7e4f12): an injective six-ring pattern counted in a graphene-like sheet of 1,300 atoms (networkx hexagonal_lattice_graph(20, 30)), 7,200 matches, 600 rings × 12 symmetries, GRAPH 0.05 s, networkx GraphMatcher's subgraph monomorphisms 0.54 s. Spanning forest (git log 741c2dd): 100,000 nodes and 300,000 random edges with integer weights, GRAPH 0.89 s, networkx minimum_spanning_edges (Kruskal) 0.92 s on the same multigraph; GRAPH's verifier proves the forest in 3.05 s. Machine load for these two was not recorded in the commits",
 };
 
 // GRAPH against SCALE's own query engine (scale.pgraph_query.run) on SCALE's documents, the same rows in the same
@@ -376,7 +400,7 @@ const scaleComparison = {
 const revalidation = {
   lede: "Decided from the answer and its certificate, without searching again; certified operations re-check theirs on the new records.",
   verdicts: [
-    { word: "holds", body: "Still correct on the new projection. Structure, flows, matchings, dominators, incidence, critical paths and d-separation hold exactly when their certificate checks; a cycle or active trail holds by itself." },
+    { word: "holds", body: "Still correct on the new projection. Structure, flows, matchings, dominators, incidence, critical paths and d-separation hold exactly when their certificate checks, a forest when it verifies; a cycle or active trail by itself." },
     { word: "fails", body: "Refuted by the edit: a node or witness edge gone, or a claim the new records contradict (`answer_refuted`: a kernel vector no longer zero, a flow beyond a capacity, a cut no longer nearest the sources)." },
     { word: "unknown", body: "Not decidable without a new search: interrupted, uncertified, or an edit broke the proof without refuting it (`certificate_broken`)." },
   ],
@@ -384,29 +408,29 @@ const revalidation = {
   slow: "≈100 ms",
   context: "100,000 nodes, 500,000 edges, after a 40-edge edit (one 0.32 s diff)",
   scale: { labels: ["holds", "fails", "unknown"], values: [312, 23, 10] },
-  source: "git log e365fdc, 0a58767, 05d3ea5, 1d6dbbf, 83f9ffe, 297ca1e; README.md (Revalidation); docs/API_CONTRACT.md §7",
+  source: "git log e365fdc, 0a58767, 05d3ea5, 1d6dbbf, 83f9ffe, 297ca1e, 741c2dd; README.md (Revalidation); docs/API_CONTRACT.md §7 (a spanning forest holds while its links, the cycle property and the pieces it spans still check, as verify_result checks them; an edit that breaks any of these refutes it)",
 };
 
 // Verification counts at the time of the build. Update with every increment.
 const verification = [
-  { big: "563", label: "runtime tests pass" },
-  { big: "173", label: "conformance cases" },
+  { big: "582", label: "runtime tests pass" },
+  { big: "180", label: "conformance cases" },
   { big: "16", label: "SCALE parity tests" },
   { big: "6", label: "STATES parity tests" },
   { big: "73 / 73", label: "real requests agree" },
 ];
 
-// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d, 05d3ea5, 1d6dbbf, 04532ba, 107dc68, 297ca1e, 97723bb). Shown under the checks on the verification slide.
+// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d, 05d3ea5, 1d6dbbf, 04532ba, 107dc68, 297ca1e, 97723bb, b7e4f12, 741c2dd). Shown under the checks on the verification slide.
 const reviews = [
   "Also: an independent fuzzing review (about 50,000 cases), a Codex review of the contract (v0.1), and a golden test of 1,200 pinned result_ids.",
-  "Codex reviews each increment adversarially before commit. Found and fixed with regressions: a request_id collision and two certificate holes (structure); an unverified interrupted bound (flows); quadratic checks (dominators, support); a float entry that let a false rank verify, a stale nearest cut held, contradicted answers left unknown (incidence); exact fields beside false values, a path from outside the sources' region, unpolled controls (critical path); a nonuniform PageRank start, a lenient ranking revalidation, a quadratic cyclic join (26 October together); a whole certificate read for an unrelated edit (negative costs, else sound on 12,000 random graphs against an oracle). d-separation: no findings.",
+  "Codex reviews each increment adversarially before commit. Found and fixed with regressions: a request_id collision and two certificate holes (structure); an unverified interrupted bound (flows); quadratic checks (dominators, support); a float entry that let a false rank verify, a stale nearest cut held, contradicted answers left unknown (incidence); exact fields beside false values, a path from outside the sources' region, unpolled controls (critical path); a nonuniform PageRank start, a lenient ranking revalidation, a quadratic cyclic join (26 October together); a whole certificate read for an unrelated edit (negative costs, else sound on 12,000 random graphs); the recursion limit hit by a 1,100-step chain (injective patterns); frozen answers the verifier skipped (forests). d-separation: no findings.",
 ];
-const reviewsSource = "git log 8917563, 7ff04db; Codex adversarial reviews before commit: 99fb868 (a request field named kind was overwritten by the digest's record kind, now connectivity; unlisted groups and stray trees in the components certificate), 573ce2b (an interrupted max flow's upper bound was not verified), 1e8678d, 05d3ea5, 1d6dbbf, 04532ba, 107dc68, 297ca1e; 97723bb and 260d7b2 (negative costs and the faster projection identity, reviewed together: no soundness or identity counterexample, 12,000 larger random graphs all matching an independent oracle; one medium issue, diff-based revalidation reading the whole certificate even for an unrelated edit, fixed, and a regression test now forbids it)";
+const reviewsSource = "git log 8917563, 7ff04db; Codex adversarial reviews before commit: 99fb868 (a request field named kind was overwritten by the digest's record kind, now connectivity; unlisted groups and stray trees in the components certificate), 573ce2b (an interrupted max flow's upper bound was not verified), 1e8678d, 05d3ea5, 1d6dbbf, 04532ba, 107dc68, 297ca1e; 97723bb and 260d7b2 (negative costs and the faster projection identity, reviewed together: no soundness or identity counterexample, 12,000 larger random graphs all matching an independent oracle; one medium issue, diff-based revalidation reading the whole certificate even for an unrelated edit, fixed, and a regression test now forbids it); b7e4f12 (injective patterns: a 1,100-step chain hit Python's recursion limit, so row enumeration for cycles, injective patterns and tree rows now runs on an explicit stack, with a regression test covering rows, count and exists); 741c2dd (spanning forests: the verifier skipped a forest given as a tuple, a Result's frozen answer, which let a stale forest revalidate as holding; it now checks tuples and refuses a missing edge list, and so do three other list-only checks; regression tests cover a Result, a plain dict and a frozen answer)";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Development timeline (git log). `when` is local time, -0400.
-const timelineLede = "Thirty-seven commits on 25–26 October 2026: from four operations to nineteen.";
-const timelineSource = "git log, 550c362 (25 October, 17:17) to 97723bb (26 October, 22:11): 37 commits, slide commits included; some rows group neighbouring commits, and 22:11 is two (260d7b2, the projection identity hashed with each node ID, relation and type encoded once: 61 to 34 ms, the build 245 to 206 ms on 50,000 nodes and 150,000 edges, identity bytes unchanged on 400 random projections; 97723bb, negative costs)";
+const timelineLede = "Forty commits on 25–26 October 2026: from four operations to twenty.";
+const timelineSource = "git log, 550c362 (25 October, 17:17) to 741c2dd (26 October, 22:55): 40 commits, slide commits included; some rows group neighbouring commits (11:16 is incidence, 05d3ea5, with critical paths at 11:32, 1d6dbbf, and d-separation at 11:44, 83f9ffe; 17:45 is the fixes from a review of the day's increments, 107dc68, with support certificates at 18:23, 297ca1e), and 22:11 is two (260d7b2, the projection identity hashed with each node ID, relation and type encoded once: 61 to 34 ms, the build 245 to 206 ms on 50,000 nodes and 150,000 edges, identity bytes unchanged on 400 random projections; 97723bb, negative costs)";
 const timeline = [
   { day: "25 Oct 2026" },
   { when: "17:17", what: "v0: projections, 4 operations, results; SCALE parity" },
@@ -420,35 +444,36 @@ const timeline = [
   { when: "10:09", what: "`components` · `biconnectivity` · these slides" },
   { when: "10:29", what: "`max_flow` · `matching`" },
   { when: "10:43", what: "`dominators` · revalidation by certificate" },
-  { when: "11:16", what: "`incidence` (conservation laws)" },
-  { when: "11:32", what: "`critical_path` (schedules) · `d_separation`" },
-  { when: "17:45", what: "Fixes from a review of the day's increments" },
-  { when: "18:23", what: "Support certificates · support revalidated" },
-  { when: "22:11", what: "Negative-cost shortest paths · faster projection identity", latest: true },
+  { when: "11:16", what: "`incidence` · `critical_path` · `d_separation`" },
+  { when: "17:45", what: "Review fixes · support certificates, revalidated" },
+  { when: "22:11", what: "Negative-cost shortest paths · faster projection identity" },
+  { when: "22:38", what: "Injective patterns: substructure search" },
+  { when: "22:55", what: "`spanning_forest`, proven by the cycle property", latest: true },
 ];
 
 // Hand-worked conformance cases after each increment (commit messages; cases.json now).
 const growth = {
-  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators", "incidence", "crit. path", "d-sep.", "sup. cert.", "neg. costs"],
-  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148, 153, 158, 165, 168, 173],
-  operations: "4 → 19",
-  tests: "178 → 563",
+  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators", "incidence", "crit. path", "d-sep.", "sup. cert.", "neg. costs", "injective", "forest"],
+  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148, 153, 158, 165, 168, 173, 176, 180],
+  operations: "4 → 20",
+  tests: "178 → 582",
 };
 
 // ---------------------------------------------------------------------------------------------------------------
 // Roadmap: the next increments, in the order of a Codex literature survey of 26 October 2026 (ranked by value
-// against effort and the cost of proving each answer). Its first, negative-cost shortest paths, is done (97723bb).
-const roadmapLede = "Ranked by value against effort in a Codex literature survey; its first, negative costs, is done.";
+// against effort and the cost of proving each answer). Its first three are done: negative-cost shortest paths
+// (97723bb), injective patterns (b7e4f12) and the minimum spanning forest (741c2dd); the fourth is being built.
+const roadmapLede = "Ranked in a Codex survey. Done: negative costs, injective patterns, spanning forests. Being built: ring perception.";
 const roadmap = [
-  { name: "Injective patterns", icon: "LuShapes", answers: "Substructure search: motifs, catalytic sites, provenance patterns.", cert: "Embeddings check in linear time; absence, by a refutation tree.", ref: "VF2++ (2018); the Glasgow solver (2020)" },
-  { name: "Minimum spanning forest", icon: "LuTreePine", answers: "Representative connectivity: the lightest forest spanning each piece.", cert: "Cycle property: each other edge is a heaviest on the cycle it closes.", ref: "Kruskal 1956; Dixon, Rauch and Tarjan 1992" },
   { name: "Minimum cycle basis, relevant cycles", icon: "LuHexagon", answers: "Ring perception: a smallest set of smallest rings; the relevant rings.", cert: "Elimination over GF(2) proves a basis; de Pina's supports, a minimum.", ref: "Horton 1987; Vismara 1997; Kavitha et al." },
   { name: "Weighted matching, min-cost flow", icon: "LuArrowLeftRight", answers: "Assignment, allocation and transport at least cost.", cert: "Dual potentials: no residual arc has a negative reduced cost.", ref: "Munkres 1957; Király and Kovács 2012" },
   { name: "Counting cyclic patterns", icon: "LuTally5", answers: "Exact motif counts without listing rows, over a tree decomposition.", cert: "The decomposition's messages, each recomputed by a checker.", ref: "Abo Khamis, Ngo and Rudra 2016 (FAQ)" },
   { name: "k shortest simple paths", icon: "LuListOrdered", answers: "Alternative pathways and explanations, not only one optimum.", cert: "The paths; a Lawler partition tree proves they are the first k.", ref: "Yen 1971; Lawler 1972" },
+  { name: "Reachability index", icon: "LuZap", answers: "Many reachability queries on one large, fixed projection: 2-hop labels.", cert: "A positive expands hub pointers into hops; a negative needs a closure.", ref: "Cohen, Halperin, Kaplan and Zwick 2003" },
+  { name: "Positive Datalog", icon: "LuBraces", answers: "Rules over the records: provenance questions in a small language.", cert: "Derivation trees, ranks strictly increasing, checked in their size.", ref: "Abiteboul, Hull and Vianu 1995; Green et al. 2007" },
 ];
-const roadmapLater = "**Then:** a reachability index (2-hop labels) · positive Datalog with derivation certificates · isomorphism and canonical labeling · elementary flux modes.";
-const roadmapSource = "A Codex literature survey of 26 October 2026, kept outside the repository; its recommended order weighs scientific usefulness, implementation effort and the cost of independently proving each answer. Its first item, negative-cost shortest paths, shipped in 97723bb. Survey notes per row: injective patterns (VF2++-style backtracking with Glasgow-style filtering; embeddings checked in O(q + r); a negative needs an exhaustive refutation tree, possibly exponential); minimum spanning forest (Kruskal; the forest is its own certificate by the cycle property); minimum cycle basis (de Pina; GF(2) elimination proves a basis, de Pina's supports with shortest-path proofs prove minimality; relevant cycles after Vismara); min-cost flow and weighted matching (successive shortest paths with potentials; reduced costs non-negative on every residual arc); cyclic pattern counting (variable elimination, FAQ InsideOut; a decomposition and dynamic-programming transcript); k shortest simple paths (Yen with Lawler's partitioning; a partition tree proves the ranking); then a reachability index (pruned landmark 2-hop labels; Cohen, Halperin, Kaplan and Zwick 2003), positive Datalog (semi-naive evaluation; derivation trees), isomorphism and canonical labeling (individualization-refinement; McKay and Piperno 2014), elementary flux modes (exact double description; Gagneur and Klamt 2004). Each increment is planned to ship with code, docs/API_CONTRACT.md, the schema, hand-worked conformance cases, tests against an independent oracle, verification and revalidation, and a Codex adversarial review of its diff.";
+const roadmapLater = "**Then:** isomorphism and canonical labeling · elementary flux modes.";
+const roadmapSource = "A Codex literature survey of 26 October 2026, kept outside the repository; its recommended order weighs scientific usefulness, implementation effort and the cost of independently proving each answer. Its first three items have shipped: negative-cost shortest paths (97723bb); injective patterns (b7e4f12: the survey suggested VF2++-style backtracking with Glasgow-style filtering, embeddings checked in O(q + r), a negative needing an exhaustive refutation tree; GRAPH enumerates over its Yannakakis-pruned candidates, budget-bounded, and an interrupted search claims no absence); and the minimum spanning forest (741c2dd: Kruskal, the forest its own certificate by the cycle property). The fourth, minimum cycle basis (ring perception), is being built. Survey notes per row: minimum cycle basis (de Pina; GF(2) elimination proves a basis, de Pina's supports with shortest-path proofs prove minimality; relevant cycles after Vismara); min-cost flow and weighted matching (successive shortest paths with potentials; reduced costs non-negative on every residual arc); cyclic pattern counting (variable elimination, FAQ InsideOut; a decomposition and dynamic-programming transcript); k shortest simple paths (Yen with Lawler's partitioning; a partition tree proves the ranking); reachability index (strong components condensed, then pruned landmark 2-hop labels; Cohen, Halperin, Kaplan and Zwick 2003; Akiba, Iwata and Yoshida 2013; a positive expands hub routing pointers into ordinary hops, checked in the walk's length; disjoint labels alone do not prove a negative, which needs a closed set); positive Datalog (range-restricted, function-free, semi-naive evaluation; a derivation tree or DAG with strictly increasing ranks, checked in the proof's size; Abiteboul, Hull and Vianu 1995; Green, Karvounarakis and Tannen 2007, provenance semirings); then isomorphism and canonical labeling (individualization-refinement; McKay and Piperno 2014) and elementary flux modes (exact double description; Gagneur and Klamt 2004). Each increment is planned to ship with code, docs/API_CONTRACT.md, the schema, hand-worked conformance cases, tests against an independent oracle, verification and revalidation, and a Codex adversarial review of its diff.";
 
 const boundaries = {
   wont: [

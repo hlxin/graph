@@ -900,7 +900,7 @@ async function timelineSlide() {
     x: x2, y: TOP + 1.35, w: w2, h: BOTTOM - TOP - 1.35, chartColors: [HEX.accent1], lineSize: 2.5,
     lineDataSymbol: "circle", lineDataSymbolSize: 7, showValue: true, dataLabelPosition: "t",
     valAxisHidden: true, catAxisLabelRotate: 315,
-    ...chartStyle({ title: "Hand-worked conformance cases", catAxisLabelFontSize: 11, dataLabelFontSize: 11 }),
+    ...chartStyle({ title: "Hand-worked conformance cases", catAxisLabelFontSize: 11, dataLabelFontSize: 10 }), // 10 pt keeps 22 points' labels apart
     objectName: "conformance growth chart",
   });
   const cases = K.growth.cases;
