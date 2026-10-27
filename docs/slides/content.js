@@ -29,14 +29,15 @@ const meta = {
 //   algorithm  the algorithm, with its reference
 //   proof    what its certificate proves (proofLabel "Certificate proves"), or how it is checked
 //   isNew    true while it is implemented and tested but not yet committed
+//   notes    optional: more detail for the speaker notes only
 const families = [
   {
     key: "paths1",
     family: "Paths",
     slideTitle: "Paths: reach, follow, optimize",
-    lede: "Breadth-first and Dijkstra searches in a fixed canonical order, so the same request always picks the same witness.",
+    lede: "Breadth-first, Dijkstra and Bellman-Ford-Moore searches in canonical order: one request, always the same witness.",
     icon: "LuSpline",
-    source: "docs/API_CONTRACT.md §4: Reachability, Dependency impact, Typed path, Shortest path; §6",
+    source: "docs/API_CONTRACT.md §4: Reachability, Dependency impact, Typed path, Shortest path (and its Negative costs paragraph); §6; src/graph_runtime/engine.py (_search_signed, _answer_signed); tests/test_negative_costs.py; git log 97723bb",
     ops: [
       {
         name: "reachability",
@@ -57,10 +58,11 @@ const families = [
       {
         name: "shortest_path",
         title: "The cheapest route, exactly",
-        theory: "A minimum-cost path from any source to any target, with explicit non-negative costs.",
-        algorithm: "Dijkstra's algorithm in exact arithmetic: integers, or rationals held as scaled integers.",
+        theory: "A least-cost walk from a source to a target, costs of any sign (signed energies). A negative cycle on the way leaves no optimum.",
+        algorithm: "Dijkstra if no cost is negative; else Bellman-Ford-Moore with Tarjan's subtree disassembly, over the nodes between sources and targets.",
         proofLabel: "Certificate proves",
-        proof: "Potentials prove the optimum, or an interrupted search's lower bound; a closure proves there is no path.",
+        proof: "Potentials prove an optimum (with the dead ends if a cost is negative); three walks, a negative cycle; a closure, no path.",
+        notes: "Costs are exact: integers, or rationals held as scaled integers. Non-negative requests are answered exactly as before, by Dijkstra's algorithm; its potentials also prove an interrupted search's lower bound. With any negative cost (docs/API_CONTRACT.md §4, Negative costs; engine.py _search_signed and _answer_signed): Bellman-Ford-Moore, first in first out, with Tarjan's subtree disassembly (Tarjan, 1981; Cherkassky and Goldberg, 1999), run only over the live nodes, those reachable from a source that can reach a target, so a negative cycle among the dead ends changes nothing. Outcomes: an optimum whose witness is the fewest-hop least-cost walk (breadth-first over the hops tight under the least costs, so it does not depend on the order of the search); or a negative cycle on a walk from a source to a target, reported as three walks (lead_in, the cycle with its negative cost, lead_out) that the verifier checks; a complete negative keeps its closure certificate; an interrupted search claims no lower bound. Certificate feasible_potentials: the least costs of the live nodes and the dead ends; every hop from a listed node goes to a dead end or to a listed node at most its cost above, dead ends are closed, sources sit at or below 0 and targets at or above the bound. Typical use: exergonic steps and signed energies in reaction networks. Tests: tests/test_negative_costs.py (1,500 random graphs against an independent fixpoint oracle, forged proofs rejected, revalidation against fresh runs); 5 hand-worked conformance cases.",
       },
     ],
   },
@@ -317,7 +319,8 @@ const overview = [
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
-// Results. Times were measured on a heavily loaded machine: ratios are more reliable than absolute times.
+// Results. Times were measured on a heavily loaded machine unless a source says otherwise: ratios are more reliable
+// than absolute times.
 const speedTiles = [
   { big: "1.3–1.9×", label: "faster searches", context: "Compiled per-scope hop lists; 100k nodes, 500k edges", source: "git log f65497b" },
   { big: "4.5×", label: "faster float-cost shortest paths", context: "Exact rationals held as scaled integers", source: "git log f65497b" },
@@ -338,13 +341,35 @@ const statesChart = {
 // also finds bridges) and max flow (5 sources, 5 targets, integer capacities) on 100k nodes / 500k edges (about 250k
 // in scope for the structure runs); matching on 50k + 50k nodes with 250k candidate edges; dominators on 100k nodes /
 // 300k edges, 94k of them reached (networkx immediate_dominators); critical path on 100k nodes / 400k edges (networkx
-// dag_longest_path_length, which gives no order certificate).
+// dag_longest_path_length, which gives no order certificate); negative costs on 20k nodes / 100k edges, 31% of them
+// negative, no negative cycle (networkx bellman_ford; GRAPH with its certificate).
 const networkxChart = {
-  labels: ["Strong components", "Articulation points", "Max flow", "Matching", "Dominators", "Critical path"],
-  graph: [0.38, 0.57, 4.5, 2.5, 0.65, 0.67],
-  networkx: [0.34, 0.36, 6.4, 2.1, 0.93, 0.26],
-  caption: "100k nodes, 500k edges; matching 50k + 50k, 250k edges; dominators 300k edges (94k reached; 1.37 s with its certificate); critical path 400k edges (networkx gives no order certificate). Also: weak components 0.45 s, unit-capacity max flow 3.8 s.",
-  source: "Structure benchmark (99fb868 increment), git log 573ce2b, 1e8678d and 1d6dbbf; flows, matching, dominators and critical path measured on the owner's machine",
+  labels: ["Strong components", "Articulation points", "Max flow", "Matching", "Dominators", "Critical path", "Negative costs"],
+  graph: [0.38, 0.57, 4.5, 2.5, 0.65, 0.67, 0.10],
+  networkx: [0.34, 0.36, 6.4, 2.1, 0.93, 0.26, 0.13],
+  caption: "100k nodes, 500k edges; matching 50k + 50k, 250k edges; dominators 300k edges; critical path 400k edges (networkx: no order certificate). Negative costs: 20k nodes, 100k edges, 31% negative; GRAPH with its certificate, networkx goldberg_radzik 0.39 s. A negative cycle planted near the source: networkx 0.002 s, GRAPH 0.042 s.",
+  source: "Structure benchmark (99fb868 increment), git log 573ce2b, 1e8678d and 1d6dbbf; flows, matching, dominators and critical path measured on the owner's machine. Also: weak components 0.45 s, unit-capacity max flow 3.8 s. Negative costs (git log 97723bb; measured on an Apple M4): 20,000 nodes and 100,000 edges, 31% negative, no negative cycle; GRAPH 0.10 s with its feasible-potentials certificate, networkx bellman_ford 0.13 s and goldberg_radzik 0.39 s, the same cost. With a negative cycle planted near the source, networkx find_negative_cycle takes 0.002 s and GRAPH 0.042 s: GRAPH first computes the corridor between the sources and the targets (one linear pass), so that a cycle that cannot reach a target is ignored",
+};
+
+// GRAPH against SCALE's own query engine (scale.pgraph_query.run) on SCALE's documents, the same rows in the same
+// order on every query. Measured on 26 October 2026 (a benchmark script kept outside the repository).
+const scaleComparison = {
+  title: "Head to head: SCALE's query engine",
+  lede: "SCALE's own engine on SCALE's documents; the largest, methanol synthesis, has 2,851 nodes and 9,335 links.",
+  rows: [
+    { what: "Competency questions: 39 question–document pairs, median", scale: "0.56 ms", graph: "0.087 ms", ratio: "6.4×" },
+    { what: "Methanol synthesis: all 1,052 one- and two-step plans", scale: "5.6 s", graph: "0.61 s", ratio: "9.2×" },
+    { what: "Its largest answer: 10,470 rows", scale: "475 ms", graph: "21 ms", ratio: "23×" },
+    { what: "Three steps, dead ends: 9,459 intermediate rows, 6 answers", scale: "18.9 ms", graph: "0.76 ms", ratio: "25×" },
+    { what: "Methanol, 16 copies: 45,616 nodes, 149,360 links", scale: "17.1 s", graph: "1.14 s", ratio: "15×" },
+  ],
+  caption: "The same rows in the same order on every query, asserted row for row; GRAPH was never slower on 1,131 queries. Counting without listing: 16× faster on methanol's plans, 33× on 16 copies; its largest answer counted in 0.6 ms. Both engines scale linearly with the copies.",
+  cards: [
+    { icon: "LuLayers", head: "What SCALE's time includes", body: "Per-row evidence and a deep copy of the answer, about half its time. Without them GRAPH is still 3.7× faster on methanol, 6.3× on 16 copies." },
+    { icon: "LuTimer", head: "Where SCALE is faster", body: "Building its index: 2.2 ms, against 20 ms for GRAPH's projection of methanol. The small retraction workflows: 0.04 ms against 0.32–0.36 ms." },
+    { icon: "LuFilter", head: "Why", body: "SCALE expands rows step by step. GRAPH's semi-join reduction (Yannakakis) never meets a dead end, and counts without listing the rows." },
+  ],
+  source: "A benchmark run on 26 October 2026, kept outside the repository: scale.pgraph_query.run against GRAPH's pattern operation through the SCALE adapter (integrations/scale/scale_graph_adapter.py) on SCALE's documents, row-for-row parity asserted on every query. Times are each query's best of several runs; machine load was not recorded, so compare ratios. Competency questions: the 39 question-document pairs with a plan, medians per query. Methanol synthesis (SCALE's public example, 2,851 nodes, 9,335 links): every generated one- and two-step plan (1,052), totals 5.6 s against 0.61 s listing rows (9.2×) and 0.34 s counting (16×); its largest answer, 10,470 rows, 475 ms against 21 ms (23×, rounded), 0.6 ms counting. Three steps: the plan with the most intermediate rows per answer among 4,673 three-step candidates. 16 copies of the document: 17.1 s against 1.14 s (15×; 33× counting). 1,131 queries = 39 + 1,052 + 40 three-step plans. SCALE without per-row evidence and the deep copy of its answer (pgraph_query._run): methanol 2.27 s, still 3.7× GRAPH's time; 16 copies 7.2 s, 6.3×. SCALE's index (pgraph_query.Graph) 2.2 ms; GRAPH's projection 20 ms with the document's binding digests computed once. Retraction workflows: benchmarks/consumers.py scale (SCALE lifecycle.resting 0.04 ms; GRAPH 0.36 ms for resting on retractions, 0.32 ms for support) and docs/SCALE_INTEGRATION.md (Cost). Why: docs/API_CONTRACT.md §4, Pattern (Yannakakis' semi-join reduction; evaluation never meets a dead end)",
 };
 
 // Revalidation (git log e365fdc; README).
@@ -364,22 +389,24 @@ const revalidation = {
 
 // Verification counts at the time of the build. Update with every increment.
 const verification = [
-  { big: "555", label: "runtime tests pass" },
-  { big: "168", label: "conformance cases" },
+  { big: "563", label: "runtime tests pass" },
+  { big: "173", label: "conformance cases" },
   { big: "16", label: "SCALE parity tests" },
   { big: "6", label: "STATES parity tests" },
   { big: "73 / 73", label: "real requests agree" },
 ];
 
-// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d, 05d3ea5, 1d6dbbf, 04532ba, 107dc68, 297ca1e). Shown under the checks on the verification slide.
+// How increments are reviewed (git log 99fb868, 573ce2b, 1e8678d, 05d3ea5, 1d6dbbf, 04532ba, 107dc68, 297ca1e, 97723bb). Shown under the checks on the verification slide.
 const reviews = [
   "Also: an independent fuzzing review (about 50,000 cases), a Codex review of the contract (v0.1), and a golden test of 1,200 pinned result_ids.",
-  "Codex reviews each increment adversarially before commit. Found and fixed with regressions: a request_id collision and two certificate holes (structure); an unverified interrupted bound (flows); a quadratic cycle check (dominators); a float entry that let a false rank verify, a stale nearest cut revalidated as holding, contradicted answers left unknown (incidence); exact fields beside false values, a path from outside the sources' region, controls never polled (critical path); a quadratic certificate check (support). d-separation: no findings. A review of all of 26 October together: a nonuniform PageRank start, a lenient ranking revalidation, a quadratic cyclic join.",
+  "Codex reviews each increment adversarially before commit. Found and fixed with regressions: a request_id collision and two certificate holes (structure); an unverified interrupted bound (flows); quadratic checks (dominators, support); a float entry that let a false rank verify, a stale nearest cut held, contradicted answers left unknown (incidence); exact fields beside false values, a path from outside the sources' region, unpolled controls (critical path); a nonuniform PageRank start, a lenient ranking revalidation, a quadratic cyclic join (26 October together); a whole certificate read for an unrelated edit (negative costs, else sound on 12,000 random graphs against an oracle). d-separation: no findings.",
 ];
+const reviewsSource = "git log 8917563, 7ff04db; Codex adversarial reviews before commit: 99fb868 (a request field named kind was overwritten by the digest's record kind, now connectivity; unlisted groups and stray trees in the components certificate), 573ce2b (an interrupted max flow's upper bound was not verified), 1e8678d, 05d3ea5, 1d6dbbf, 04532ba, 107dc68, 297ca1e; 97723bb and 260d7b2 (negative costs and the faster projection identity, reviewed together: no soundness or identity counterexample, 12,000 larger random graphs all matching an independent oracle; one medium issue, diff-based revalidation reading the whole certificate even for an unrelated edit, fixed, and a regression test now forbids it)";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Development timeline (git log). `when` is local time, -0400.
-const timelineLede = "Thirty-four commits on 25–26 October 2026: from four operations to nineteen.";
+const timelineLede = "Thirty-seven commits on 25–26 October 2026: from four operations to nineteen.";
+const timelineSource = "git log, 550c362 (25 October, 17:17) to 97723bb (26 October, 22:11): 37 commits, slide commits included; some rows group neighbouring commits, and 22:11 is two (260d7b2, the projection identity hashed with each node ID, relation and type encoded once: 61 to 34 ms, the build 245 to 206 ms on 50,000 nodes and 150,000 edges, identity bytes unchanged on 400 random projections; 97723bb, negative costs)";
 const timeline = [
   { day: "25 Oct 2026" },
   { when: "17:17", what: "v0: projections, 4 operations, results; SCALE parity" },
@@ -394,28 +421,34 @@ const timeline = [
   { when: "10:29", what: "`max_flow` · `matching`" },
   { when: "10:43", what: "`dominators` · revalidation by certificate" },
   { when: "11:16", what: "`incidence` (conservation laws)" },
-  { when: "11:32", what: "`critical_path` (schedules, slack)" },
-  { when: "11:44", what: "`d_separation` (causal independence)" },
+  { when: "11:32", what: "`critical_path` (schedules) · `d_separation`" },
   { when: "17:45", what: "Fixes from a review of the day's increments" },
-  { when: "18:23", what: "Support certificates · support revalidated", latest: true },
+  { when: "18:23", what: "Support certificates · support revalidated" },
+  { when: "22:11", what: "Negative-cost shortest paths · faster projection identity", latest: true },
 ];
 
 // Hand-worked conformance cases after each increment (commit messages; cases.json now).
 const growth = {
-  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators", "incidence", "crit. path", "d-sep.", "sup. cert."],
-  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148, 153, 158, 165, 168],
+  labels: ["v0", "v0.1", "hier.", "pattern", "support", "certs", "bottleneck", "regular", "deriv.", "periodic", "PageRank", "cycles", "structure", "flows", "dominators", "incidence", "crit. path", "d-sep.", "sup. cert.", "neg. costs"],
+  cases: [34, 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133, 143, 148, 153, 158, 165, 168, 173],
   operations: "4 → 19",
-  tests: "178 → 555",
+  tests: "178 → 563",
 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// Roadmap: the next increments (plan.md after the two Codex surveys, codex_literature.md and codex_domains.md).
-const roadmapLede = "From two Codex literature surveys, most of whose list is now done. What remains:";
+// Roadmap: the next increments, in the order of a Codex literature survey of 26 October 2026 (ranked by value
+// against effort and the cost of proving each answer). Its first, negative-cost shortest paths, is done (97723bb).
+const roadmapLede = "Ranked by value against effort in a Codex literature survey; its first, negative costs, is done.";
 const roadmap = [
-  { name: "k-best paths", icon: "LuListOrdered", answers: "Alternative routes and explanations, not only one optimum.", cert: "Path witnesses; a deviation partition with potentials proves the first k.", ref: "Yen 1971 (k shortest simple paths)" },
-  { name: "Pattern query planning", icon: "LuDatabase", answers: "Start the semi-join reduction from the most selective variable.", cert: "The same answers; the work statistics, part of result_id, change.", ref: "Selinger et al. 1979 (access paths)" },
-  { name: "Incremental repair", icon: "LuRefreshCw", answers: "Repair cached answers that revalidation finds broken.", cert: "A fresh answer with an ordinary certificate on the new projection.", ref: "Gupta et al. 1993; Ramalingam–Reps 1996" },
+  { name: "Injective patterns", icon: "LuShapes", answers: "Substructure search: motifs, catalytic sites, provenance patterns.", cert: "Embeddings check in linear time; absence, by a refutation tree.", ref: "VF2++ (2018); the Glasgow solver (2020)" },
+  { name: "Minimum spanning forest", icon: "LuTreePine", answers: "Representative connectivity: the lightest forest spanning each piece.", cert: "Cycle property: each other edge is a heaviest on the cycle it closes.", ref: "Kruskal 1956; Dixon, Rauch and Tarjan 1992" },
+  { name: "Minimum cycle basis, relevant cycles", icon: "LuHexagon", answers: "Ring perception: a smallest set of smallest rings; the relevant rings.", cert: "Elimination over GF(2) proves a basis; de Pina's supports, a minimum.", ref: "Horton 1987; Vismara 1997; Kavitha et al." },
+  { name: "Weighted matching, min-cost flow", icon: "LuArrowLeftRight", answers: "Assignment, allocation and transport at least cost.", cert: "Dual potentials: no residual arc has a negative reduced cost.", ref: "Munkres 1957; Király and Kovács 2012" },
+  { name: "Counting cyclic patterns", icon: "LuTally5", answers: "Exact motif counts without listing rows, over a tree decomposition.", cert: "The decomposition's messages, each recomputed by a checker.", ref: "Abo Khamis, Ngo and Rudra 2016 (FAQ)" },
+  { name: "k shortest simple paths", icon: "LuListOrdered", answers: "Alternative pathways and explanations, not only one optimum.", cert: "The paths; a Lawler partition tree proves they are the first k.", ref: "Yen 1971; Lawler 1972" },
 ];
+const roadmapLater = "**Then:** a reachability index (2-hop labels) · positive Datalog with derivation certificates · isomorphism and canonical labeling · elementary flux modes.";
+const roadmapSource = "A Codex literature survey of 26 October 2026, kept outside the repository; its recommended order weighs scientific usefulness, implementation effort and the cost of independently proving each answer. Its first item, negative-cost shortest paths, shipped in 97723bb. Survey notes per row: injective patterns (VF2++-style backtracking with Glasgow-style filtering; embeddings checked in O(q + r); a negative needs an exhaustive refutation tree, possibly exponential); minimum spanning forest (Kruskal; the forest is its own certificate by the cycle property); minimum cycle basis (de Pina; GF(2) elimination proves a basis, de Pina's supports with shortest-path proofs prove minimality; relevant cycles after Vismara); min-cost flow and weighted matching (successive shortest paths with potentials; reduced costs non-negative on every residual arc); cyclic pattern counting (variable elimination, FAQ InsideOut; a decomposition and dynamic-programming transcript); k shortest simple paths (Yen with Lawler's partitioning; a partition tree proves the ranking); then a reachability index (pruned landmark 2-hop labels; Cohen, Halperin, Kaplan and Zwick 2003), positive Datalog (semi-naive evaluation; derivation trees), isomorphism and canonical labeling (individualization-refinement; McKay and Piperno 2014), elementary flux modes (exact double description; Gagneur and Klamt 2004). Each increment is planned to ship with code, docs/API_CONTRACT.md, the schema, hand-worked conformance cases, tests against an independent oracle, verification and revalidation, and a Codex adversarial review of its diff.";
 
 const boundaries = {
   wont: [
@@ -430,10 +463,11 @@ const boundaries = {
     "Which new operations must run on periodic projections?",
     "First acceptance workloads: a RATES balance problem, a STATES equivalence or ring query, a SCALE or Cathanor provenance question.",
   ],
-  alsoSurveyed: "Also surveyed: DAG critical paths, d-separation, minimum spanning forests, cycle bases, Datalog, Katz intervals, bidirectional search, factorized pattern answers.",
+  alsoSurveyed: "Also surveyed earlier: Katz intervals, bidirectional search, factorized pattern answers. Critical paths and d-separation, from the same list, are done.",
 };
 
 module.exports = {
-  meta, families, overview, speedTiles, statesChart, networkxChart, revalidation, verification, reviews, timelineLede,
-  timeline, growth, roadmapLede, roadmap, boundaries,
+  meta, families, overview, speedTiles, statesChart, networkxChart, scaleComparison, revalidation, verification,
+  reviews, reviewsSource, timelineLede, timelineSource, timeline, growth, roadmapLede, roadmap, roadmapLater,
+  roadmapSource, boundaries,
 };

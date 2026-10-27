@@ -44,11 +44,14 @@ rather than shrink it.
   - move it out of `roadmap` if it was listed there
 - **A new measured result.** A comparison with networkx goes into `networkxChart` (one category per operation, GRAPH
   and networkx seconds side by side; say the graph sizes in its `caption`). Otherwise replace one of the six
-  `speedTiles` (the grid holds six), or add a chart slide modeled on `headToHeadSlide` and list it in `SLIDES`. Say
-  when the machine was loaded; give ratios where absolute times are unreliable.
-- **New verification counts** (tests, conformance cases, parity tests): `verification`; review notes: `reviews`.
+  `speedTiles` (the grid holds six), or add a chart slide modeled on `headToHeadSlide` and list it in `SLIDES`. A
+  comparison with SCALE's own engine goes into `scaleComparison` (a table of times, and three notes on what they
+  include). Say when the machine was loaded; give ratios where absolute times are unreliable.
+- **New verification counts** (tests, conformance cases, parity tests): `verification`; review notes: `reviews`, with
+  their sources in `reviewsSource`.
 - **A new increment in the history.** Add a row to `timeline` (15 rows fill the column; merge older rows to make
   room) and move `latest: true` to it; add its conformance count to `growth`, and update `growth.tests`,
-  `growth.operations` and `timelineLede`.
-- **The roadmap.** `roadmapLede`, `roadmap` (up to six rows) and `boundaries`, from the latest plan or survey.
+  `growth.operations`, `timelineLede` and `timelineSource`.
+- **The roadmap.** `roadmapLede`, `roadmap` (up to six rows), `roadmapLater` (one line for the increments after them),
+  `roadmapSource` and `boundaries`, from the latest plan or survey.
 - **Version, date and contract.** `meta`.

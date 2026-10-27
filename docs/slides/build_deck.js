@@ -529,7 +529,7 @@ async function familySlide(fam) {
   for (let i = 0; i < n; i++) await opCard(s, fam.ops[i], MX + i * (colW + gap), TOP, colW, h, fam.icon, size);
   if (fam.aside) ASIDES[fam.aside](s, MX + areaW + gap, TOP, asideW, h);
   if (fam.footer) await FOOTERS[fam.footer](s, MX, bottom + 0.2, CW, footerH);
-  s.addNotes([`Sources: ${fam.source}.`, ...fam.ops.map((o) => `${o.name}: ${o.title}. Theory: ${o.theory} Algorithm: ${o.algorithm} ${o.proofLabel}: ${o.proof}`.replace(/`/g, ""))].join("\n\n"));
+  s.addNotes([`Sources: ${fam.source}.`, ...fam.ops.map((o) => `${o.name}: ${o.title}. Theory: ${o.theory} Algorithm: ${o.algorithm} ${o.proofLabel}: ${o.proof}${o.notes ? ` ${o.notes}` : ""}`.replace(/`/g, ""))].join("\n\n"));
 }
 
 // Heights (inches) of an operation card's parts at a body size.
@@ -769,7 +769,8 @@ async function verificationSlide() {
     text(s, rich(body, { fontSize: 14, color: C.text1 }), { x: x + 0.22, y: my + 0.9, w: mw - 0.44, h: mh - 1.0 });
   }
   text(s, K.reviews.map((t, i) => ({ text: t, options: { fontSize: 12, color: C.accent6, italic: true, paraSpaceAfter: 3, breakLine: i < K.reviews.length - 1 } })), { x: MX, y: BOTTOM - reviewH, w: reviewW, h: reviewH, valign: "bottom" });
-  s.addNotes("Counts as of this build: python3 -m pytest (514 pass), src/graph_runtime/conformance/cases.json (143 cases), SCALE parity (16 tests) and STATES parity (6 tests) in their environments; 73 of 73 real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: git log 8917563, 7ff04db; Codex adversarial reviews before commit: git log 99fb868 (a request field named kind was overwritten by the digest's record kind, now connectivity; unlisted groups and stray trees in the components certificate) and 573ce2b (an interrupted max flow's upper bound was not verified).");
+  const count = (label) => (K.verification.find((v) => v.label.includes(label)) || {}).big;
+  s.addNotes(`Counts as of this build: python3 -m pytest (${count("runtime")} pass), src/graph_runtime/conformance/cases.json (${count("conformance")} cases), SCALE parity (${count("SCALE")} tests) and STATES parity (${count("STATES")} tests) in their environments; ${count("real requests")} real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3); negative costs against an independent fixpoint on 1,500 random graphs (tests/test_negative_costs.py). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: ${K.reviewsSource}.`);
 }
 
 async function speedSlide() {
@@ -822,6 +823,50 @@ async function headToHeadSlide() {
   s.addNotes(`Left: ${S1.source}. Mean of 42 contexts: STATES's extract_context 58.5 ms; GRAPH through a lift 305 ms (222 ms lift + 0.34 ms query); GRAPH on the cell 17.1 ms (10.6 ms projection + 0.76 ms query). The cell's projection depends only on the record, so it can be built once and reused. Heavily loaded machine: compare ratios. Right: ${N.source}. Articulation points: GRAPH's biconnectivity (which also finds bridges) against networkx's articulation_points; max flow: 5 sources, 5 targets, integer capacities, against networkx maximum_flow_value; matching: against networkx hopcroft_karp_matching; dominators: against networkx immediate_dominators (GRAPH 0.65 s, 1.37 s with the low-high certificate). GRAPH's answers come with certificates.`);
 }
 
+// GRAPH against SCALE's own query engine (content.js, scaleComparison): a table of times on the left, what the
+// comparison includes and where SCALE is faster on the right.
+async function scaleSlide() {
+  const S = K.scaleComparison;
+  const s = contentSlide("Trust and results", S.title, S.lede);
+  const tw = 6.75, gap = 0.35;
+  const colW = [3.6, 1.0, 1.0, tw - 3.6 - 2.0];
+  const head = (t, align) => ({ text: t, options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1, align } });
+  const rows = [[head("WORKLOAD", "left"), head("SCALE", "right"), head("GRAPH", "right"), head("FASTER", "right")]];
+  const rowH = [0.36];
+  S.rows.forEach((r, i) => {
+    const fill = { color: i % 2 ? C.background1 : C.background2 };
+    rowH.push(height(r.what, colW[0] - 0.24, 14) + 0.18);
+    rows.push([
+      { text: r.what, options: { fontSize: 14, color: C.text1, fill } },
+      { text: r.scale, options: { fontSize: 14, color: C.accent6, align: "right", fill } },
+      { text: r.graph, options: { fontSize: 14, color: C.text1, bold: true, align: "right", fill } },
+      { text: r.ratio, options: { fontSize: 18, color: C.accent1, bold: true, align: "right", fontFace: "Cambria", fill } },
+    ]);
+  });
+  const tableH = rowH.reduce((a, b) => a + b, 0);
+  s.addTable(rows, { x: MX, y: TOP, w: tw, colW, rowH, valign: "middle", margin: [0.03, 0.12, 0.03, 0.12], border: { type: "none" }, objectName: "SCALE comparison table" });
+  const capY = TOP + tableH + 0.22;
+  check("SCALE comparison caption", capY - TOP + height(S.caption, tw, 14), BOTTOM - TOP);
+  text(s, S.caption, { x: MX, y: capY, w: tw, h: BOTTOM - capY, fontSize: 14, color: C.text1 });
+
+  // Right: what SCALE's time includes, where SCALE is faster, and why.
+  const x0 = MX + tw + gap, w = CW - tw - gap, cgap = 0.2;
+  const need = S.cards.map((c) => 0.68 + height(c.body, w - 0.4, 14) + 0.12);
+  const spare = BOTTOM - TOP - cgap * (S.cards.length - 1) - need.reduce((a, b) => a + b, 0);
+  check("SCALE comparison notes", BOTTOM - TOP - spare, BOTTOM - TOP);
+  let y = TOP;
+  for (let i = 0; i < S.cards.length; i++) {
+    const c = S.cards[i];
+    const h = need[i] + Math.max(0, spare) / S.cards.length;
+    card(s, x0, y, w, h, { name: c.head });
+    await iconCircle(s, c.icon, x0 + 0.2, y + 0.16, 0.42, { label: c.head });
+    text(s, c.head, { x: x0 + 0.75, y: y + 0.16, w: w - 0.9, h: 0.42, fontSize: 16, bold: true, color: C.text1, valign: "middle" });
+    text(s, rich(c.body, { fontSize: 14, color: C.text1 }), { x: x0 + 0.2, y: y + 0.68, w: w - 0.4, h: h - 0.74 });
+    y += h + cgap;
+  }
+  s.addNotes(`Sources: ${S.source}.`);
+}
+
 async function timelineSlide() {
   pres.addSection({ title: "Development" });
   const s = contentSlide("Development", "Development timeline", K.timelineLede);
@@ -858,7 +903,8 @@ async function timelineSlide() {
     ...chartStyle({ title: "Hand-worked conformance cases", catAxisLabelFontSize: 11, dataLabelFontSize: 11 }),
     objectName: "conformance growth chart",
   });
-  s.addNotes(`Source: git log (23 commits, 550c362 to 573ce2b; some rows group neighbouring commits). Conformance case counts are from the commit messages (34 at v0, then 49, 54, 62, 70, 74, 78, 91, 100, 112, 116, 121, 133) and cases.json now (${K.growth.cases[K.growth.cases.length - 1]}). Tests: ${K.growth.tests}. Commit times are local (-0400).`);
+  const cases = K.growth.cases;
+  s.addNotes(`Source: ${K.timelineSource}. Conformance case counts are from the commit messages (${cases[0]} at v0, then ${cases.slice(1, -1).join(", ")}) and cases.json now (${cases[cases.length - 1]}). Tests: ${K.growth.tests}. Commit times are local (-0400).`);
 }
 
 async function roadmapSlide() {
@@ -876,7 +922,9 @@ async function roadmapSlide() {
     text(s, [{ text: c.label, options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: cx + (c.key === "name" ? 0.85 : 0.15), y: hy, w: c.w - 0.2, h: 0.25 });
     cx += c.w;
   }
-  const ry = hy + 0.32, n = K.roadmap.length, gap = 0.1, rh = (BOTTOM - ry - gap * (n - 1)) / n;
+  // The increments after the table, if any, in one line below it.
+  const laterH = K.roadmapLater ? height(K.roadmapLater, CW, 14) + 0.12 : 0;
+  const ry = hy + 0.32, n = K.roadmap.length, gap = 0.1, rh = (BOTTOM - laterH - ry - gap * (n - 1)) / n;
   for (let i = 0; i < n; i++) {
     const r = K.roadmap[i];
     const y = ry + i * (rh + gap);
@@ -892,7 +940,8 @@ async function roadmapSlide() {
       x += c.w;
     }
   }
-  s.addNotes("Sources: plan.md and the two Codex surveys (codex_literature.md, codex_domains.md), 26 October 2026, kept outside the repository. Each increment is planned to ship with code, docs/API_CONTRACT.md, the schema, hand-worked conformance cases, tests with a networkx oracle, verification and revalidation, golden result_ids unchanged, and a Codex adversarial review of its diff. Further candidates: DAG critical path, d-separation, minimum spanning forests.");
+  if (K.roadmapLater) text(s, rich(K.roadmapLater, { fontSize: 14, color: C.text1 }), { x: MX + 0.15, y: BOTTOM - laterH + 0.12, w: CW - 0.3, h: laterH - 0.12, valign: "middle", objectName: "roadmap later" });
+  s.addNotes(`Sources: ${K.roadmapSource}`);
 }
 
 async function boundariesSlide() {
@@ -949,6 +998,7 @@ const SLIDES = [
   verificationSlide,
   speedSlide,
   headToHeadSlide,
+  scaleSlide,
   timelineSlide,
   roadmapSlide,
   boundariesSlide,
