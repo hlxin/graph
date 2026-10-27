@@ -694,6 +694,53 @@ const ASIDES = {
     check("2-hop schematic note", ny - y + height(note, w - 0.6, 14), h - 0.1);
     text(s, note, { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.1, fontSize: 14, color: C.text1 });
   },
+  // A worked example: transitive closure in two rules, and the derivation of one fact with its ranks (the
+  // conformance case datalog-transitive-closure on G24, run on the runtime at 61cabb1).
+  datalogExample(s, x, y, w, h) {
+    card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "datalog example" });
+    text(s, [
+      { text: "WORKED EXAMPLE", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1, breakLine: true } },
+      { text: "Transitive closure in two rules", options: { fontSize: 16, bold: true, color: C.text1 } },
+    ], { x: x + 0.3, y: y + 0.25, w: w - 0.6, h: 0.65 });
+    // The program: one box per line, so each rule id sits on its rule's first line.
+    const program = [["base", "reach(?x,?y) :- edge(?e,?x,?y,R)"], ["step", "reach(?x,?z) :- reach(?x,?y),"], ["", "                edge(?e,?y,?z,R)"]];
+    const py = y + 0.95, lh = 0.24, ph = program.length * lh + 0.2, idW = 0.6, cx = x + 0.45 + idW;
+    card(s, x + 0.3, py, w - 0.6, ph, { name: "datalog program" });
+    program.forEach(([rule, src], i) => {
+      const yy = py + 0.1 + i * lh;
+      if (rule) text(s, [{ text: rule, options: { fontSize: 13, bold: true, color: C.accent1 } }], { x: x + 0.45, y: yy, w: idW - 0.05, h: lh, valign: "middle" });
+      text(s, [{ text: src, options: { fontFace: MONO, fontSize: 13, color: C.text1 } }], { x: cx, y: yy, w: x + w - 0.4 - cx, h: lh, valign: "middle" });
+    });
+    check("datalog program width", program[0][1].length * 13 * 0.6 / 72, x + w - 0.4 - cx);
+    // The derivation of reach(a,d): each fact above the fact it rests on, with the edge record the rule matched.
+    const ly = py + ph + 0.17;
+    text(s, [
+      { text: "THE DERIVATION OF ", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } },
+      { text: "reach(a,d)", options: { fontFace: MONO, fontSize: 12, bold: true, color: C.accent1 } },
+    ], { x: x + 0.3, y: ly, w: w - 0.6, h: 0.27, valign: "middle" });
+    const rows = [["3", "reach(a,d)", "step", "edge(e4,c,d,R)"], ["2", "reach(a,c)", "step", "edge(e2,b,c,R)"], ["1", "reach(a,b)", "base", "edge(e1,a,b,R)"]];
+    const ry = ly + 0.35, pitch = 0.56, bh = 0.34, rw = 0.75, bx = x + 0.3 + rw, bw = 1.3;
+    rows.forEach(([rank, fact, rule, edge], i) => {
+      const yy = ry + i * pitch;
+      text(s, [{ text: `rank ${rank}`, options: { fontSize: 14, bold: true, color: i === 0 ? C.accent2 : C.accent6 } }], { x: x + 0.3, y: yy, w: rw - 0.1, h: bh, valign: "middle", margin: 0 });
+      s.addText(fact, {
+        shape: pres.shapes.ROUNDED_RECTANGLE, x: bx, y: yy, w: bw, h: bh, rectRadius: 0.08, fill: { color: i === 0 ? C.accent2 : C.accent1 },
+        line: { type: "none" }, color: C.background1, fontFace: MONO, fontSize: 14, bold: true, align: "center", valign: "middle",
+        margin: 0, objectName: `fact ${fact}`,
+      });
+      text(s, [
+        { text: `${rule}  `, options: { fontSize: 14, bold: true, color: C.accent1 } },
+        { text: edge, options: { fontFace: MONO, fontSize: 13, color: C.text1 } },
+      ], { x: bx + bw + 0.18, y: yy, w: x + w - 0.3 - (bx + bw + 0.18), h: bh, valign: "middle", margin: 0 });
+      // Premise to conclusion: an arrow up from the fact below.
+      if (i > 0) line(s, bx + bw / 2, yy - 0.02, bx + bw / 2, yy - pitch + bh + 0.03, { color: C.accent6, width: 1.5, endArrowType: "triangle" });
+    });
+    check("datalog derivation row", rw + bw + 0.18 + (6 * 14 * 0.49 + 14 * 13 * 0.6) / 72, w - 0.6);
+    const ny = ry + (rows.length - 1) * pitch + bh + 0.18;
+    const note = "Each premise ranks lower: a well-founded proof. On the R\u00A0edges a→b→c→a, c→d and x→d, the model has 13\u00A0facts; `reach(a,?y)` answers a, b, c and\u00A0d.";
+    check("datalog example note", ny - y + height(note, w - 0.6, 14), h - 0.1);
+    text(s, rich(note, { fontSize: 14, color: C.text1 }), { x: x + 0.3, y: ny, w: w - 0.6, h: y + h - ny - 0.1 });
+  },
   // A worked example: A + B ⇄ C → D, its stoichiometric matrix and what incidence answers for it (run on the runtime).
   incidenceExample(s, x, y, w, h) {
     card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "incidence example" });
@@ -821,7 +868,7 @@ async function verificationSlide() {
   }
   text(s, K.reviews.map((t, i) => ({ text: t, options: { fontSize: 12, color: C.accent6, italic: true, paraSpaceAfter: 3, breakLine: i < K.reviews.length - 1 } })), { x: MX, y: BOTTOM - reviewH, w: reviewW, h: reviewH, valign: "bottom" });
   const count = (label) => (K.verification.find((v) => v.label.includes(label)) || {}).big;
-  s.addNotes(`Counts as of this build: python3 -m pytest (${count("runtime")} pass), src/graph_runtime/conformance/cases.json (${count("conformance")} cases), SCALE parity (${count("SCALE")} tests) and STATES parity (${count("STATES")} tests) in their environments; ${count("real requests")} real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3); negative costs against an independent fixpoint on 1,500 random graphs (tests/test_negative_costs.py). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: ${K.reviewsSource}.`);
+  s.addNotes(`Counts as of this build: python3 -m pytest (${count("runtime")} pass), src/graph_runtime/conformance/cases.json (${count("conformance")} cases), SCALE parity (${count("SCALE")} tests) and STATES parity (${count("STATES")} tests) in their environments; ${count("real requests")} real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3); negative costs against an independent fixpoint on 1,500 random graphs (tests/test_negative_costs.py); Datalog against an independent naive fixpoint on 400 random programs (tests/test_datalog.py). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: ${K.reviewsSource}.`);
 }
 
 async function speedSlide() {
