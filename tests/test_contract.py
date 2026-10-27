@@ -462,6 +462,10 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             rows = pattern_rows(suite['graphs'][case['graph']]['nodes'], g['edges'], raw['match'],
                                 raw.get('steps', []), suite['graphs'][case['graph']].get('type_parents'), rp,
                                 relations)
+            if raw.get('injective'):          # no node bound twice, no edge linked twice
+                rows = [(b, links) for b, links in rows
+                        if len(set(v for v in b.values() if v is not None)) == sum(v is not None for v in b.values())
+                        and len(set(x for x in links if x is not None)) == sum(x is not None for x in links)]
             assert exp['total'] == len(rows), case['name']
             if exp.get('rows') and raw.get('answer', 'rows') == 'rows':
                 assert exp['rows'] == [[b, links] for b, links in rows], case['name']

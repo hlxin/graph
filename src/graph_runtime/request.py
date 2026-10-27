@@ -115,7 +115,7 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
            "shortest_path": (("sources", "targets", "scope", "costs"), ("certificate",)),
-           "pattern": (("match",), ("steps", "answer")),
+           "pattern": (("match",), ("steps", "answer", "injective")),
            "support": (("failed", "scope"), ("all_of", "certificate")),
            "bottleneck_path": (("sources", "targets", "scope", "weights"), ("objective", "certificate")),
            "regular_path": (("sources", "path"), ("targets", "answer", "certificate")),
@@ -254,6 +254,11 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["answer"] = raw.get("answer", "rows")
         if data["answer"] not in PATTERN_ANSWERS:
             raise _fail("invalid_request", f"answer is one of {list(PATTERN_ANSWERS)}, not {data['answer']!r}")
+        data["injective"] = _flag(raw.get("injective", False), "injective")
+        if data["injective"] and any(st.get("optional") for st in data["steps"]):
+            raise RequestError(UNSUPPORTED, "unsupported_mode", f"{CONTRACT} matches injective patterns without "
+                               "optional steps (which node an optional step binds, among the distinct ones left, is "
+                               "not yet defined)")
     elif op == "bottleneck_path":
         data["sources"] = _ids(raw["sources"], "sources")
         data["targets"] = _ids(raw["targets"], "targets")

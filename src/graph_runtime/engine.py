@@ -241,10 +241,11 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         m = req["match"]
         names = [m["var"]] + [st["var"] for st in req["steps"] if "var" in st]
         index = {name: i for i, name in enumerate(names)}
-        plan.vars, plan.answer = names, req["answer"]
+        plan.vars, plan.answer, plan.injective = names, req["answer"], req["injective"]
         plan.match = _node_filter(p, m, "match")
         plan.steps = []
         plan.cyclic = any("to" in st for st in req["steps"])
+        plan.enumerated = plan.cyclic or plan.injective       # rows found one by one, and counted as they are
         for i, st in enumerate(req["steps"]):
             fwd, rev = _scope(p, st["scope"], f"steps[{i}].scope")
             closing = "to" in st
@@ -1229,7 +1230,7 @@ def _search_pattern(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Simp
         kept_hops.append(hops)
     st.kept, st.hops, st.examined = cand, kept_hops, examined
     st.discovered = sum(st.scanned)
-    if plan.cyclic:
+    if plan.enumerated:
         _enumerate_cycles(p, plan, st, ctl)
     return st
 
@@ -1248,7 +1249,12 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
     step's two variables, its candidates are intersected with what that closing step allows, iterating the smallest
     of the sets involved and restoring the canonical order of the rest; a closing step then lists its hops between
     the two nodes. Each candidate tried is one expansion. A cycle defeats counting without listing, so every row is
-    enumerated: ``total`` is known only when the enumeration ends."""
+    enumerated: ``total`` is known only when the enumeration ends.
+
+    An injective pattern (subgraph monomorphism) is enumerated the same way, over the same pruned candidates (a
+    match with distinct nodes is a match), skipping a node another variable holds and an edge another step uses.
+    Distinctness is a global constraint that no count over the kept hops can respect, so it is enumerated too, tree
+    or not; the problem is NP-complete, and the expansion budget bounds the search."""
     steps, kept, rel = plan.steps, st.kept, p._edge_rel
     st.rows_raw, st.total, st.closing_hops = [], None, {}
     index: dict[int, dict[int, dict[int, list]]] = {}        # closing step -> from node -> to node -> hops
@@ -1301,6 +1307,9 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
     count = 0
     loops = {j: {u for u, by in index[j].items() if u in by}       # a closing step from a variable to itself
              for j, s in enumerate(steps) if s.closing and s.parent == s.child}
+    injective = plan.injective
+    held: set[int] = set()                                   # injective: the nodes and edges the row uses so far
+    used: set[int] = set()
     positions: dict[tuple, dict[int, list]] = {}            # (step, parent node) -> hop target -> positions
 
     def allowed(j: int, role: str) -> Any:
@@ -1333,35 +1342,75 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
         if why:
             raise _Stop(why)
 
-    def extend(i: int) -> None:
-        nonlocal count
-        if i == len(steps):
-            count += 1
-            if len(st.rows_raw) < cap:
-                st.rows_raw.append((tuple(val), tuple(link)))
-            return
+    def options(i: int) -> list:
+        """The choices of step i, given what is bound: (edge, node) for a tree step's hops (after what its closing
+        steps allow), (edge, None) for a closing step's links, or one unbound choice for an optional step that has
+        no hop."""
         s = steps[i]
         if s.closing:
-            for ei, _, _ in index[i].get(val[s.parent], {}).get(val[s.child], ()):
-                tick()
-                link[i] = ei
-                extend(i + 1)
-            link[i] = None
-            return
+            return [(ei, None) for ei, _, _ in index[i].get(val[s.parent], {}).get(val[s.child], ())]
         u = val[s.parent]
         hs = () if u is None else st.hops[i].get(u, ())
         if checks.get(i):
             hs = admit((i, u), hs, [allowed(j, role) for j, role in checks[i]])
         if not hs:
-            if s.optional:                                   # an optional step: no closing step reaches its variable
-                val[s.child], link[i] = None, None
-                extend(i + 1)
+            return [(None, None)] if s.optional else []      # an optional step: no closing step reaches its variable
+        return [(ei, w) for ei, w, _ in hs]
+
+    def bind(i: int, ei: Any, w: Any) -> bool:
+        """Take a choice of step i; False when an injective pattern already holds its node or links its edge."""
+        if injective and ei is not None:
+            if ei in used or w in held:
+                return False
+            used.add(ei)
+            if w is not None:
+                held.add(w)
+        if not steps[i].closing:
+            val[steps[i].child] = w
+        link[i] = ei
+        return True
+
+    def unbind(i: int, ei: Any, w: Any) -> None:
+        if injective and ei is not None:
+            used.discard(ei)
+            held.discard(w)
+        if not steps[i].closing:
+            val[steps[i].child] = None
+        link[i] = None
+
+    def run() -> None:
+        """Every row from the bound match, in canonical order, by backtracking over an explicit stack of frames
+        [step, its choices, the next one, whether the last was taken]: as deep as the pattern is long, whatever
+        the interpreter's recursion limit. Each choice with an edge tried is one expansion."""
+        nonlocal count
+        if not steps:
+            count += 1
+            if len(st.rows_raw) < cap:
+                st.rows_raw.append((tuple(val), tuple(link)))
             return
-        for ei, w, _ in hs:
-            tick()
-            val[s.child], link[i] = w, ei
-            extend(i + 1)
-        val[s.child], link[i] = None, None
+        frames = [[0, options(0), 0, False]]
+        while frames:
+            frame = frames[-1]
+            i, opts, k, taken = frame
+            if taken:
+                unbind(i, *opts[k - 1])
+                frame[3] = False
+            if k == len(opts):
+                frames.pop()
+                continue
+            frame[2] = k + 1
+            ei, w = opts[k]
+            if ei is not None:
+                tick()
+            if not bind(i, ei, w):
+                continue
+            frame[3] = True
+            if i + 1 < len(steps):
+                frames.append([i + 1, options(i + 1), 0, False])
+                continue
+            count += 1
+            if len(st.rows_raw) < cap:
+                st.rows_raw.append((tuple(val), tuple(link)))
 
     roots = sorted(kept[0])
     if checks.get(-1):
@@ -1370,7 +1419,9 @@ def _enumerate_cycles(p: Projection, plan: SimpleNamespace, st: SimpleNamespace,
         for u in roots:
             tick()
             val[0] = u
-            extend(0)
+            held.add(u)
+            run()
+            held.discard(u)
     except _Stop as stop:
         st.interruption = str(stop)
         st.total = None
@@ -1400,13 +1451,13 @@ def _answer_pattern(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -
     names = plan.vars
     if st.interruption is not None and st.kept is None:       # stopped while discovering: nothing is known
         return {"exists": None, "total": None, "rows": [], "count": 0, "coverage": None}, []
-    if plan.cyclic and getattr(st, "closing_hops", None) is None:     # stopped while indexing the cycles
+    if plan.enumerated and getattr(st, "closing_hops", None) is None:     # stopped while indexing the cycles
         return {"exists": None, "total": None, "rows": [], "count": 0, "coverage": None}, []
     coverage = {"vars": [{"var": names[i], "candidates": st.scanned[i], "kept": len(st.kept[i])}
                          for i in range(len(names))],
                 "steps": [st.closing_hops[i] if s.closing else sum(len(h) for h in st.hops[i].values())
                           for i, s in enumerate(plan.steps)]}
-    if plan.cyclic:
+    if plan.enumerated:
         ids, eids, steps = p._node_ids, p._edge_ids, plan.steps
         rows = [{"nodes": {names[i]: (None if v is None else ids[v]) for i, v in enumerate(vals)},
                  "edges": {s.edge_var: (None if links[j] is None else eids[links[j]])
@@ -1431,27 +1482,38 @@ def _answer_pattern(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -
                                    for j, s in enumerate(steps) if s.edge_var is not None},
                          "links": [None if x is None else eids[x] for x in link]})
 
-        def extend(i: int) -> bool:
-            """Bind steps i and on; False once the rows reach the cap."""
-            if i == len(steps):
+        unbound = ((None, None, 0),)                          # an unbound or unmatched optional step
+
+        def choices(i: int) -> Any:
+            u = val[steps[i].parent]
+            return (None if u is None else st.hops[i].get(u)) or unbound
+
+        def listed() -> bool:
+            """Every row from the bound match, by an explicit stack of frames [step, its hops, the next one] (as
+            deep as the pattern is long, whatever the recursion limit); False once the rows reach the cap."""
+            frames = [[0, choices(0), 0]] if steps else []
+            while frames:
+                frame = frames[-1]
+                i, hs, k = frame
+                if k == len(hs):
+                    frames.pop()
+                    continue
+                frame[2] = k + 1
+                val[steps[i].child], link[i] = hs[k][1], hs[k][0]
+                if i + 1 < len(steps):
+                    frames.append([i + 1, choices(i + 1), 0])
+                    continue
                 if len(rows) >= cap:
                     return False
                 emit()
-                return True
-            s = steps[i]
-            u = val[s.parent]
-            hs = () if u is None else st.hops[i].get(u, ())
-            if not hs:                                       # an unbound or unmatched optional step
-                val[s.child], link[i] = None, None
-                return extend(i + 1)
-            for ei, w, _ in hs:
-                val[s.child], link[i] = w, ei
-                if not extend(i + 1):
+            if not steps:
+                if len(rows) >= cap:
                     return False
+                emit()
             return True
         for u in sorted(st.kept[0]):
             val[0] = u
-            if not extend(0):
+            if not listed():
                 st.interruption = "output_limit"
                 break
     answer = {"exists": total > 0, "total": total, "rows": rows, "count": len(rows), "coverage": coverage}

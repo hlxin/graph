@@ -3717,7 +3717,8 @@
             "limits",
             "match",
             "steps",
-            "answer"
+            "answer",
+            "injective"
           ],
           "properties": {
             "contract": {
@@ -3750,6 +3751,10 @@
                 "count",
                 "exists"
               ]
+            },
+            "injective": {
+              "type": "boolean",
+              "description": "Distinct variables bind distinct nodes and distinct steps link distinct edges (subgraph monomorphism); no optional step. Default false."
             }
           }
         },
