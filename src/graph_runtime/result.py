@@ -1307,16 +1307,18 @@ def _pattern_problems(request: dict, answer: dict, status: str, interruption: di
         if status != INTERRUPTED or total is not None or rows:
             out.append("an unknown answer (exists null) is an interrupted one, with no total and no rows")
         return out
-    if total is None:                                   # a cycle's rows were being listed when the search stopped
-        if status != INTERRUPTED or exists is not True or not any("to" in s for s in steps):
-            out.append("an unknown total with rows known to exist is an interrupted answer of a pattern with a cycle")
+    if total is None:                       # a cycle's (or injective) rows were being listed when the search stopped
+        if status != INTERRUPTED or exists is not True or not (any("to" in s for s in steps)
+                                                               or request.get("injective")):
+            out.append("an unknown total with rows known to exist is an interrupted answer of a pattern with a cycle "
+                       "or an injective one")
         if len(rows) > request["limits"]["max_results"]:
             out.append("more rows than max_results")
     elif type(total) is not int or total < 0 or exists is not (total > 0):
         out.append("total is a non-negative integer and exists says whether it is positive")
         return out
     if total is None:
-        return out + _pattern_rows_problems(rows, names, edge_vars, steps)
+        return out + _pattern_rows_problems(rows, names, edge_vars, steps, request.get("injective"))
     if request["answer"] != "rows" and rows:
         out.append(f"an answer of {request['answer']} lists no rows")
     if request["answer"] == "rows":
@@ -1327,18 +1329,23 @@ def _pattern_problems(request: dict, answer: dict, status: str, interruption: di
             out.append("an output-limited answer lists max_results rows of a larger total")
     if len(rows) > total:
         out.append("more rows than the total")
-    return out + _pattern_rows_problems(rows, names, edge_vars, steps)
+    return out + _pattern_rows_problems(rows, names, edge_vars, steps, request.get("injective"))
 
 
-def _pattern_rows_problems(rows: list, names: list, edge_vars: list, steps: list) -> list[str]:
+def _pattern_rows_problems(rows: list, names: list, edge_vars: list, steps: list, injective: bool = False) -> list[str]:
     """Each row binds every variable, every edge variable and one link per step, without repeating another row; a
-    cycle's closing step always has its link."""
+    cycle's closing step always has its link; an injective pattern's row binds distinct nodes and links."""
     out = []
     seen = set()
     for n, row in enumerate(rows):
         if set(row["nodes"]) != set(names) or set(row["edges"]) != set(edge_vars) or len(row["links"]) != len(steps):
             out.append(f"row {n} binds every variable, every edge variable, and one link per step")
             continue
+        if injective:
+            bound = [v for v in row["nodes"].values() if v is not None]
+            links = [x for x in row["links"] if x is not None]
+            if len(set(bound)) != len(bound) or len(set(links)) != len(links):
+                out.append(f"row {n} of an injective pattern binds distinct nodes and distinct links")
         if row["nodes"][names[0]] is None:
             out.append(f"row {n} binds the matched variable")
         for j, s in enumerate(steps):

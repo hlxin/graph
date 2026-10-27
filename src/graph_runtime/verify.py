@@ -467,10 +467,16 @@ class _Checker:
 
     def pattern(self, request: Mapping, answer: Mapping) -> None:
         """Every row: the matched variable admitted by match, and every link an input edge in its step's scope,
-        joining the step's two bound variables in a scope direction, its child admitted by the step."""
+        joining the step's two bound variables in a scope direction, its child admitted by the step; for an injective
+        pattern, no node bound twice and no edge linked twice."""
         match, steps = request["match"], request["steps"]
         for n, row in enumerate(answer.get("rows") or []):
             nodes, links = row["nodes"], row["links"]
+            if request.get("injective"):
+                bound = [v for v in nodes.values() if v is not None]
+                used = [x for x in links if x is not None]
+                if len(set(bound)) != len(bound) or len(set(used)) != len(used):
+                    self.bad(f"row {n}: an injective pattern's row binds distinct nodes and distinct links")
             if not self.admits(match, nodes.get(match["var"])):
                 self.bad(f"row {n}: {match['var']} = {nodes.get(match['var'])!r} is not a node the match admits")
             for j, s in enumerate(steps):

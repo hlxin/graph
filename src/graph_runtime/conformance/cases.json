@@ -7947,6 +7947,251 @@
    }
   },
   {
+   "name": "pattern-injective-chain",
+   "covers": [
+    "injective patterns",
+    "parallel edges"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "c"
+     ]
+    },
+    "injective": true,
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "z",
+      "var": "w",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "exists": true,
+    "total": 2,
+    "rows": [
+     [
+      {
+       "x": "c",
+       "y": "d",
+       "z": "a",
+       "w": "b"
+      },
+      [
+       "e4",
+       "e6",
+       "e1"
+      ]
+     ],
+     [
+      {
+       "x": "c",
+       "y": "d",
+       "z": "a",
+       "w": "b"
+      },
+      [
+       "e5",
+       "e6",
+       "e1"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-injective-undirected",
+   "covers": [
+    "injective patterns",
+    "reverse traversal"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "b"
+     ]
+    },
+    "injective": true,
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "USES",
+        "direction": "reverse"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "USES",
+        "direction": "reverse"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "exists": true,
+    "total": 2,
+    "rows": [
+     [
+      {
+       "x": "b",
+       "y": "c",
+       "z": "d"
+      },
+      [
+       "e2",
+       "e4"
+      ]
+     ],
+     [
+      {
+       "x": "b",
+       "y": "c",
+       "z": "d"
+      },
+      [
+       "e2",
+       "e5"
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "name": "pattern-injective-triangles-counted",
+   "covers": [
+    "injective patterns",
+    "cycles",
+    "count"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "pattern",
+    "match": {
+     "var": "x",
+     "nodes": [
+      "a",
+      "b",
+      "c",
+      "d",
+      "e"
+     ]
+    },
+    "injective": true,
+    "answer": "count",
+    "steps": [
+     {
+      "from": "x",
+      "var": "y",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "y",
+      "var": "z",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     },
+     {
+      "from": "z",
+      "to": "x",
+      "scope": [
+       {
+        "relation": "USES",
+        "direction": "forward"
+       },
+       {
+        "relation": "CITES",
+        "direction": "forward"
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "exists": true,
+    "total": 6
+   }
+  },
+  {
    "name": "components-strong-flags",
    "covers": [
     "strong components",

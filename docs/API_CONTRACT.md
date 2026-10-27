@@ -59,6 +59,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
   subtree disassembly over the nodes between the sources and the targets, a negative cycle on the way reported with
   three walks that prove it, and an optimum proven by feasible potentials; answers to non-negative costs are unchanged
   (section 4)
+- injective patterns (`injective: true`): distinct variables bind distinct nodes and distinct steps link distinct
+  edges (subgraph monomorphism: substructure search), enumerated over the semi-join-reduced candidates; every pattern
+  request now states `injective`, so pattern requests made before have other `request_id`s and `result_id`s, with the
+  same answers (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -158,7 +162,7 @@ no wildcard: a scope lists what it follows.
 | `typed_path` | `sources`, `pattern` (positions `{"scope", "node_types"}`; `node_types` null: any), `targets` (null: any node), `certificate` (default false) | `max_expansions` |
 | `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}`, of any sign, `certificate` (default false) | `max_expansions` |
 | `dependency_impact` | `changed` (node IDs), `scope` (the direction in which a change propagates), `max_depth` | `max_expansions`, `max_results` |
-| `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`, or, to close a cycle, `{"from", "to", "scope", "edges", "edge_var"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
+| `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`, or, to close a cycle, `{"from", "to", "scope", "edges", "edge_var"}`), `answer` (`rows`, `count` or `exists`; default `rows`), `injective` (default false) | `max_expansions`, `max_results` |
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one), `certificate` (default false) | `max_expansions`, `max_results` |
 | `bottleneck_path` | `sources`, `targets`, `scope`, `weights` (as costs, but any finite number), `objective` (`max_min`, the default, or `min_max`), `certificate` (default false) | `max_expansions` |
 | `regular_path` | `sources`, `path` (a path expression: text, a list or a tree, normalized to the tree), `targets` (null: any node), `answer` (`witness`, the default, or `reached`), `certificate` (default false) | `max_expansions`, `max_results` |
@@ -353,6 +357,17 @@ each candidate tried, and each closing link, is one expansion. `total` is the nu
 known when it ends; `answer: count` and `exists` list none but enumerate them all. An interruption while listing keeps
 the rows found so far (a prefix of the canonical order) and leaves `total` null, `exists` true when a row was found;
 an `output_limit` interruption still counts every row. `coverage` gives a closing step's indexed hops.
+
+**Injective patterns.** With `injective: true`, distinct variables bind distinct nodes and distinct steps link
+distinct edges: subgraph monomorphism, the substructure search of chemistry (a motif, a catalytic site, a ring), which
+counts every binding (a pattern with automorphisms matches one subgraph several times). A loop on one variable stays
+a loop. The rows are those of the same pattern without `injective` that use no node or edge twice, in the same
+canonical order. Distinctness is global, so no count along the kept hops respects it: an injective pattern, tree or
+not, is enumerated as a cycle's is, over the same semi-join-reduced candidates (a match with distinct nodes is a
+match), skipping a node another variable holds and an edge another step links. `total` is known when the enumeration
+ends. The problem is NP-complete: the expansion budget bounds it, and an interruption leaves `total` null and claims
+no absence. An injective pattern has no optional step (`unsupported`, `unsupported_mode`): which node an optional step
+would bind among those left is not yet defined.
 
 Answer: `{"exists", "total", "rows": [{"nodes", "edges", "links"}], "count", "coverage"}`.
 
@@ -814,6 +829,8 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that shortest-path costs are the exact sum of the hop costs; with a negative cost, that a negative cycle's three
     walks chain from a source to its start, around it at the negative cost it states, and on to a target, and that
     an interrupted answer gives no lower bound
+  - that every pattern row's links are input edges in their steps' scopes joining the variables they bind, and that an
+    injective pattern's rows bind no node and link no edge twice
   - that a complete reachability or impact answer is closed: every hop in scope from a node it expanded (a changed
     node at depth 0) leads to a listed node at most one hop deeper. With the witnesses, this proves the answer
     complete and its depths least
@@ -858,7 +875,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 173 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 176 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
