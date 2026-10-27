@@ -1830,6 +1830,67 @@
    "bindings": {
     "source": "conformance-g20@1"
    }
+  },
+  "G21": {
+   "nodes": [
+    "a",
+    "b",
+    "s",
+    "t",
+    "x",
+    "y"
+   ],
+   "edges": [
+    {
+     "id": "n1",
+     "source": "s",
+     "target": "a",
+     "relation": "STEP"
+    },
+    {
+     "id": "n2",
+     "source": "a",
+     "target": "t",
+     "relation": "STEP"
+    },
+    {
+     "id": "n3",
+     "source": "s",
+     "target": "x",
+     "relation": "STEP"
+    },
+    {
+     "id": "n4",
+     "source": "x",
+     "target": "y",
+     "relation": "STEP"
+    },
+    {
+     "id": "n5",
+     "source": "y",
+     "target": "x",
+     "relation": "STEP"
+    },
+    {
+     "id": "n6",
+     "source": "a",
+     "target": "b",
+     "relation": "STEP"
+    },
+    {
+     "id": "n7",
+     "source": "b",
+     "target": "a",
+     "relation": "STEP"
+    }
+   ],
+   "relations": [
+    "STEP"
+   ],
+   "node_types": [],
+   "bindings": {
+    "source": "conformance-g21@1"
+   }
   }
  },
  "cases": [
@@ -2906,9 +2967,10 @@
    }
   },
   {
-   "name": "unsupported-negative-cost",
+   "name": "shortest-negative-relation-cost",
    "covers": [
-    "negative costs refused"
+    "negative costs",
+    "parallel edges: the first in canonical order"
    ],
    "graph": "G1",
    "request": {
@@ -2932,8 +2994,292 @@
     }
    },
    "expect": {
-    "status": "unsupported",
-    "error_code": "negative_cost"
+    "status": "completed",
+    "found": true,
+    "cost": -3,
+    "witness_edges": [
+     "e1",
+     "e2",
+     "e4"
+    ]
+   }
+  },
+  {
+   "name": "shortest-negative-edge-certified",
+   "covers": [
+    "negative costs",
+    "feasible potentials"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "e1": 4,
+      "e2": -3,
+      "e3": 2,
+      "e4": 1,
+      "e5": 3,
+      "e6": 5
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost": 2,
+    "witness_edges": [
+     "e1",
+     "e2",
+     "e4"
+    ],
+    "certificate": {
+     "kind": "feasible_potentials",
+     "bound": 2,
+     "potentials": [
+      {
+       "node": "a",
+       "value": 0
+      },
+      {
+       "node": "b",
+       "value": 4
+      },
+      {
+       "node": "c",
+       "value": 1
+      },
+      {
+       "node": "d",
+       "value": 2
+      }
+     ],
+     "dead_ends": []
+    }
+   }
+  },
+  {
+   "name": "shortest-negative-cycle",
+   "covers": [
+    "negative cycle on a walk to a target",
+    "subtree disassembly"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "a"
+    ],
+    "targets": [
+     "d"
+    ],
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "e1": 1,
+      "e2": 1,
+      "e3": 1,
+      "e4": -5,
+      "e5": 2,
+      "e6": 1
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "negative_cycle_edges": {
+     "lead_in": [],
+     "cycle": [
+      "e3",
+      "e4",
+      "e6"
+     ],
+     "lead_out": [
+      "e3",
+      "e4"
+     ]
+    },
+    "negative_cycle_cost": -3
+   }
+  },
+  {
+   "name": "shortest-negative-cycle-off-the-way",
+   "covers": [
+    "negative cycle that reaches no target",
+    "dead ends"
+   ],
+   "graph": "G21",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "STEP",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "n1": 2,
+      "n2": 3,
+      "n3": 1,
+      "n4": -4,
+      "n5": 1,
+      "n6": 1,
+      "n7": 1
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost": 5,
+    "witness_edges": [
+     "n1",
+     "n2"
+    ],
+    "certificate": {
+     "kind": "feasible_potentials",
+     "bound": 5,
+     "potentials": [
+      {
+       "node": "a",
+       "value": 2
+      },
+      {
+       "node": "b",
+       "value": 3
+      },
+      {
+       "node": "s",
+       "value": 0
+      },
+      {
+       "node": "t",
+       "value": 5
+      }
+     ],
+     "dead_ends": [
+      "x",
+      "y"
+     ]
+    }
+   }
+  },
+  {
+   "name": "shortest-negative-rational",
+   "covers": [
+    "negative costs",
+    "rational mode"
+   ],
+   "graph": "G21",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "STEP",
+      "direction": "forward"
+     }
+    ],
+    "costs": {
+     "by_edge": {
+      "n1": 0.5,
+      "n2": -0.25,
+      "n3": 1,
+      "n4": 1,
+      "n5": 1,
+      "n6": 1,
+      "n7": 1
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "found": true,
+    "cost_exact": "1/4",
+    "witness_edges": [
+     "n1",
+     "n2"
+    ]
+   }
+  },
+  {
+   "name": "shortest-negative-unreachable",
+   "covers": [
+    "negative costs",
+    "closure"
+   ],
+   "graph": "G21",
+   "request": {
+    "operation": "shortest_path",
+    "sources": [
+     "s"
+    ],
+    "targets": [
+     "t"
+    ],
+    "scope": [
+     {
+      "relation": "STEP",
+      "direction": "reverse"
+     }
+    ],
+    "costs": {
+     "by_relation": {
+      "STEP": -1
+     }
+    },
+    "certificate": true
+   },
+   "expect": {
+    "status": "completed",
+    "found": false,
+    "certificate": {
+     "kind": "closure",
+     "reached": [
+      "s"
+     ]
+    }
    }
   },
   {
@@ -6542,7 +6888,8 @@
    "name": "derivation-negative-sum-cost",
    "covers": [
     "derivation",
-    "errors"
+    "errors",
+    "negative costs refused"
    ],
    "graph": "G9",
    "request": {

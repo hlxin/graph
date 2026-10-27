@@ -55,6 +55,10 @@ states consistently, and required costs only for edges actually in scope. Revisi
 - the `incidence` operation: the exact rank of the matrix of edge coefficients between row and column nodes, and
   canonical bases of its kernels (a reaction network's conservation laws and steady combinations), certified by a
   nonsingular minor and an independent kernel basis (section 4)
+- negative costs for `shortest_path` (requests that gave one were `unsupported` before): Bellman-Ford-Moore with
+  subtree disassembly over the nodes between the sources and the targets, a negative cycle on the way reported with
+  three walks that prove it, and an optimum proven by feasible potentials; answers to non-negative costs are unchanged
+  (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -152,7 +156,7 @@ no wildcard: a scope lists what it follows.
 | --- | --- | --- |
 | `reachability` | `sources` (node IDs), `scope`, `max_depth` (null: unbounded) | `max_expansions`, `max_results` |
 | `typed_path` | `sources`, `pattern` (positions `{"scope", "node_types"}`; `node_types` null: any), `targets` (null: any node), `certificate` (default false) | `max_expansions` |
-| `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}`, `certificate` (default false) | `max_expansions` |
+| `shortest_path` | `sources`, `targets`, `scope`, `costs`: `{"by_relation": {relation: cost}}` or `{"by_edge": {edge: cost}}`, of any sign, `certificate` (default false) | `max_expansions` |
 | `dependency_impact` | `changed` (node IDs), `scope` (the direction in which a change propagates), `max_depth` | `max_expansions`, `max_results` |
 | `pattern` | `match` (`{"var", "node_types", "nodes"}`, at least one constraint), `steps` (each `{"from", "var", "scope", "node_types", "nodes", "edges", "edge_var", "optional"}`, or, to close a cycle, `{"from", "to", "scope", "edges", "edge_var"}`), `answer` (`rows`, `count` or `exists`; default `rows`) | `max_expansions`, `max_results` |
 | `support` | `failed` (node IDs), `scope` (from a node to what supports it), `all_of` (node types that need every support; null: every node needs one), `certificate` (default false) | `max_expansions`, `max_results` |
@@ -173,7 +177,8 @@ no wildcard: a scope lists what it follows.
 Defaults: `max_expansions` 1,000,000 and `max_results` 100,000. Every limit is a non-negative integer, and the
 normalized request always states it.
 
-**Costs.** A cost is an integer of any size or a finite float, never negative. When every cost is an integer,
+**Costs.** A cost is an integer of any size or a finite float, never negative except a shortest path's (a negative
+one elsewhere is `unsupported`, `negative_cost`). When every cost is an integer,
 paths are added as integers, so large costs keep their exact order. When the request gives any float, every cost
 is added as an exact rational. In that rational mode, `cost` is the nearest float (null when the exact value is
 beyond the floats) and `cost_exact` is the exact value, `p/q` or `p`. Every edge in scope must have a cost. A
@@ -266,6 +271,39 @@ With `certificate: true`, the answer carries its proof:
   bound is the witness's cost, or the lower bound. Numbers are integers, or `p/q` strings in rational mode.
 - **A closure** proves a complete negative: `{"kind": "closure", "reached": [...]}`, everything the sources reach,
   closed under the scope's hops, with no target among it.
+
+**Negative costs.** When the request gives any negative cost (in its table, whether or not the edge is in scope), the
+answer is a least-cost walk, and the search is Bellman-Ford-Moore's, first in first out from the sources in
+ascending ID, with Tarjan's subtree disassembly (when a node's cost falls, its subtree of the search tree leaves the
+tree and the queue; when that subtree holds the node whose hop lowered it, a negative cycle is found). It runs over
+the live nodes: those the sources reach that reach a target, found by a breadth-first search forwards and then one
+backwards, each node keeping the hop toward a target it was found by. A walk from a source to a target stays among
+them, so a negative cycle elsewhere (among the dead ends) changes nothing. Each node read by those two searches, and
+each scan, is one expansion. A source that is a target is not answered at cost 0: a walk may cost less. Answers add
+`negative_cycle`:
+
+- **An optimum** (`negative_cycle` null): `found` and `optimal` true, the least cost, and as witness the least-cost
+  walk with the fewest hops, the first a breadth-first search finds from the sources at cost 0 (in ascending ID)
+  over the hops whose cost is the difference of their ends' least costs, in canonical order (a choice that depends
+  on the costs alone). The target is the cheapest, ties by node ID.
+- **A negative cycle** on a walk from a source to a target: no walk is cheapest. `found` true, `optimal` false,
+  `cost`, `witness` and `certificate` null, and `negative_cycle` `{"lead_in", "cycle", "lead_out"}`: three walks
+  (`{"source", "target", "length", "hops"}`, hops as a witness's), from a source to the cycle's start, around the
+  cycle (with its `cost`, and `cost_exact` in rational mode, below 0), and from its start to a target by the hops the
+  backward search found. The cycle is the one the search closes first: the tree path from the node whose cost fell
+  to the node whose hop lowered it, then that hop.
+- **A complete negative** keeps its closure certificate.
+- **An interrupted** search knows no lower bound (`lower_bound` null) and certifies nothing; its witness, if any, is
+  the search tree's path to the cheapest target in the tree, a real walk whose cost is not proven least.
+
+With `certificate: true`, an optimum carries **feasible potentials**: `{"kind": "feasible_potentials", "bound",
+"potentials": [{"node", "value"}], "dead_ends": [...]}`, each live node with its least cost, and the dead ends, both
+by node ID. Every hop in scope from a listed node leads to a dead end or to a listed node at most its cost above;
+every hop from a dead end leads to a dead end; every source is listed at 0 or below, or a dead end; no target is a
+dead end, and every listed target is at the bound or above. A walk from a source to a target then never meets a dead
+end or an unlisted node, and its cost telescopes to at least its target's value less its source's: at least the
+bound, the witness's cost. The `potentials` kind, whose unlisted nodes sit at the bound, proves nothing when a cost
+is negative, and a checker rejects it then.
 
 **Pattern.** Matches a pattern of variables and steps, SCALE's query plans in generic form, trees and cycles:
 
@@ -773,7 +811,9 @@ The result contract reports how an execution ended. It carries no scientific ans
   - the contract's invariants
   - that every witness hop names an input edge with that relation, in the requested scope and direction
   - that hops chain from a requested source to what they witness, and match typed-path positions and node types
-  - that shortest-path costs are the exact sum of the hop costs
+  - that shortest-path costs are the exact sum of the hop costs; with a negative cost, that a negative cycle's three
+    walks chain from a source to its start, around it at the negative cost it states, and on to a target, and that
+    an interrupted answer gives no lower bound
   - that a complete reachability or impact answer is closed: every hop in scope from a node it expanded (a changed
     node at depth 0) leads to a listed node at most one hop deeper. With the witnesses, this proves the answer
     complete and its depths least
@@ -818,7 +858,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 168 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 173 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -837,6 +877,11 @@ after the records were edited, without searching again.
   looks up the answer's canonically ordered lists by binary search. It trusts that the result was correct on its own
   projection. When the vocabulary (relations, node types, hierarchies) changed, the full check runs instead.
 - `revalidate_all(results, old, new)` revalidates every result with one diff.
+
+A shortest path answer with a negative cost holds while its witness, or its negative cycle's three walks, are still
+hops of the new projection (a cycle that remains still makes walks ever cheaper, whatever else changed), and its
+feasible potentials stay feasible: an added hop from a listed node must lead to a dead end or to a listed node at
+most its cost above, and an added hop from a dead end to a dead end.
 
 A regular path answer holds while its witness (or its tree) is still made of hops of the new projection, each in its
 step's scope and landing on its step's types, and its certificate is unbroken: an added move from a listed state

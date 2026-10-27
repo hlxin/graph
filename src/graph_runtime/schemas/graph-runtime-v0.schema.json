@@ -3684,7 +3684,7 @@
                 "by_relation": {
                   "type": "object",
                   "additionalProperties": {
-                    "$ref": "#/$defs/cost"
+                    "$ref": "#/$defs/signed_cost"
                   },
                   "propertyNames": {
                     "$ref": "#/$defs/id"
@@ -3693,7 +3693,7 @@
                 "by_edge": {
                   "type": "object",
                   "additionalProperties": {
-                    "$ref": "#/$defs/cost"
+                    "$ref": "#/$defs/signed_cost"
                   },
                   "propertyNames": {
                     "$ref": "#/$defs/id"
@@ -5503,9 +5503,21 @@
           "then": {
             "properties": {
               "answer": {
-                "properties": {
-                  "optimal": {
-                    "const": true
+                "if": {
+                  "required": [
+                    "negative_cycle"
+                  ],
+                  "properties": {
+                    "negative_cycle": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "optimal": {
+                      "const": true
+                    }
                   }
                 }
               }
@@ -5585,7 +5597,7 @@
                   {
                     "properties": {
                       "lower_bound": {
-                        "$ref": "#/$defs/cost"
+                        "$ref": "#/$defs/signed_cost"
                       }
                     }
                   },
@@ -5593,6 +5605,16 @@
                     "required": [
                       "lower_bound_exact"
                     ]
+                  },
+                  {
+                    "required": [
+                      "negative_cycle"
+                    ],
+                    "properties": {
+                      "lower_bound": {
+                        "type": "null"
+                      }
+                    }
                   }
                 ]
               }
@@ -6647,7 +6669,7 @@
         "cost": {
           "oneOf": [
             {
-              "$ref": "#/$defs/cost"
+              "$ref": "#/$defs/signed_cost"
             },
             {
               "type": "null"
@@ -6655,12 +6677,12 @@
           ]
         },
         "cost_exact": {
-          "$ref": "#/$defs/exact"
+          "$ref": "#/$defs/signed_exact"
         },
         "lower_bound": {
           "oneOf": [
             {
-              "$ref": "#/$defs/cost"
+              "$ref": "#/$defs/signed_cost"
             },
             {
               "type": "null"
@@ -6668,7 +6690,7 @@
           ]
         },
         "lower_bound_exact": {
-          "$ref": "#/$defs/exact"
+          "$ref": "#/$defs/signed_exact"
         },
         "witness": {
           "oneOf": [
@@ -6694,7 +6716,7 @@
                 "hops": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/costed_hop"
+                    "$ref": "#/$defs/signed_costed_hop"
                   }
                 }
               }
@@ -6706,6 +6728,119 @@
         },
         "certificate": {
           "$ref": "#/$defs/shortest_certificate"
+        },
+        "negative_cycle": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lead_in",
+                "cycle",
+                "lead_out"
+              ],
+              "properties": {
+                "lead_in": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "source",
+                    "target",
+                    "length",
+                    "hops"
+                  ],
+                  "properties": {
+                    "source": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "target": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "length": {
+                      "$ref": "#/$defs/count"
+                    },
+                    "hops": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/signed_costed_hop"
+                      }
+                    }
+                  }
+                },
+                "cycle": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "source",
+                    "target",
+                    "length",
+                    "hops",
+                    "cost"
+                  ],
+                  "properties": {
+                    "source": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "target": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "length": {
+                      "$ref": "#/$defs/count"
+                    },
+                    "hops": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/signed_costed_hop"
+                      }
+                    },
+                    "cost": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/signed_cost"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cost_exact": {
+                      "$ref": "#/$defs/signed_exact"
+                    }
+                  }
+                },
+                "lead_out": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "source",
+                    "target",
+                    "length",
+                    "hops"
+                  ],
+                  "properties": {
+                    "source": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "target": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "length": {
+                      "$ref": "#/$defs/count"
+                    },
+                    "hops": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/signed_costed_hop"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "allOf": [
@@ -6718,33 +6853,59 @@
             }
           },
           "then": {
-            "properties": {
-              "witness": {
-                "type": "object"
-              },
-              "optimal": {
-                "type": "boolean"
+            "if": {
+              "required": [
+                "negative_cycle"
+              ],
+              "properties": {
+                "negative_cycle": {
+                  "type": "object"
+                }
               }
             },
-            "anyOf": [
-              {
-                "properties": {
-                  "cost": {
-                    "$ref": "#/$defs/cost"
-                  }
+            "then": {
+              "properties": {
+                "witness": {
+                  "type": "null"
+                },
+                "cost": {
+                  "type": "null"
+                },
+                "optimal": {
+                  "const": false
+                },
+                "cost_exact": false
+              }
+            },
+            "else": {
+              "properties": {
+                "witness": {
+                  "type": "object"
+                },
+                "optimal": {
+                  "type": "boolean"
                 }
               },
-              {
-                "required": [
-                  "cost_exact"
-                ],
-                "properties": {
-                  "cost": {
-                    "type": "null"
+              "anyOf": [
+                {
+                  "properties": {
+                    "cost": {
+                      "$ref": "#/$defs/signed_cost"
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "cost_exact"
+                  ],
+                  "properties": {
+                    "cost": {
+                      "type": "null"
+                    }
                   }
                 }
-              }
-            ]
+              ]
+            }
           },
           "else": {
             "properties": {
@@ -6762,7 +6923,7 @@
           }
         }
       ],
-      "description": "cost_exact and lower_bound_exact appear when the request's costs include a float (rational mode); there, cost and lower_bound are the nearest floats, or null when the exact value is beyond the floats. lower_bound appears in an interrupted answer."
+      "description": "cost_exact and lower_bound_exact appear when the request's costs include a float (rational mode); there, cost and lower_bound are the nearest floats, or null when the exact value is beyond the floats. lower_bound appears in an interrupted answer. negative_cycle appears when the request gives a negative cost: null, or the cycle that makes every walk from a source to a target through it ever cheaper (a walk to it, the cycle with its cost, a walk from it), in which case the answer has no cost, witness or certificate."
     },
     "shortest_certificate": {
       "oneOf": [
@@ -6819,10 +6980,54 @@
           }
         },
         {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "bound",
+            "potentials",
+            "dead_ends"
+          ],
+          "properties": {
+            "kind": {
+              "const": "feasible_potentials"
+            },
+            "bound": {
+              "$ref": "#/$defs/signed_certificate_number"
+            },
+            "potentials": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "value"
+                ],
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/signed_certificate_number"
+                  }
+                }
+              }
+            },
+            "dead_ends": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        {
           "type": "null"
         }
       ],
-      "description": "potentials: a value per node (the bound when unlisted) that no hop in scope lowers by more than its cost, 0 at every source and at least the bound at every target, so no path costs less than the bound. closure: everything the sources reach, with no target among it."
+      "description": "potentials: a value per node (the bound when unlisted) that no hop in scope lowers by more than its cost, 0 at every source and at least the bound at every target, so no path costs less than the bound. closure: everything the sources reach, with no target among it. feasible_potentials (when a cost is negative): a value per listed node, and dead ends, such that every hop in scope from a listed node leads to a dead end or to a listed node at most its cost above, every hop from a dead end leads to a dead end, every source is listed at 0 or below or a dead end, and no target is a dead end and every listed one is at the bound or above, so no walk from a source to a target costs less than the bound."
     },
     "support_answer": {
       "type": "object",
@@ -7211,6 +7416,58 @@
         },
         "weight": {
           "$ref": "#/$defs/weight"
+        }
+      }
+    },
+    "signed_cost": {
+      "type": "number",
+      "description": "A shortest path's cost, which may be negative."
+    },
+    "signed_exact": {
+      "type": "string",
+      "pattern": "^(0|-?[1-9][0-9]*)(/[1-9][0-9]*)?$(?![\\s\\S])",
+      "description": "An exact rational of any sign, p, -p, p/q or -p/q in lowest terms."
+    },
+    "signed_certificate_number": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "$ref": "#/$defs/signed_exact"
+        }
+      ],
+      "description": "An integer in integer-cost mode; p, -p, p/q or -p/q in lowest terms in rational mode."
+    },
+    "signed_costed_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "relation",
+        "direction",
+        "from",
+        "to",
+        "cost"
+      ],
+      "properties": {
+        "edge": {
+          "$ref": "#/$defs/id"
+        },
+        "relation": {
+          "$ref": "#/$defs/id"
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "cost": {
+          "$ref": "#/$defs/signed_cost"
         }
       }
     }

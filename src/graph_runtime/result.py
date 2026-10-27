@@ -339,8 +339,9 @@ def _contract_problems(data: dict) -> list[str]:
         if found is None and status != INTERRUPTED:
             out.append("found is unknown (null) only in an interrupted answer")
         if data.get("operation") in ("shortest_path", "bottleneck_path") and found is True \
-                and answer.get("optimal") is not (status == COMPLETED):
-            out.append("a witness is proven optimal exactly when the search completed")
+                and answer.get("optimal") is not (status == COMPLETED and answer.get("negative_cycle") is None):
+            out.append("a witness is proven optimal exactly when the search completed (and no negative cycle makes "
+                       "walks ever cheaper)")
     if out:
         return out
     body = {k: v for k, v in data.items() if k not in ("result_id", "timing")}
@@ -448,6 +449,25 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_critical_problems(request, answer, status))
     elif op == "d_separation":
         out.extend(_separation_problems(request, answer, status))
+    elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
+        nc = answer["negative_cycle"]
+        start = nc["cycle"]["source"]
+        for name, begin, end in (("lead_in", set(request["sources"]), {start}), ("cycle", {start}, {start}),
+                                 ("lead_out", {start}, set(request["targets"]))):
+            walk = nc[name]
+            if type(walk["length"]) is not int or walk["length"] != len(walk["hops"]):
+                out.append(f"negative_cycle.{name}: its length must match its hops")
+            if walk["source"] not in begin or walk["target"] not in end:
+                out.append(f"negative_cycle.{name} runs from a source to the cycle, around it, or from it to a target")
+            at = walk["source"]
+            for hop in walk["hops"]:
+                if hop["from"] != at:
+                    out.append(f"negative_cycle.{name}: its hops must chain")
+                at = hop["to"]
+            if at != walk["target"]:
+                out.append(f"negative_cycle.{name}: its hops must end where it ends")
+        if not nc["cycle"]["hops"]:
+            out.append("the negative cycle has at least one hop")
     elif answer["found"] is True:
         witness = answer["witness"]
         hops = witness["hops"]
@@ -1399,15 +1419,16 @@ def _support_problems(request: dict, answer: dict, status: str, interruption: di
     return out
 
 
-def _exact_value(value: Any, rational: bool) -> Any:
-    """A certificate's number: an integer in integer-cost mode, ``p`` or ``p/q`` in lowest terms in rational mode."""
+def _exact_value(value: Any, rational: bool, signed: bool = False) -> Any:
+    """A certificate's number: an integer in integer-cost mode, ``p`` or ``p/q`` in lowest terms in rational mode;
+    never negative unless ``signed``."""
     if not rational:
-        if type(value) is not int or value < 0:
-            raise ValueError(f"{value!r} is not a non-negative integer")
+        if type(value) is not int or value < 0 and not signed:
+            raise ValueError(f"{value!r} is not a{'n' if signed else ' non-negative'} integer")
         return value
     number = Fraction(value)
-    if not isinstance(value, str) or str(number) != value or number < 0:
-        raise ValueError(f"{value!r} is not an exact non-negative rational in lowest terms")
+    if not isinstance(value, str) or str(number) != value or number < 0 and not signed:
+        raise ValueError(f"{value!r} is not an exact{'' if signed else ' non-negative'} rational in lowest terms")
     return number
 
 
@@ -1428,6 +1449,9 @@ def _certificate_problems(op: str, request: dict, answer: dict, status: str) -> 
             kind = "closure" if not found else ("threshold" if answer["value"] is not None else None)
         else:
             kind = "threshold" if answer.get("bound") is not None else None
+    elif "negative_cycle" in answer:                       # a negative cost: potentials of any sign, or nothing
+        kind = (None if status != COMPLETED or answer["negative_cycle"] is not None
+                else "feasible_potentials" if found else "closure")
     elif status == COMPLETED:
         kind = "potentials" if found else "closure"
     else:
@@ -1460,9 +1484,10 @@ def _certificate_problems(op: str, request: dict, answer: dict, status: str) -> 
         return out
     (_, table), = request["costs"].items()
     rational = any(isinstance(v, float) for v in table.values())
+    signed = kind == "feasible_potentials"
     try:
-        bound = _exact_value(cert["bound"], rational)
-        values = [(e["node"], _exact_value(e["value"], rational)) for e in cert["potentials"]]
+        bound = _exact_value(cert["bound"], rational, signed)
+        values = [(e["node"], _exact_value(e["value"], rational, signed)) for e in cert["potentials"]]
     except (ValueError, TypeError, ZeroDivisionError) as exc:
         return [f"certificate numbers: {exc}"]
     claimed = answer["cost_exact" if status == COMPLETED else "lower_bound_exact"] if rational else \
@@ -1470,6 +1495,16 @@ def _certificate_problems(op: str, request: dict, answer: dict, status: str) -> 
     if bound != (Fraction(claimed) if rational else claimed):
         out.append("a potentials certificate bounds the answer's cost (or its lower bound)")
     names = [n for n, _ in values]
+    if signed:
+        dead = cert["dead_ends"]
+        if names != sorted(set(names)) or dead != sorted(set(dead)) or set(names) & set(dead):
+            out.append("feasible potentials and dead ends are unique, each in ascending node ID, and apart")
+        at = dict(values)
+        if any(s not in at and s not in dead or at.get(s, 0) > 0 for s in sources) \
+                or any(t in dead or at.get(t, bound) < bound for t in targets):
+            out.append("feasible potentials give every source 0 or less (or call it a dead end), and every target "
+                       "the bound or more (never a dead end)")
+        return out
     if names != sorted(set(names)) or any(not 0 <= v < bound for _, v in values):
         out.append("potentials are unique, in ascending node ID, each at least 0 and below the bound")
     at = dict(values)
@@ -1483,16 +1518,17 @@ def _cost_problems(request: dict, answer: dict, status: str) -> list[str]:
     (kind, table), = request["costs"].items()
     rational = any(isinstance(v, float) for v in table.values())
 
-    def number(field):
-        value = answer[field]
+    def number(field, owner=None):
+        owner = answer if owner is None else owner
+        value = owner[field]
         if not rational:
-            if type(value) is not int or f"{field}_exact" in answer:
+            if type(value) is not int or f"{field}_exact" in owner:
                 raise ValueError(f"{field} must be an integer in integer-cost mode")
             return value
-        exact = answer[f"{field}_exact"]
+        exact = owner[f"{field}_exact"]
         number = Fraction(exact)
         if str(number) != exact:
-            raise ValueError(f"{field}_exact must be a non-negative rational in lowest terms")
+            raise ValueError(f"{field}_exact must be a rational in lowest terms")
         try:
             nearest = float(number)
         except OverflowError:
@@ -1501,20 +1537,40 @@ def _cost_problems(request: dict, answer: dict, status: str) -> list[str]:
             out.append(f"{field} must be the nearest float to {field}_exact (null on overflow)")
         return number
 
-    lower = number("lower_bound") if status == INTERRUPTED else None
+    def summed(hops: list) -> Any:
+        total = 0
+        for hop in hops:
+            if hop["direction"] not in {s["direction"] for s in request["scope"]}:
+                out.append("a shortest path hop goes in a direction the scope does not follow")
+            expected = table.get(hop["relation"] if kind == "by_relation" else hop["edge"])
+            if expected is None or hop["cost"] != expected or type(hop["cost"]) is not type(expected):
+                out.append("a hop cost must match the request")
+            total += Fraction(hop["cost"]) if rational else hop["cost"]
+        return total
+
+    signed = any(v < 0 for v in table.values())
+    if signed != ("negative_cycle" in answer):
+        return out + ["an answer gives negative_cycle exactly when the request gives a negative cost"]
+    cycle = answer.get("negative_cycle")
+    if cycle is not None:
+        if status != COMPLETED or answer["found"] is not True or answer["cost"] is not None \
+                or answer["witness"] is not None or "cost_exact" in answer:
+            out.append("a negative cycle is a complete, found answer with no cost and no witness")
+        summed(cycle["lead_in"]["hops"])
+        summed(cycle["lead_out"]["hops"])
+        loop = cycle["cycle"]
+        total = summed(loop["hops"])
+        if total != number("cost", loop) or not total < 0:
+            out.append("the negative cycle's cost is the exact sum of its hops' costs, and negative")
+        return out
+    if signed and status == INTERRUPTED and (answer.get("lower_bound") is not None or "lower_bound_exact" in answer):
+        out.append("with a negative cost, an interrupted answer gives no lower bound")
+    lower = number("lower_bound") if status == INTERRUPTED and not signed else None
     if answer["found"] is not True:
         return out
     cost = number("cost")
     if lower is not None and lower > cost:
         out.append("lower_bound exceeds the witness cost")
-    total = 0
-    for hop in answer["witness"]["hops"]:
-        if hop["direction"] not in {s["direction"] for s in request["scope"]}:
-            out.append("a shortest path hop goes in a direction the scope does not follow")
-        expected = table.get(hop["relation"] if kind == "by_relation" else hop["edge"])
-        if expected is None or hop["cost"] != expected or type(hop["cost"]) is not type(expected):
-            out.append("a hop cost must match the request")
-        total += Fraction(hop["cost"]) if rational else hop["cost"]
-    if total != cost:
+    if summed(answer["witness"]["hops"]) != cost:
         out.append("the witness cost must equal the exact sum of hop costs")
     return out

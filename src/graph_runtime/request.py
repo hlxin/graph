@@ -386,7 +386,7 @@ def _normalize_request(raw: Mapping | Request) -> Request:
         data["sources"] = _ids(raw["sources"], "sources")
         data["targets"] = _ids(raw["targets"], "targets")
         data["scope"] = _scope(raw["scope"], "scope")
-        data["costs"] = _costs(raw["costs"])
+        data["costs"] = _costs(raw["costs"], signed=True)
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     try:
         return Request._make(data)
@@ -505,7 +505,9 @@ def _pattern(value: Any) -> list[dict]:
     return out
 
 
-def _costs(value: Any) -> dict[str, dict[str, int | float]]:
+def _costs(value: Any, signed: bool = False) -> dict[str, dict[str, int | float]]:
+    """``{"by_relation": {...}}`` or ``{"by_edge": {...}}`` of costs: integers of any size or finite floats, never
+    negative unless ``signed`` (a shortest path's costs, which may be)."""
     if not isinstance(value, Mapping) or len(value) != 1 or next(iter(value)) not in ("by_relation", "by_edge"):
         raise _fail("invalid_request", 'costs is {"by_relation": {relation: cost}} or {"by_edge": {edge: cost}}')
     kind, table = next(iter(value.items()))
@@ -515,10 +517,11 @@ def _costs(value: Any) -> dict[str, dict[str, int | float]]:
     for key, x in table.items():
         if type(key) is not str or not key:
             raise _fail("invalid_request", f"costs.{kind} holds the key {key!r}; a key is a non-empty string")
-        if type(x) is int and x >= 0 or type(x) is float and 0 <= x <= _FLOAT_MAX:
+        if type(x) is int and (x >= 0 or signed) or type(x) is float and (0 if not signed else -_FLOAT_MAX) <= x \
+                <= _FLOAT_MAX:
             out[key] = x                       # the common case, checked without a call
         else:
-            out[key] = _cost(x, kind, key)
+            out[key] = _cost(x, kind, key, signed)
     return {kind: out}                         # canonical JSON sorts the keys; nothing else reads their order
 
 
@@ -573,15 +576,15 @@ def _capacity(x: Any, where: str) -> int | float:
     return x
 
 
-def _cost(x: Any, kind: str, key: str) -> int | float:
-    """A cost: an integer (any size, kept exact) or a finite float, never negative."""
+def _cost(x: Any, kind: str, key: str, signed: bool = False) -> int | float:
+    """A cost: an integer (any size, kept exact) or a finite float, never negative unless ``signed``."""
     where = f"costs.{kind}[{key!r}]"
     if isinstance(x, bool) or not isinstance(x, (numbers.Integral, float)):
         raise _fail("invalid_cost", f"{where} is {x!r}; a cost is an integer or a finite float")
     x = int(x) if isinstance(x, numbers.Integral) else float(x)
     if isinstance(x, float) and not math.isfinite(x):
         raise _fail("non_finite_cost", f"{where} is {x!r}; {CONTRACT} accepts finite costs only")
-    if x < 0:
+    if x < 0 and not signed:
         raise RequestError(UNSUPPORTED, "negative_cost", f"{where} is {x!r}; {CONTRACT} supports non-negative "
                            "additive costs only", {"where": where})
     return x

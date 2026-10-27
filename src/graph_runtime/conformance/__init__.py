@@ -256,7 +256,8 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
         got = _cost(answer, "cost")
         if done and (got != want or ("cost" in exp and type(got) is not type(want))):
             problems.append(f"cost {got!r}, expected {want!r}")
-        if not done and answer.get("found") and not (_cost(answer, "lower_bound") <= want <= got):
+        low = _cost(answer, "lower_bound")                  # none with a negative cost: only the witness bounds it
+        if not done and answer.get("found") and not ((low is None or low <= want) and want <= got):
             problems.append(f"an interrupted answer's bounds [{answer.get('lower_bound')}, {got}] miss the cost {want}")
     if "total" in exp and answer.get("total") != exp["total"]:
         problems.append(f"total {answer.get('total')!r}, expected {exp['total']}")
@@ -284,6 +285,15 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
             problems.append(f"{key} {answer.get(key)!r}, expected {exp[key]!r}")
     if "certificate" in exp and answer.get("certificate") != exp["certificate"]:
         problems.append(f"certificate {answer.get('certificate')!r}, expected {exp['certificate']!r}")
+    if "negative_cycle_edges" in exp:                       # the three walks of a negative cycle, canonical
+        cycle = answer.get("negative_cycle") or {}
+        got = {part: [h["edge"] for h in (cycle.get(part) or {}).get("hops") or []]
+               for part in ("lead_in", "cycle", "lead_out")} if cycle else None
+        if got != exp["negative_cycle_edges"]:
+            problems.append(f"negative cycle {got}, expected the canonical {exp['negative_cycle_edges']}")
+        elif "negative_cycle_cost" in exp and _cost(cycle["cycle"], "cost") != exp["negative_cycle_cost"]:
+            problems.append(f"negative cycle cost {_cost(cycle['cycle'], 'cost')!r}, expected "
+                            f"{exp['negative_cycle_cost']!r}")
     if "witness_edges" in exp and done:
         got_edges = [h["edge"] for h in (answer.get("witness") or {}).get("hops") or []]
         if got_edges != exp["witness_edges"]:

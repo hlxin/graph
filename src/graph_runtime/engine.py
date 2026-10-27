@@ -4,7 +4,9 @@ Order (what makes answers reproducible and decides among equally good witnesses)
 original ID; a node's hops are its forward-scope edges (it is their source) in ascending edge ID, then its
 reverse-scope edges (it is their target) in ascending edge ID; the breadth-first searches run first in, first out
 from the sources in ascending ID; the shortest-path search settles nodes by (cost, node ID), and a source that is
-also a target is the answer at cost 0. Which of several equally good witnesses an answer gives follows from this
+also a target is the answer at cost 0; with a negative cost, the witness is the least-cost walk with the fewest
+hops that a breadth-first search over the hops tight under the least costs finds first, and the negative cycle the
+one Bellman-Ford-Moore closes first. Which of several equally good witnesses an answer gives follows from this
 order within a contract version; a consumer must not read meaning into the choice.
 
 Limits: ``max_expansions`` (a request limit) bounds the search states expanded; ``max_results`` (a request limit)
@@ -43,6 +45,11 @@ WITNESS_NOTE = ("A witness shows a connection in this projection only; what it m
                 "consuming application to assess.")
 TENTATIVE_NOTE = ("The witness is a valid path, but its cost is not proven minimal: the minimum cost lies between "
                   "lower_bound and cost.")
+SIGNED_TENTATIVE_NOTE = ("The witness is a valid walk, but its cost is not proven minimal, and with negative costs no "
+                         "lower bound is known before the search ends.")
+UNBOUNDED_NOTE = ("No walk is cheapest: a cycle of negative total cost lies on a walk from a source to a target, so "
+                  "walks around it cost ever less. negative_cycle gives a walk from a source to the cycle, the cycle "
+                  "with its cost, and a walk from it to a target.")
 NO_ANSWER_NOTE = "No answer: the request was not run ({code})."
 CERTIFIED_NOTE = ("The certificate proves the answer's negative or bound against the projection's records without a "
                   "new search: verify_result checks it, and revalidate checks it against an edited projection.")
@@ -353,6 +360,8 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
         plan.cost = _costs(p, req["costs"], plan.fwd, plan.rev)
         plan.rational = plan.cost.rational
+        (table,) = req["costs"].values()
+        plan.signed = any(x < 0 for x in table.values())      # a negative cost: Bellman-Ford-Moore, not Dijkstra
     return plan
 
 
@@ -789,7 +798,10 @@ def _answer_typed(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> 
 def _search_shortest(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
     """Dijkstra's algorithm from every source at once, with exact arithmetic (:func:`_costs`). The first target
     settled is the answer: no other target costs less, because every cost is non-negative. Distances are held as the
-    cost table's search values (integers; in rational mode, counts of ``1/scale``)."""
+    cost table's search values (integers; in rational mode, counts of ``1/scale``). A request that gives a negative
+    cost is searched by :func:`_search_signed` instead."""
+    if plan.signed:
+        return _search_signed(p, plan, ctl)
     dist: dict[int, Any] = {}
     parent: dict[int, tuple[int, int, int]] = {}
     settled: set[int] = set()
@@ -840,6 +852,145 @@ def _search_shortest(p: Projection, plan: SimpleNamespace, ctl: _Control) -> Sim
     return st
 
 
+def _search_signed(p: Projection, plan: SimpleNamespace, ctl: _Control) -> SimpleNamespace:
+    """Least-cost walks when some cost is negative: Bellman-Ford-Moore's search, first in first out, with Tarjan's
+    subtree disassembly (Tarjan, 1981; Cherkassky and Goldberg, 1999), over the part of the graph that can matter.
+
+    1. The region: what the sources reach (breadth-first). With no target in it, the answer is a complete negative.
+    2. The live nodes: those of the region that reach a target (breadth-first, backwards from the targets, each node
+       keeping the hop toward a target it was found by). A walk from a source to a target never leaves them, so the
+       rest of the region (its dead ends) cannot change the answer, and a negative cycle there lowers no walk's cost.
+    3. Bellman-Ford-Moore over the live nodes, from the live sources at cost 0 in ascending ID. When a node's cost
+       falls, its subtree of the search tree leaves the tree and the queue: their costs are due to fall too, and they
+       return when they do. When that subtree holds the node whose hop lowered the cost, the tree path and the hop
+       close a negative cycle, and no walk to a target has a least cost. Otherwise the costs settle at the least
+       costs, every live node in the tree, and the best target is the cheapest (ties by node ID).
+
+    Reading a node's hops in steps 1 and 2, and each scan in step 3, is one expansion."""
+    dist: dict[int, Any] = {}
+    parent: dict[int, tuple[int, int, int]] = {}
+    st = SimpleNamespace(goal=None, dist=dist, parent=parent, settled=set(), lower=None, examined=0, discovered=0,
+                         interruption=None, region=None, live=None, toward={}, cycle=None, in_tree=set())
+    rel, sides = p._edge_rel, _sides(p, plan.fwd, plan.rev)
+    examined = 0
+
+    def hops(u: int, side: tuple) -> list[int]:
+        lists, base, marks = side[0], side[1], side[2]
+        hs = lists[u]
+        if hs is None:
+            hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+        return hs
+
+    region = set(plan.sources)                               # 1. what the sources reach
+    queue = deque(plan.sources)
+    while queue:
+        why = ctl.stop()
+        if why:
+            st.interruption, st.examined, st.discovered = why, examined, len(region)
+            return st
+        u = queue.popleft()
+        for side in sides:
+            hs = hops(u, side)
+            examined += len(hs)
+            ends = side[3]
+            for ei in hs:
+                v = ends[ei]
+                if v not in region:
+                    region.add(v)
+                    queue.append(v)
+    st.region, st.discovered = region, len(region)
+    live = {t for t in plan.targets if t in region}          # 2. what of it reaches a target
+    if not live:
+        st.examined = examined
+        return st
+    toward = st.toward
+    queue = deque(sorted(live))
+    back = _back_sides(p, plan.fwd, plan.rev)
+    while queue:
+        why = ctl.stop()
+        if why:
+            st.interruption, st.examined = why, examined
+            return st
+        v = queue.popleft()
+        for side in back:
+            hs = hops(v, side)
+            examined += len(hs)
+            ends, flag = side[3], side[4]
+            for ei in hs:
+                u = ends[ei]
+                if u in region and u not in live:
+                    live.add(u)
+                    toward[u] = (ei, flag, v)
+                    queue.append(u)
+    st.live = live
+
+    by_edge, by_rel = plan.cost.edge, plan.cost.rel      # 3. Bellman-Ford-Moore with subtree disassembly
+    in_tree, children, stamp, queued = st.in_tree, {}, {}, set()
+    queue = deque()
+    for s in plan.sources:
+        if s in live:
+            dist[s] = 0
+            in_tree.add(s)
+            queued.add(s)
+            stamp[s] = 0
+            queue.append((s, 0))
+    while queue:
+        u, k = queue.popleft()
+        if u not in queued or stamp[u] != k:
+            continue                                     # left the queue with its subtree, or queued again later
+        why = ctl.stop()
+        if why:
+            st.interruption = why
+            break
+        queued.discard(u)
+        du = dist[u]
+        for side in sides:
+            hs = hops(u, side)
+            examined += len(hs)
+            ends, flag = side[3], side[4]
+            for ei in hs:
+                v = ends[ei]
+                if v not in live:
+                    continue
+                nd = du + (by_edge[ei] if by_edge is not None else by_rel[rel[ei]])
+                old = dist.get(v)
+                if old is not None and nd >= old:
+                    continue
+                if v == u:                               # a hop from a node to itself that costs less than nothing
+                    st.cycle = (v, u, ei, flag)
+                    break
+                if v in in_tree:                         # its cost falls: its subtree leaves the tree and the queue
+                    if old is not None and v in parent:
+                        children[parent[v][0]].remove(v)
+                    stack = children.pop(v, [])
+                    while stack:
+                        w = stack.pop()
+                        if w == u:                       # the hop closes a cycle with the tree path from v to u
+                            st.cycle = (v, u, ei, flag)
+                            break
+                        in_tree.discard(w)
+                        queued.discard(w)
+                        stack.extend(children.pop(w, ()))
+                    if st.cycle is not None:
+                        break
+                dist[v] = nd
+                parent[v] = (u, ei, flag)
+                children.setdefault(u, []).append(v)
+                in_tree.add(v)
+                if v not in queued:
+                    queued.add(v)
+                    stamp[v] = stamp.get(v, -1) + 1
+                    queue.append((v, stamp[v]))
+            if st.cycle is not None:
+                break
+        if st.cycle is not None:
+            break
+    st.examined = examined
+    if st.cycle is None and st.interruption is None:
+        st.goal = min((dist[t], t) for t in plan.targets if t in live)[1]
+    return st
+
+
 def _number(x: Any, rational: bool) -> tuple[Any, str | None]:
     """A cost as JSON gives it: an integer stays exact; in rational mode, the nearest float (null when the value is
     beyond the floats) and the exact value as ``"p/q"`` (or ``"p"``)."""
@@ -853,7 +1004,113 @@ def _number(x: Any, rational: bool) -> tuple[Any, str | None]:
     return near, (str(x.numerator) if x.denominator == 1 else f"{x.numerator}/{x.denominator}")
 
 
+def _answer_signed(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
+    """The answer of :func:`_search_signed`: an optimum with its witness, a negative cycle on a walk from a source to a
+    target, a complete negative, or what an interrupted search knows (never a bound: with negative costs none is
+    known before the search ends)."""
+    ids, by_edge, by_rel, rel = p._node_ids, plan.cost.edge, plan.cost.rel, p._edge_rel
+
+    def costed(field: str, x: Any) -> dict:
+        value, exact = _number(plan.cost.exact(x), plan.rational)
+        return {field: value, **({f"{field}_exact": exact} if plan.rational else {})}
+
+    def exact(x: Any) -> Any:
+        return _number(plan.cost.exact(x), True)[1] if plan.rational else x
+
+    def walk(steps: list[tuple[int, int, int, int]], start: int) -> dict:
+        """``steps`` as (from, edge, flag, to), the walk they make from ``start``."""
+        return {"source": ids[start], "target": ids[steps[-1][3]] if steps else ids[start], "length": len(steps),
+                "hops": [{**_via(p, u, ei, flag), "to": ids[v], "cost": plan.cost.given(ei)} for u, ei, flag, v in steps]}
+
+    def from_root(v: int) -> tuple[list, int]:
+        """The tree path from a source to ``v`` (an in-tree node: its ancestors are in the tree), and that source."""
+        steps = []
+        while v in st.parent:
+            u, ei, flag = st.parent[v]
+            steps.append((u, ei, flag, v))
+            v = u
+        steps.reverse()
+        return steps, v
+
+    def witness(t: int) -> dict:
+        """What an interrupted search knows: the tree path to ``t``, a real walk whose cost is ``t``'s."""
+        steps, root = from_root(t)
+        return walk(steps, root)
+
+    def tight_walk(t: int) -> dict:
+        """The least-cost walk to ``t`` with the fewest hops: breadth-first from the sources at cost 0 (in ascending
+        ID) over the hops whose cost is the difference of their ends' least costs, in canonical order. A walk from a
+        source to ``t`` costs its least cost exactly when every hop is such a hop and it starts at cost 0, so this
+        is a choice among least-cost walks that depends on the costs alone, not on the order of the search."""
+        dist, live, sides = st.dist, st.live, _sides(p, plan.fwd, plan.rev)
+        seen: dict[int, Any] = {s: None for s in plan.sources if s in live and dist[s] == 0}
+        queue = deque(seen)
+        while queue and t not in seen:
+            u = queue.popleft()
+            for lists, base, marks, ends, flag in sides:
+                hs = lists[u]
+                if hs is None:
+                    hs = lists[u] = [ei for ei in base[u] if marks[rel[ei]]]
+                for ei in hs:
+                    v = ends[ei]
+                    if v in live and v not in seen and \
+                            dist[u] + (by_edge[ei] if by_edge is not None else by_rel[rel[ei]]) == dist[v]:
+                        seen[v] = (u, ei, flag)
+                        queue.append(v)
+        steps, x = [], t
+        while seen[x] is not None:
+            u, ei, flag = seen[x]
+            steps.append((u, ei, flag, x))
+            x = u
+        steps.reverse()
+        return walk(steps, x)
+
+    nothing = {"found": None, "optimal": None, "cost": None, "lower_bound": None, "witness": None,
+               "negative_cycle": None, "certificate": None}
+    if st.cycle is not None:
+        v, u, ei, flag = st.cycle
+        loop, x = [], u
+        while x != v:                                    # the tree path from v down to u, read upwards
+            px, pe, pf = st.parent[x]
+            loop.append((px, pe, pf, x))
+            x = px
+        loop.reverse()
+        loop.append((u, ei, flag, v))
+        total = sum(by_edge[e] if by_edge is not None else by_rel[rel[e]] for _, e, _, _ in loop)
+        lead_in, root = from_root(v)
+        lead_out, x = [], v
+        while x not in plan.targets:                     # toward a target, by the hops the live nodes were found by
+            e, f, y = st.toward[x]
+            lead_out.append((x, e, f, y))
+            x = y
+        cycle = {"lead_in": walk(lead_in, root), "cycle": {**walk(loop, v), **costed("cost", total)},
+                 "lead_out": walk(lead_out, v)}
+        return ({"found": True, "optimal": False, "cost": None, "witness": None, "negative_cycle": cycle,
+                 "certificate": None}, [UNBOUNDED_NOTE, WITNESS_NOTE])
+    if st.goal is not None:
+        cert = None
+        if plan.certificate:
+            cert = {"kind": "feasible_potentials", "bound": exact(st.dist[st.goal]),
+                    "potentials": [{"node": ids[v], "value": exact(st.dist[v])} for v in sorted(st.live)],
+                    "dead_ends": [ids[v] for v in sorted(st.region - st.live)]}
+        return ({"found": True, "optimal": True, **costed("cost", st.dist[st.goal]), "witness": tight_walk(st.goal),
+                 "negative_cycle": None, "certificate": cert}, [WITNESS_NOTE] + ([CERTIFIED_NOTE] if cert else []))
+    if st.interruption is None:
+        cert = {"kind": "closure", "reached": [ids[v] for v in sorted(st.region)]} if plan.certificate else None
+        return ({"found": False, "optimal": None, "cost": None, "witness": None, "negative_cycle": None,
+                 "certificate": cert}, [CERTIFIED_NOTE] if cert else [])
+    known = sorted((st.dist[t], t) for t in plan.targets if t in st.in_tree)
+    if not known:
+        return nothing, []
+    c, t = known[0]
+    return ({**nothing, "found": True, "optimal": False, **costed("cost", c), "witness": witness(t)},
+            [SIGNED_TENTATIVE_NOTE, WITNESS_NOTE])
+
+
 def _answer_shortest(p: Projection, plan: SimpleNamespace, st: SimpleNamespace) -> tuple[dict, list[str]]:
+    if plan.signed:
+        return _answer_signed(p, plan, st)
+
     def costed(field: str, x: Any) -> dict:
         value, exact = _number(plan.cost.exact(x), plan.rational)
         return {field: value, **({f"{field}_exact": exact} if plan.rational else {})}
