@@ -2036,6 +2036,59 @@
     "Left",
     "Right"
    ]
+  },
+  "G24": {
+   "nodes": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "x"
+   ],
+   "edges": [
+    {
+     "id": "e1",
+     "source": "a",
+     "target": "b",
+     "relation": "R"
+    },
+    {
+     "id": "e2",
+     "source": "b",
+     "target": "c",
+     "relation": "R"
+    },
+    {
+     "id": "e3",
+     "source": "c",
+     "target": "a",
+     "relation": "R"
+    },
+    {
+     "id": "e4",
+     "source": "c",
+     "target": "d",
+     "relation": "R"
+    },
+    {
+     "id": "e5",
+     "source": "x",
+     "target": "d",
+     "relation": "R"
+    },
+    {
+     "id": "e6",
+     "source": "e",
+     "target": "x",
+     "relation": "S"
+    }
+   ],
+   "relations": [
+    "R",
+    "S"
+   ],
+   "node_types": []
   }
  },
  "cases": [
@@ -11191,6 +11244,208 @@
     "total": 1,
     "exists": true,
     "count": 0
+   }
+  },
+  {
+   "name": "reachability-pairs-forward",
+   "covers": [
+    "reachability between pairs",
+    "2-hop index",
+    "closure certificate",
+    "a node reaches itself"
+   ],
+   "graph": "G24",
+   "request": {
+    "operation": "reachability_pairs",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true,
+    "pairs": [
+     {
+      "source": "x",
+      "target": "c"
+     },
+     {
+      "source": "a",
+      "target": "d"
+     },
+     [
+      "d",
+      "a"
+     ],
+     [
+      "b",
+      "b"
+     ],
+     [
+      "e",
+      "d"
+     ],
+     [
+      "a",
+      "d"
+     ]
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "count": 5,
+    "pairs_reachable": {
+     "a->d": true,
+     "b->b": true,
+     "d->a": false,
+     "e->d": false,
+     "x->c": false
+    },
+    "pair_witness_edges": {
+     "a->d": [
+      "e1",
+      "e2",
+      "e4"
+     ],
+     "b->b": []
+    },
+    "closures": {
+     "d": [
+      "d"
+     ],
+     "e": [
+      "e"
+     ],
+     "x": [
+      "d",
+      "x"
+     ]
+    }
+   }
+  },
+  {
+   "name": "reachability-pairs-two-relations",
+   "covers": [
+    "reachability between pairs",
+    "scope of two relations"
+   ],
+   "graph": "G24",
+   "request": {
+    "operation": "reachability_pairs",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     },
+     {
+      "relation": "S",
+      "direction": "forward"
+     }
+    ],
+    "certificate": true,
+    "pairs": [
+     [
+      "e",
+      "d"
+     ],
+     [
+      "e",
+      "a"
+     ]
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "count": 2,
+    "pairs_reachable": {
+     "e->a": false,
+     "e->d": true
+    },
+    "pair_witness_edges": {
+     "e->d": [
+      "e6",
+      "e5"
+     ]
+    },
+    "closures": {
+     "e": [
+      "d",
+      "e",
+      "x"
+     ]
+    }
+   }
+  },
+  {
+   "name": "reachability-pairs-reverse",
+   "covers": [
+    "reachability between pairs",
+    "reverse scope",
+    "no witnesses"
+   ],
+   "graph": "G24",
+   "request": {
+    "operation": "reachability_pairs",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "reverse"
+     }
+    ],
+    "witnesses": false,
+    "certificate": true,
+    "pairs": [
+     [
+      "d",
+      "a"
+     ],
+     [
+      "a",
+      "x"
+     ]
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "count": 2,
+    "pairs_reachable": {
+     "a->x": false,
+     "d->a": true
+    },
+    "closures": {
+     "a": [
+      "a",
+      "b",
+      "c"
+     ]
+    }
+   }
+  },
+  {
+   "name": "reachability-pairs-unknown-node",
+   "covers": [
+    "reachability between pairs",
+    "unknown node"
+   ],
+   "graph": "G24",
+   "request": {
+    "operation": "reachability_pairs",
+    "scope": [
+     {
+      "relation": "R",
+      "direction": "forward"
+     }
+    ],
+    "pairs": [
+     [
+      "a",
+      "nowhere"
+     ]
+    ]
+   },
+   "expect": {
+    "status": "failed",
+    "error_code": "unknown_node"
    }
   }
  ]

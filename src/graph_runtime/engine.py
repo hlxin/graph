@@ -29,7 +29,8 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import algebra, causal, cycles, dominators, flows, forest, kpaths, mincost, paths, ranking, schedule, structure
+from . import (algebra, causal, cycles, dominators, flows, forest, kpaths, mincost, paths, ranking, reachindex,
+               schedule, structure)
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -337,6 +338,12 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
     elif op == "d_separation":
         plan.certificate = req["certificate"]
         plan.x, plan.y, plan.given = _nodes(p, req["x"], "x"), _nodes(p, req["y"], "y"), _nodes(p, req["given"], "given")
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "reachability_pairs":
+        plan.certificate, plan.witnesses = req["certificate"], req["witnesses"]
+        _nodes(p, sorted({x[end] for x in req["pairs"] for end in ("source", "target")}), "pairs")    # they exist
+        index = p._node_index
+        plan.pairs = [(index[x["source"]], index[x["target"]]) for x in req["pairs"]]
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
     elif op == "min_cost_flow":
         plan.certificate = req["certificate"]
@@ -2642,4 +2649,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "k_shortest_paths": (lambda p, plan, ctl: kpaths.search(p, plan, ctl),
                                     lambda p, plan, st: kpaths.answer(p, plan, st)),
                "min_cost_flow": (lambda p, plan, ctl: mincost.search(p, plan, ctl),
-                                 lambda p, plan, st: mincost.answer(p, plan, st))}
+                                 lambda p, plan, st: mincost.answer(p, plan, st)),
+               "reachability_pairs": (lambda p, plan, ctl: reachindex.search(p, plan, ctl),
+                                      lambda p, plan, st: reachindex.answer(p, plan, st))}

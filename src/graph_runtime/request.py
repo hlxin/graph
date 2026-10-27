@@ -61,6 +61,9 @@ Operations (docs/API_CONTRACT.md):
 * ``spanning_forest``: ``scope`` (each edge in it a link between its ends, either way), ``weights`` (any finite numbers,
   by relation or by edge; null: every link weighs 1), ``objective`` (``min``, the default, or ``max``); limit
   ``max_expansions``.
+* ``reachability_pairs``: ``pairs`` (``[{source, target}]``: does each source reach its target), ``scope``,
+  ``witnesses`` (default true: a simple path for each reachable pair), ``certificate`` (each negative's source's
+  closure); limit ``max_expansions``.
 * ``min_cost_flow``: ``sources``, ``targets`` (disjoint), ``scope``, ``capacities`` (as a maximum flow's; null: every
   edge 1), ``costs`` (as a shortest path's, non-negative), ``value`` (how much to send; null: as much as possible),
   ``certificate``; limit ``max_expansions``.
@@ -93,7 +96,7 @@ from .projection import CONTRACT, DIRECTIONS
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
               "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path", "d_separation",
-              "spanning_forest", "cycle_basis", "k_shortest_paths", "min_cost_flow")
+              "spanning_forest", "cycle_basis", "k_shortest_paths", "min_cost_flow", "reachability_pairs")
 FOREST_OBJECTIVES = ("min", "max")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
@@ -127,7 +130,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "spanning_forest": ("max_expansions",),
            "cycle_basis": ("max_expansions",),
            "k_shortest_paths": ("max_expansions",),
-           "min_cost_flow": ("max_expansions",)}
+           "min_cost_flow": ("max_expansions",),
+           "reachability_pairs": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -150,7 +154,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "spanning_forest": (("scope",), ("weights", "objective")),
            "cycle_basis": (("scope",), ("weights", "certificate")),
            "k_shortest_paths": (("sources", "targets", "scope"), ("costs", "k")),
-           "min_cost_flow": (("sources", "targets", "scope", "costs"), ("capacities", "value", "certificate"))}
+           "min_cost_flow": (("sources", "targets", "scope", "costs"), ("capacities", "value", "certificate")),
+           "reachability_pairs": (("pairs", "scope"), ("witnesses", "certificate"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -377,6 +382,11 @@ def _normalize_request(raw: Mapping | Request) -> Request:
             raise _fail("invalid_request", f"x, y and given are disjoint; {sorted(overlap)[:10]} is in two of them")
         data["scope"] = _scope(raw["scope"], "scope")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "reachability_pairs":
+        data["pairs"] = _pairs(raw["pairs"])
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["witnesses"] = _flag(raw.get("witnesses", True), "witnesses")
+        data["certificate"] = _flag(raw.get("certificate", False), "certificate")
     elif op == "min_cost_flow":
         data["sources"] = _ids(raw["sources"], "sources")
         data["targets"] = _ids(raw["targets"], "targets")
@@ -483,6 +493,31 @@ def _ids(value: Any, field: str) -> list[str]:
     if not out:
         raise _fail("invalid_request", f"{field} names no node")
     return sorted(out)
+
+
+def _pairs(value: Any) -> list[dict[str, str]]:
+    """``[{source, target}]`` (a pair ``[source, target]`` is read as one), sorted by source then target and
+    de-duplicated."""
+    if isinstance(value, (str, bytes, Mapping)) or not isinstance(value, (list, tuple)):
+        raise _fail("invalid_request", f"pairs is a list of {{source, target}}, not {value!r}")
+    seen = set()
+    for entry in value:
+        if isinstance(entry, Mapping):
+            stray = sorted(str(k) for k in entry if k not in ("source", "target"))
+            if stray:
+                raise _fail("invalid_request", f"pairs entries take source and target, not {stray}")
+            ends = (entry.get("source"), entry.get("target"))
+        elif isinstance(entry, (list, tuple)) and len(entry) == 2:
+            ends = tuple(entry)
+        else:
+            raise _fail("invalid_request", f"pairs holds {entry!r}; an entry is {{source, target}}")
+        for v in ends:
+            if not isinstance(v, str) or not v:
+                raise _fail("invalid_request", f"pairs holds {v!r}; a node ID is a non-empty string")
+        seen.add(ends)
+    if not seen:
+        raise _fail("invalid_request", "pairs names no pair")
+    return [{"source": s, "target": t} for s, t in sorted(seen)]
 
 
 def _scope(value: Any, field: str) -> list[dict[str, str]]:

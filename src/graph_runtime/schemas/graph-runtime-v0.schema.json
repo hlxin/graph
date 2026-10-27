@@ -5149,6 +5149,68 @@
             }
           },
           "description": "min_cost_flow: send value (null: as much as possible) from the sources to the targets at least cost; capacities as a maximum flow's, costs as a shortest path's."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "pairs",
+            "scope",
+            "witnesses",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "reachability_pairs"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "pairs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source",
+                  "target"
+                ],
+                "properties": {
+                  "source": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "target": {
+                    "$ref": "#/$defs/id"
+                  }
+                }
+              }
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "witnesses": {
+              "type": "boolean"
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "reachability_pairs: whether each source reaches its target in scope, from a 2-hop index of the projection and the scope; a simple path for each reachable pair (witnesses), the closure of each unreachable pair's source (certificate)."
         }
       ]
     },
@@ -5705,7 +5767,8 @@
                   "spanning_forest",
                   "cycle_basis",
                   "k_shortest_paths",
-                  "min_cost_flow"
+                  "min_cost_flow",
+                  "reachability_pairs"
                 ]
               }
             }
@@ -6977,6 +7040,49 @@
             "properties": {
               "operation": {
                 "const": "min_cost_flow"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "reachability_pairs"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/pairs_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "reachability_pairs"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "reachability_pairs"
               }
             }
           }
@@ -8446,6 +8552,180 @@
         }
       },
       "description": "The value sent, whether it is all that was asked (null when interrupted), its exact cost, the flow on each hop (by edge and direction), and the certificate: residual potentials, and a cut when the flow is a maximum one."
+    },
+    "pairs_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pairs",
+        "count",
+        "reachable",
+        "index",
+        "certificate"
+      ],
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "target",
+              "reachable",
+              "witness"
+            ],
+            "properties": {
+              "source": {
+                "$ref": "#/$defs/id"
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              },
+              "reachable": {
+                "type": "boolean"
+              },
+              "witness": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "source",
+                      "target",
+                      "length",
+                      "hops"
+                    ],
+                    "properties": {
+                      "source": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "target": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "length": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "hops": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "edge",
+                            "relation",
+                            "direction",
+                            "from",
+                            "to"
+                          ],
+                          "properties": {
+                            "edge": {
+                              "$ref": "#/$defs/id"
+                            },
+                            "relation": {
+                              "$ref": "#/$defs/id"
+                            },
+                            "direction": {
+                              "$ref": "#/$defs/direction"
+                            },
+                            "from": {
+                              "$ref": "#/$defs/id"
+                            },
+                            "to": {
+                              "$ref": "#/$defs/id"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reachable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "index": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "entries",
+                "largest"
+              ],
+              "properties": {
+                "entries": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "largest": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "closures"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "closures"
+                },
+                "closures": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "source",
+                      "nodes"
+                    ],
+                    "properties": {
+                      "source": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "nodes": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "$ref": "#/$defs/id"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Each pair decided, in the request's order (a prefix when interrupted), with a simple path as witness when reachable; how many pairs and how many reachable; the index's label entries and its largest pair of labels (null until built); and the certificate: the closure of each unreachable pair's source."
     }
   }
 }

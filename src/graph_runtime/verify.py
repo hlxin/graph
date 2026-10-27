@@ -116,6 +116,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.k_shortest_paths(request, answer, status)
         elif op == "min_cost_flow":
             check.min_cost_flow(request, answer, status)
+        elif op == "reachability_pairs":
+            check.reachability_pairs(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -364,6 +366,66 @@ class _Checker:
             elif not key[eid] > heaviest(s, t):
                 self.bad(f"the link {eid} comes before an edge of the tree path between its ends: a lighter forest "
                          "(or one earlier in edge ID) keeps it")
+
+    def reachability_pairs(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """Each pair against the records: the request's pairs in its order (a prefix when interrupted), counted; a
+        node reaching itself by the empty walk; a reachable pair's witness, when asked for, a path of hops in scope
+        from its source to its target visiting no node twice. With the certificate, each source of an unreachable
+        pair has its closure: a set of input nodes holding the source, from which every hop in scope stays inside,
+        and which leaves out every target the answer says the source cannot reach. Without it, the negatives are
+        not checked here (the index's completeness; the oracle tests)."""
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        want = [(x["source"], x["target"]) for x in request["pairs"]]
+        pairs = list(answer.get("pairs") or ())
+        got = [(x.get("source"), x.get("target")) if isinstance(x, Mapping) else None for x in pairs]
+        if got != want[:len(got)] or (status == COMPLETED and len(got) != len(want)):
+            self.bad("the pairs are the request's, in its order: all of them, or a prefix when interrupted")
+            return
+        for n, x in enumerate(pairs):
+            where, s, t = f"pair {n}", x["source"], x["target"]
+            if s not in self.types_of or t not in self.types_of:
+                self.bad(f"{where}: {s!r} and {t!r} must be input nodes")
+                continue
+            reachable, witness = x.get("reachable"), x.get("witness")
+            if reachable is not True and reachable is not False:
+                self.bad(f"{where}: reachable is true or false")
+            elif s == t and reachable is not True:
+                self.bad(f"{where}: a node reaches itself, by the empty walk")
+            if reachable is True and request["witnesses"]:
+                hops = self.chain(where, witness, {s}, {t}, [allowed])
+                visited = [s] + [h.get("to") for h in hops if isinstance(h, Mapping)]
+                if len(set(visited)) != len(visited):
+                    self.bad(f"{where}: the witness visits a node twice")
+            elif witness is not None:
+                self.bad(f"{where}: only a reachable pair has a witness, and only when witnesses are asked for")
+        if answer.get("count") != len(pairs) or answer.get("reachable") != sum(x.get("reachable") is True
+                                                                                for x in pairs):
+            self.bad("count is the number of pairs listed, and reachable the number reachable")
+        cert = self.proof(answer)
+        if cert is None:
+            return
+        closures = {}
+        for c in cert.get("closures") or ():
+            closures[c.get("source")] = c.get("nodes")
+        negatives = {x["source"] for x in pairs if x.get("reachable") is False}
+        if set(closures) != negatives or len(closures) != len(cert.get("closures") or ()):
+            self.bad("certificate: one closure for each source of an unreachable pair, and no other")
+            return
+        for s, nodes in closures.items():
+            inside = set(nodes) if isinstance(nodes, (list, tuple)) else set()
+            if s not in inside or any(u not in self.types_of for u in inside):
+                self.bad(f"certificate: the closure of {s!r} holds it, and only input nodes")
+                continue
+            for u in sorted(inside, key=str):
+                leak = next((h for h in self.hops_from(u, allowed) if h[1] not in inside), None)
+                if leak is not None:
+                    self.bad(f"certificate: the closure of {s!r} is not closed: {leak[0]} leads from {u!r} to "
+                             f"{leak[1]!r}")
+                    break
+        inside_of = {s: set(nodes) if isinstance(nodes, (list, tuple)) else set() for s, nodes in closures.items()}
+        for x in pairs:
+            if x.get("reachable") is False and x["target"] in inside_of[x["source"]]:
+                self.bad(f"certificate: {x['target']!r} is in the closure of {x['source']!r}, which reaches it")
 
     def min_cost_flow(self, request: Mapping, answer: Mapping, status: str) -> None:
         """A flow against the records: each hop in scope in its direction carrying at most its edge's capacity, the

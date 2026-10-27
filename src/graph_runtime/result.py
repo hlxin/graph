@@ -457,6 +457,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_kpaths_problems(request, answer, status))
     elif op == "min_cost_flow":
         out.extend(_mincost_problems(request, answer, status))
+    elif op == "reachability_pairs":
+        out.extend(_pairs_problems(request, answer, status))
     elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
         nc = answer["negative_cycle"]
         start = nc["cycle"]["source"]
@@ -1389,6 +1391,63 @@ def _mincost_problems(request: dict, answer: dict, status: str) -> list[str]:
             out.append("a cut comes exactly when the flow claims to be a maximum one")
         elif side is not None and side != sorted(set(side)):
             out.append("the cut's source side is unique, in ascending ID")
+    return out
+
+
+def _pairs_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """The pairs' own consistency, read without the records: the request's pairs in its order (a prefix when
+    interrupted), counted, the reachable ones counted; a node reaching itself; a witness exactly for a reachable pair
+    when witnesses are asked for, its hops chaining from the source to the target, no node twice; the index's size
+    once it is built; the certificate only on a complete answer that asked for it, one closure per source of an
+    unreachable pair, in order, each holding its source and none of the targets it cannot reach."""
+    out = []
+    pairs = answer["pairs"]
+    want = [(x["source"], x["target"]) for x in request["pairs"]]
+    got = [(x["source"], x["target"]) for x in pairs]
+    if got != want[:len(got)] or (status == COMPLETED and len(got) != len(want)):
+        out.append("the pairs are the request's, in its order: all of them, or a prefix when interrupted")
+    if answer["count"] != len(pairs) or answer["reachable"] != sum(x["reachable"] for x in pairs):
+        out.append("count is the number of pairs listed, and reachable the number reachable")
+    for n, x in enumerate(pairs):
+        if x["source"] == x["target"] and not x["reachable"]:
+            out.append(f"pair {n}: a node reaches itself, by the empty walk")
+        w = x["witness"]
+        if (w is not None) != (x["reachable"] and request["witnesses"]):
+            out.append(f"pair {n}: a witness exactly for a reachable pair, when witnesses are asked for")
+        if w is None:
+            continue
+        at, seen = w["source"], [w["source"]]
+        for h in w["hops"]:
+            if h["from"] != at:
+                out.append(f"pair {n}: the witness's hops chain")
+            at = h["to"]
+            seen.append(at)
+        if (w["source"], w["target"]) != (x["source"], x["target"]) or at != w["target"] \
+                or w["length"] != len(w["hops"]) or len(set(seen)) != len(seen):
+            out.append(f"pair {n}: the witness runs from the source to the target, its length its hops, no node twice")
+    index = answer["index"]
+    if pairs and index is None:
+        out.append("an answer with pairs names its index")
+    if index is not None and not (type(index["entries"]) is int and type(index["largest"]) is int
+                                  and 0 < index["largest"] <= index["entries"]):
+        out.append("the index has entries, its largest pair of labels among them")
+    cert = answer["certificate"]
+    if cert is not None:
+        if status != COMPLETED or not request["certificate"]:
+            out.append("a certificate comes only with a complete answer that asked for it")
+        sources = [c["source"] for c in cert["closures"]]
+        negatives = sorted({x["source"] for x in pairs if not x["reachable"]})
+        if sources != negatives:
+            out.append("certificate: one closure per source of an unreachable pair, in ascending order")
+        closure = {c["source"]: set(c["nodes"]) for c in cert["closures"]}
+        for c in cert["closures"]:
+            if list(c["nodes"]) != sorted(set(c["nodes"])) or c["source"] not in c["nodes"]:
+                out.append(f"certificate: the closure of {c['source']!r} is ascending and holds its source")
+        for x in pairs:
+            if not x["reachable"] and x["target"] in closure.get(x["source"], ()):
+                out.append(f"certificate: {x['target']!r} is in the closure of {x['source']!r}")
+    elif status == COMPLETED and request["certificate"]:
+        out.append("a complete answer gives the certificate it was asked for")
     return out
 
 

@@ -484,6 +484,14 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
                 want = oracle(g['edges'], r['sources'], r['targets'], r['scope'], r.get('capacities'), r['costs'],
                               None)
             assert (exp['flow_value'], exp['flow_cost']) == want, case['name']
+        elif op == 'reachability_pairs':
+            from test_reachability_pairs import reaches
+            closure = reaches(g['nodes'], g['edges'], r['scope'])
+            pairs = sorted({(x['source'], x['target']) if isinstance(x, dict) else tuple(x) for x in r['pairs']})
+            assert exp['pairs_reachable'] == {f"{s}->{t}": t in closure[s] for s, t in pairs}, case['name']
+            if 'closures' in exp:
+                assert exp['closures'] == {s: sorted(closure[s]) for s, t in pairs if t not in closure[s]}, \
+                    case['name']
         elif op == 'k_shortest_paths':
             from test_k_shortest_paths import every_simple_path
             want = every_simple_path(g['nodes'], g['edges'], set(r['sources']), set(r['targets']), r['scope'],
