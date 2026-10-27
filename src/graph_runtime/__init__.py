@@ -2,10 +2,10 @@
 
 GRAPH executes graph operations for scientific applications and keeps the computational contract the same across them:
 explicit inputs (an immutable :class:`Projection`, with optional type and relation hierarchies, or a
-:class:`PeriodicProjection` of one cell of an infinite periodic graph, and a normalized :class:`Request`), twenty
+:class:`PeriodicProjection` of one cell of an infinite periodic graph, and a normalized :class:`Request`), twenty-one
 exact operations (reachability and dependency impact; typed, shortest, bottleneck and regular paths; patterns; support
-under failure and lightest derivations; personalized PageRank; components, biconnectivity, spanning forests, dominators
-and critical paths; maximum flows and matchings; d-separation; incidence; periodicity) with structural witnesses,
+under failure and lightest derivations; personalized PageRank; components, biconnectivity, spanning forests, cycle
+bases, dominators and critical paths; maximum flows and matchings; d-separation; incidence; periodicity) with structural witnesses,
 bounded work, reproducible results, and
 witnesses that can be checked against the input records (:func:`verify_result`); certificates prove negatives and
 optima, and a cached result is revalidated on an edited projection without a new search (:func:`revalidate`). It

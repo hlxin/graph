@@ -11,6 +11,7 @@ from graph_runtime import COMPLETED, INTERRUPTED, Projection, execute, verify_re
 from graph_runtime._canonical import thaw
 from graph_runtime.result import contract_problems
 from graph_runtime.revalidate import FAILS, HOLDS, diff, revalidate
+from test_certificates import reseal
 from oracle import RELATIONS, TYPES, node_id, random_graph, random_scope, signed_fewest_hops, signed_least_cost
 from test_revalidate import edited
 
@@ -134,7 +135,7 @@ def test_forged_proofs_are_rejected():
     assert res.answer["cost"] == -1 and verify_result(res, nodes=nodes, edges=edges) == []
 
     def problems(data):
-        return verify_result(data, nodes=nodes, edges=edges)
+        return verify_result(reseal(data), nodes=nodes, edges=edges)
 
     data, a = tampered(res)                                   # a potential raised: the hop to t no longer bounds it
     next(x for x in a["certificate"]["potentials"] if x["node"] == "t")["value"] = 0
@@ -159,15 +160,15 @@ def test_forged_proofs_are_rejected():
     assert nc is not None and verify_result(cyc, nodes=nodes, edges=loop_edges) == []
     data, a = tampered(cyc)                                   # a cycle that costs nothing
     a["negative_cycle"]["cycle"]["cost"] = 0
-    assert verify_result(data, nodes=nodes, edges=loop_edges)
+    assert verify_result(reseal(data), nodes=nodes, edges=loop_edges)
     data, a = tampered(cyc)                                   # a cycle that does not close
     a["negative_cycle"]["cycle"]["hops"] = a["negative_cycle"]["cycle"]["hops"][:-1]
     a["negative_cycle"]["cycle"]["length"] -= 1
-    assert verify_result(data, nodes=nodes, edges=loop_edges)
+    assert verify_result(reseal(data), nodes=nodes, edges=loop_edges)
     assert nc["cycle"]["source"] == "s" and [h["edge"] for h in nc["cycle"]["hops"]] == ["e1", "e2", "e6"]
     data, a = tampered(cyc)                                   # a cycle shown to lead to no target
     a["negative_cycle"]["lead_out"] = {"source": "s", "target": "s", "length": 0, "hops": []}
-    assert verify_result(data, nodes=nodes, edges=loop_edges)
+    assert verify_result(reseal(data), nodes=nodes, edges=loop_edges)
 
 
 def test_revalidation_of_signed_answers_agrees_with_fresh_runs():

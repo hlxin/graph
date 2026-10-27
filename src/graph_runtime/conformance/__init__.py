@@ -294,6 +294,17 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
         elif "negative_cycle_cost" in exp and _cost(cycle["cycle"], "cost") != exp["negative_cycle_cost"]:
             problems.append(f"negative cycle cost {_cost(cycle['cycle'], 'cost')!r}, expected "
                             f"{exp['negative_cycle_cost']!r}")
+    if "basis_edges" in exp:                                # a cycle basis: de Pina's, in its order
+        got = [list(c["edges"]) for c in answer.get("cycles") or []]
+        want = exp["basis_edges"] if done else exp["basis_edges"][:len(got)]
+        if got != want or answer.get("rank") != exp["rank"]:
+            problems.append(f"cycles {got} of rank {answer.get('rank')}, expected {want} of rank {exp['rank']}")
+        if done and "basis_nodes" in exp and [list(c["nodes"]) for c in answer["cycles"]] != exp["basis_nodes"]:
+            problems.append(f"cycle nodes {[c['nodes'] for c in answer['cycles']]}, expected {exp['basis_nodes']}")
+        want_w = exp.get("basis_weight")
+        if done and want_w is not None and _cost(answer, "weight") != (Fraction(want_w) if isinstance(want_w, str)
+                                                                        else want_w):
+            problems.append(f"basis weight {_cost(answer, 'weight')!r}, expected {want_w!r}")
     if "forest_edges" in exp and done:                      # a spanning forest: unique in its order
         if list(answer.get("edges") or []) != exp["forest_edges"] or answer.get("trees") != exp["trees"]:
             problems.append(f"forest {answer.get('edges')} in {answer.get('trees')} trees, expected "

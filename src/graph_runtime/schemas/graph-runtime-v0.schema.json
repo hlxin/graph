@@ -4796,6 +4796,77 @@
             }
           },
           "description": "spanning_forest: each edge in scope a link between its ends, either way; weights any finite numbers (null: every link 1); the forest least (min) or greatest (max) in the order of (weight, edge ID)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "scope",
+            "weights",
+            "certificate"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "cycle_basis"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "weights": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "properties": {
+                    "by_relation": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/cost"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    },
+                    "by_edge": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/cost"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "certificate": {
+              "type": "boolean"
+            }
+          },
+          "description": "cycle_basis: each edge in scope a link between its ends, either way; weights as costs, non-negative (null: every link 1)."
         }
       ]
     },
@@ -5349,7 +5420,8 @@
                   "incidence",
                   "critical_path",
                   "d_separation",
-                  "spanning_forest"
+                  "spanning_forest",
+                  "cycle_basis"
                 ]
               }
             }
@@ -6492,6 +6564,49 @@
             "properties": {
               "operation": {
                 "const": "spanning_forest"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "cycle_basis"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/cycle_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "cycle_basis"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "cycle_basis"
               }
             }
           }
@@ -7643,6 +7758,115 @@
         }
       },
       "description": "The forest's edges (ascending ID), their number, the number of trees (nodes less edges) and the total weight (weight_exact, the exact value, in rational mode). An interrupted answer: all null."
+    },
+    "cycle_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rank",
+        "cycles",
+        "count",
+        "weight",
+        "certificate"
+      ],
+      "properties": {
+        "rank": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cycles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "nodes",
+              "edges",
+              "length",
+              "weight"
+            ],
+            "properties": {
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "edges": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "length": {
+                "$ref": "#/$defs/count"
+              },
+              "weight": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "weight_exact": {
+                "$ref": "#/$defs/exact"
+              }
+            }
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "weight": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "weight_exact": {
+          "$ref": "#/$defs/exact"
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "witnesses"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "witnesses"
+                },
+                "witnesses": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "$ref": "#/$defs/id"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "The cycle space's dimension (links less nodes plus pieces), the cycles (each its nodes in order around it, its edges by ID, its length and exact weight), and the total weight when complete. witnesses: de Pina's, one per cycle, as edge IDs."
     }
   }
 }

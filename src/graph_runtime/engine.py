@@ -28,7 +28,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import algebra, causal, dominators, flows, forest, paths, ranking, schedule, structure
+from . import algebra, causal, cycles, dominators, flows, forest, paths, ranking, schedule, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -318,9 +318,11 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.certificate = req["certificate"]
         plan.x, plan.y, plan.given = _nodes(p, req["x"], "x"), _nodes(p, req["y"], "y"), _nodes(p, req["given"], "given")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
-    elif op == "spanning_forest":
+    elif op in ("spanning_forest", "cycle_basis"):
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
-        plan.maximum = req["objective"] == "max"
+        forest_op = op == "spanning_forest"
+        plan.maximum = forest_op and req["objective"] == "max"
+        plan.certificate = not forest_op and req["certificate"]
         if req["weights"] is None:
             plan.rational, plan.weight, plan.exact = False, (lambda ei: 1), (lambda x: x)
         else:                                  # exact: integers, or rationals held as counts of 1/scale
@@ -2222,4 +2224,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "d_separation": (lambda p, plan, ctl: causal.search(p, plan, ctl),
                                 lambda p, plan, st: causal.answer(p, plan, st)),
                "spanning_forest": (lambda p, plan, ctl: forest.search(p, plan, ctl),
-                                   lambda p, plan, st: forest.answer(p, plan, st))}
+                                   lambda p, plan, st: forest.answer(p, plan, st)),
+               "cycle_basis": (lambda p, plan, ctl: cycles.search(p, plan, ctl),
+                               lambda p, plan, st: cycles.answer(p, plan, st))}

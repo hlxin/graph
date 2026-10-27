@@ -18,6 +18,7 @@ malformed result is reported as a problem, never raised.
 
 from __future__ import annotations
 
+import heapq
 from collections import deque
 from collections.abc import Iterable, Mapping
 from fractions import Fraction
@@ -109,6 +110,8 @@ def _check(result: Result | Mapping, nodes: Iterable[Any], edges: Iterable[Mappi
             check.d_separation(request, answer, status)
         elif op == "spanning_forest":
             check.spanning_forest(request, answer, status)
+        elif op == "cycle_basis":
+            check.cycle_basis(request, answer, status)
         else:
             problems.append(f"unknown operation {op!r}")
         return problems
@@ -357,6 +360,137 @@ class _Checker:
             elif not key[eid] > heaviest(s, t):
                 self.bad(f"the link {eid} comes before an edge of the tree path between its ends: a lighter forest "
                          "(or one earlier in edge ID) keeps it")
+
+    def cycle_basis(self, request: Mapping, answer: Mapping, status: str) -> None:
+        """Each cycle against the records: links in scope, each node met by two of its links (a loop counts two) and
+        all of them one piece, its nodes in order around it, its exact weight; the cycles independent over GF(2)
+        (by elimination) and, when complete, as many as the cycle space's dimension (links less nodes plus pieces),
+        so a basis. With witnesses (de Pina's): cycle i meets witness i oddly and every earlier cycle meets it evenly,
+        and no cycle meeting witness i oddly is lighter than cycle i, recomputed here by a shortest path between the
+        two copies of a node in the parity graph; then the basis is minimum."""
+        if answer.get("rank") is None:
+            return
+        allowed = {(e["relation"], e["direction"]) for e in request["scope"]}
+        weights = request["weights"]
+        kind, table = next(iter(weights.items())) if weights else (None, None)
+        rational = table is not None and any(isinstance(x, float) for x in table.values())
+        links = {eid: (s, t, rel) for eid, (s, t, rel) in self.edge_of.items()
+                 if self.in_scope(rel, "forward", allowed) or self.in_scope(rel, "reverse", allowed)}
+
+        def weight(eid: str) -> Any:
+            if table is None:
+                return 1
+            x = table.get(links[eid][2] if kind == "by_relation" else eid)
+            if x is None:
+                self.bad(f"the link {eid} in scope has no weight in the request")
+                return 0
+            return Fraction(x) if rational else x
+
+        def stated(owner: Mapping) -> Any:
+            if rational:
+                return Fraction(owner["weight_exact"]) if isinstance(owner.get("weight_exact"), str) else None
+            return owner.get("weight")
+        up: dict = {}
+
+        def root(x: Any) -> Any:
+            while up.get(x, x) != x:
+                up[x] = up.get(up[x], up[x])
+                x = up[x]
+            return x
+        for s, t, _ in links.values():
+            a, b = root(s), root(t)
+            if a != b:
+                up[a] = b
+        pieces = len({root(x) for x in self.types_of})
+        rank = len(links) - len(self.types_of) + pieces
+        if answer["rank"] != rank:
+            self.bad(f"the cycle space has dimension {rank}, not {answer['rank']!r}")
+        position = {eid: k for k, eid in enumerate(sorted(links))}
+        sets = []
+        for n, c in enumerate(answer.get("cycles") or ()):
+            where, edges = f"cycle {n}", list(c.get("edges") or ())
+            if not edges or len(set(edges)) != len(edges) or any(e not in links for e in edges):
+                self.bad(f"{where}: its edges are distinct links in scope")
+                return
+            degree: dict = {}
+            for e in edges:
+                s, t, _ = links[e]
+                degree[s] = degree.get(s, 0) + 1
+                degree[t] = degree.get(t, 0) + 1
+            nodes = list(c.get("nodes") or ())
+            if any(d != 2 for d in degree.values()) or sorted(degree, key=str) != sorted(set(nodes), key=str) \
+                    or len(nodes) != len(edges):
+                self.bad(f"{where}: not a simple cycle through the nodes it lists")
+                return
+            unused = list(edges)
+            for k, u in enumerate(nodes):                      # consecutive nodes joined by a link of the cycle
+                v = nodes[(k + 1) % len(nodes)]
+                hit = next((e for e in unused if {links[e][0], links[e][1]} == {u, v}), None)
+                if hit is None:
+                    self.bad(f"{where}: no link of it joins {u!r} to {v!r}")
+                    return
+                unused.remove(hit)
+            if sum((weight(e) for e in edges), Fraction(0) if rational else 0) != stated(c):
+                self.bad(f"{where}: its weight is not the exact sum of its links' weights")
+            sets.append(sum(1 << position[e] for e in edges))
+        basis: dict[int, int] = {}                             # GF(2) elimination: by highest bit
+        for n, bits in enumerate(sets):
+            while bits:
+                top = bits.bit_length() - 1
+                if top not in basis:
+                    basis[top] = bits
+                    break
+                bits ^= basis[top]
+            if not bits:
+                self.bad(f"cycle {n} is a sum of the cycles before it: they are not independent")
+        complete = status == COMPLETED
+        if complete and len(sets) != rank:
+            self.bad(f"a complete basis has {rank} cycles, not {len(sets)}")
+        if complete and stated(answer) != sum((stated(c) for c in answer["cycles"]), Fraction(0) if rational else 0):
+            self.bad("the basis weight is not the sum of its cycles' weights")
+        cert = answer.get("certificate")
+        if cert is None or not self.proofs:
+            return
+        witnesses = list(cert.get("witnesses") or ())
+        if len(witnesses) != len(sets) or any(e not in links for w in witnesses for e in w) \
+                or any(len(set(w)) != len(w) for w in witnesses):
+            self.bad("a witness of distinct links in scope for each cycle")
+            return
+        support = [sum(1 << position[e] for e in w) for w in witnesses]
+        adjacent: dict = {}
+        for eid, (s, t, _) in links.items():
+            adjacent.setdefault(s, []).append((eid, t))
+            if s != t:
+                adjacent.setdefault(t, []).append((eid, s))
+        for i, (bits, s) in enumerate(zip(sets, support)):
+            if not (bits & s).bit_count() & 1:
+                self.bad(f"cycle {i} does not meet its witness oddly")
+            for j in range(i):
+                if (sets[j] & s).bit_count() & 1:
+                    self.bad(f"cycle {j} meets the witness of cycle {i} oddly")
+            lightest = None
+            odd = {e for e in witnesses[i]}
+            for start in sorted({links[e][0] for e in odd} | {links[e][1] for e in odd}, key=str):
+                best = {(start, 0): 0}
+                heap = [(0, 0, start, 0)]
+                order = 0
+                while heap:
+                    d, _, u, b = heapq.heappop(heap)
+                    if d > best.get((u, b), d) or (lightest is not None and d >= lightest):
+                        continue
+                    if (u, b) == (start, 1):
+                        lightest = d
+                        break
+                    for e, v in adjacent.get(u, ()):
+                        state = (v, b ^ (e in odd))
+                        nd = d + weight(e)
+                        if state not in best or nd < best[state]:
+                            best[state] = nd
+                            order += 1
+                            heapq.heappush(heap, (nd, order, v, state[1]))
+            if lightest != stated(answer["cycles"][i]):
+                self.bad(f"cycle {i} weighs {stated(answer['cycles'][i])!r}, but the lightest cycle meeting its "
+                         f"witness oddly weighs {lightest!r}")
 
     def in_scope(self, rel: str, direction: str, allowed: set) -> bool:
         return (rel, direction) in allowed or any((up, direction) in allowed for up in self.relation_up.get(rel, ()))

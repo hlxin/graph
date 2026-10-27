@@ -11,6 +11,7 @@ from graph_runtime import COMPLETED, INTERRUPTED, UNSUPPORTED, Projection, execu
 from graph_runtime._canonical import thaw
 from graph_runtime.errors import RequestError
 from graph_runtime.result import contract_problems
+from test_certificates import reseal
 from oracle import RELATIONS, TYPES, node_id, pattern_rows, random_graph
 from test_cyclic_pattern import random_cyclic, table
 
@@ -133,7 +134,7 @@ def test_an_injective_answer_with_a_repeated_node_is_rejected():
     assert plain.answer["total"] == 1 and inj.answer["total"] == 0 and inj.exists is False   # a -> b -> a
     forged = thaw(inj.to_dict())
     forged["answer"] = {**thaw(plain.to_dict())["answer"]}
-    assert verify_result(forged, nodes=nodes, edges=edges)
+    assert verify_result(reseal(forged), nodes=nodes, edges=edges)
 
 
 def test_injective_patterns_have_no_optional_steps():

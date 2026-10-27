@@ -65,6 +65,9 @@ states consistently, and required costs only for edges actually in scope. Revisi
   same answers (section 4)
 - the `spanning_forest` operation: a minimum (or maximum) spanning forest by Kruskal's algorithm in the order of
   (weight, edge ID), unique in that order, which proves itself against the records by the cycle property (section 4)
+- the `cycle_basis` operation: a minimum cycle basis (ring perception: the smallest set of smallest rings, for every
+  link 1) by de Pina's algorithm, independent by construction and proven minimum by its witnesses, whose lightest
+  odd cycles a checker recomputes; an interrupted search lists a proven prefix (section 4)
 
 Each revision supersedes the one before; readers reject other contract tags. The schema keeps its original filename.
 Revisions follow `CLAUDE.md`'s contract-version rule.
@@ -178,6 +181,7 @@ no wildcard: a scope lists what it follows.
 | `critical_path` | `scope` (a hop from u to v: u comes first), `sources` (only what they reach; null: every node), `costs` (as for shortest paths; null: every hop takes 1), `answer` (`path`, the default: the makespan and a critical path; `schedule`: every node's times too), `certificate` (default false) | `max_expansions` |
 | `d_separation` | `x`, `y`, `given` (default none; the three disjoint), `scope` (a hop from u to v: u is a parent, a direct cause, of v), `certificate` (default false) | `max_expansions` |
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
+| `cycle_basis` | `scope` (each edge in it a link between its ends, either way), `weights` (as costs: non-negative; null: every link 1), `certificate` (default false) | `max_expansions` |
 | `spanning_forest` | `scope` (each edge in it a link between its ends, either way), `weights` (as weights: any finite numbers; null: every link 1), `objective` (`min`, the default, or `max`) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
 
@@ -788,6 +792,31 @@ whose trees join the ends of every other link in scope (so they span each piece)
 comes after every edge of the tree path between its ends in that order, are the forest Kruskal's algorithm keeps.
 A checker finds those paths' last edges by binary lifting, in O((n + m) log n).
 
+**Cycle basis.** A minimum cycle basis: the rings of a molecule, the independent loops of a reaction or citation
+network. Each edge in scope is a link between its ends, read undirected; a loop is a cycle of one link and two
+parallel links a cycle of two. The cycle space, over GF(2), has dimension `rank` = links less nodes plus connected
+pieces; a basis is that many independent simple cycles, and a minimum one has the least total weight. With every link
+1 that is the fewest links: chemistry's smallest set of smallest rings (SSSR), one minimum basis among possibly
+several. Weights are as costs: non-negative and exact.
+
+De Pina's algorithm (1995; Kavitha, Mehlhorn, Michail and Paluch, 2004): a spanning forest by edge ID leaves `rank`
+links outside it, whose unit vectors are the first witnesses S_1..S_k. Cycle i is a lightest cycle meeting S_i oddly
+(an odd number of its links in S_i); then every later witness that meets cycle i oddly takes S_i in, so S_i meets
+every earlier cycle evenly. A lightest S-odd cycle is a shortest path from (v, 0) to (v, 1) in the parity graph (two
+copies of the links, those in S crossing between the copies), from each end v of a link of S, read mod 2 and split
+into simple cycles (the first meeting S oddly is kept, as light). The parity searches settle states by (distance,
+node, parity) and stop at the first lightest walk found, starting from the smaller node ID; each settled state, and
+each node's links read at the start, is one expansion. Each cycle is final once found, so an interrupted search lists
+the cycles found, a prefix of the basis, with `weight` null.
+
+Answer: `{"rank", "cycles": [{"nodes", "edges", "length", "weight", ["weight_exact"]}], "count", "weight",
+["weight_exact"], "certificate"}`: each cycle's nodes in order around it, from its smallest node ID toward its
+neighbour with the smaller ID, and its edges by ID; the total weight when complete. An interruption before the links
+are read leaves `rank` null and lists nothing. With `certificate: true`: `{"kind": "witnesses", "witnesses": [[edge
+IDs], ...]}`, one per cycle. They prove the basis (de Pina's theorem): cycle i meets witness i oddly and every
+earlier cycle meets it evenly, so the cycles are independent; and when no cycle meeting witness i oddly is lighter
+than cycle i, which a checker recomputes in the parity graph, the basis is minimum.
+
 ## 5. Results
 
 | Field | Meaning |
@@ -849,6 +878,10 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that shortest-path costs are the exact sum of the hop costs; with a negative cost, that a negative cycle's three
     walks chain from a source to its start, around it at the negative cost it states, and on to a target, and that
     an interrupted answer gives no lower bound
+  - for a cycle basis, each cycle a simple cycle of links in scope through the nodes it lists in order, with its exact
+    weight; the cycles independent (by GF(2) elimination) and, when complete, `rank` of them, the dimension the
+    records give; and with witnesses, each cycle odd against its own and every earlier cycle even against it, its
+    weight that of a lightest cycle odd against its witness, recomputed in the parity graph
   - for a spanning forest, its edges against the records: links in scope, no loop and no cycle, spanning every
     piece, and every link left out after every edge of its tree path in the order of (weight, edge ID); then its
     count, trees and exact weight
@@ -898,7 +931,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 180 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 182 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
@@ -936,8 +969,8 @@ A spanning forest holds while it is still the forest the new records prove (its 
 pieces it spans, as `verify_result` checks them); an edit that breaks any of these refutes it. It is always checked in
 full.
 
-Components, biconnectivity, a maximum flow, a matching, dominators, incidence, critical paths, d-separation and
-support are revalidated by their certificates, which
+Components, biconnectivity, a maximum flow, a matching, dominators, incidence, critical paths, d-separation, cycle
+bases and support are revalidated by their certificates, which
 prove the whole answer from the records alone. A node or edge the answer names that is gone refutes it (`node_gone`,
 `witness_gone`), and so does a claim of the answer itself that the new records contradict (`answer_refuted`: a
 kernel vector that no longer multiplies to zero, a flow beyond a capacity, a cut that is no longer the one nearest
