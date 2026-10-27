@@ -96,7 +96,7 @@ TOOLS: list[dict] = [
         "description": "Run a request (reachability, typed_path, shortest_path, bottleneck_path, regular_path, "
                        "derivation, personalized_pagerank, dependency_impact, pattern, support, components, "
                        "biconnectivity, max_flow, matching, dominators, incidence, critical_path, d_separation, "
-                       "spanning_forest, cycle_basis, or on "
+                       "spanning_forest, cycle_basis, k_shortest_paths, or on "
                        "a periodic "
                        "cell periodicity) on a "
                        "projection: by default the one this session holds under the request's projection identity. "
@@ -495,6 +495,10 @@ def summarize(res: Result, limit: int = SUMMARY_ITEMS) -> dict:
         if a["trail"] is not None:
             summary.update(trail=[{k: s[k] for k in ("edge", "from", "to", "travel")} for s in a["trail"][:limit]],
                            colliders=[c["node"] for c in a["colliders"][:limit]])
+    elif op == "k_shortest_paths":
+        summary = {"count": a["count"], "exhausted": a["exhausted"],
+                   "paths": [{"cost": x.get("cost_exact", x["cost"]), "length": x["length"],
+                              "edges": [h["edge"] for h in x["hops"][:limit]]} for x in a["paths"][:limit]]}
     elif op == "cycle_basis":
         summary = {k: a[k] for k in ("rank", "count", "weight", "weight_exact") if k in a}
         summary["cycles"] = {"items": [c["nodes"] for c in a["cycles"][:limit]], "more": len(a["cycles"]) > limit}

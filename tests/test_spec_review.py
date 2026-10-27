@@ -473,6 +473,12 @@ def test_handwritten_conformance_answers_agree_with_independent_oracles():
             assert exp['total'] == len(rows), case['name']
             if exp.get('rows') and raw.get('answer', 'rows') == 'rows':
                 assert exp['rows'] == [[b, links] for b, links in rows], case['name']
+        elif op == 'k_shortest_paths':
+            from test_k_shortest_paths import every_simple_path
+            want = every_simple_path(g['nodes'], g['edges'], set(r['sources']), set(r['targets']), r['scope'],
+                                     r.get('costs'))
+            assert exp['path_edges'] == [steps for _, steps in want][:r['k']], case['name']
+            assert exp['exhausted'] is (len(want) < r['k']), case['name']
         elif op == 'cycle_basis':
             from test_cycle_basis import least_basis_weight
             rank, least = least_basis_weight(g['nodes'], g['edges'], r['scope'], r.get('weights'))

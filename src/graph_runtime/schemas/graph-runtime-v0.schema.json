@@ -4951,6 +4951,87 @@
             }
           },
           "description": "cycle_basis: each edge in scope a link between its ends, either way; weights as costs, non-negative (null: every link 1)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract",
+            "operation",
+            "mode",
+            "projection",
+            "limits",
+            "sources",
+            "targets",
+            "scope",
+            "costs",
+            "k"
+          ],
+          "properties": {
+            "contract": {
+              "const": "graph-runtime/v0.2"
+            },
+            "operation": {
+              "const": "k_shortest_paths"
+            },
+            "mode": {
+              "const": "exact"
+            },
+            "projection": {
+              "$ref": "#/$defs/digest"
+            },
+            "limits": {
+              "$ref": "#/$defs/limits_paths"
+            },
+            "sources": {
+              "$ref": "#/$defs/ids"
+            },
+            "targets": {
+              "$ref": "#/$defs/ids"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            },
+            "costs": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "properties": {
+                    "by_relation": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/cost"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    },
+                    "by_edge": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/$defs/cost"
+                      },
+                      "propertyNames": {
+                        "$ref": "#/$defs/id"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "k": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          "description": "k_shortest_paths: simple paths from a source to a target, in the order of (cost, hops, start node and edge IDs); costs as a shortest path's (null: every hop 1)."
         }
       ]
     },
@@ -5505,7 +5586,8 @@
                   "critical_path",
                   "d_separation",
                   "spanning_forest",
-                  "cycle_basis"
+                  "cycle_basis",
+                  "k_shortest_paths"
                 ]
               }
             }
@@ -6691,6 +6773,49 @@
             "properties": {
               "operation": {
                 "const": "cycle_basis"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "answer"
+            ],
+            "properties": {
+              "operation": {
+                "const": "k_shortest_paths"
+              },
+              "answer": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer": {
+                "$ref": "#/$defs/kpaths_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "const": "k_shortest_paths"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "k_shortest_paths"
               }
             }
           }
@@ -7951,6 +8076,68 @@
         }
       },
       "description": "The cycle space's dimension (links less nodes plus pieces), the cycles (each its nodes in order around it, its edges by ID, its length and exact weight), and the total weight when complete. witnesses: de Pina's, one per cycle, as edge IDs."
+    },
+    "kpaths_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paths",
+        "count",
+        "exhausted"
+      ],
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "target",
+              "length",
+              "hops",
+              "cost"
+            ],
+            "properties": {
+              "source": {
+                "$ref": "#/$defs/id"
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              },
+              "length": {
+                "$ref": "#/$defs/count"
+              },
+              "hops": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/costed_hop"
+                }
+              },
+              "cost": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "cost_exact": {
+                "$ref": "#/$defs/exact"
+              }
+            }
+          }
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "exhausted": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "description": "The paths in order, their number, and whether fewer than k exist (null when interrupted)."
     }
   }
 }

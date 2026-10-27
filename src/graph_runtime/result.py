@@ -453,6 +453,8 @@ def _contract_problems(data: dict) -> list[str]:
         out.extend(_forest_problems(request, answer, status))
     elif op == "cycle_basis":
         out.extend(_cycle_problems(request, answer, status))
+    elif op == "k_shortest_paths":
+        out.extend(_kpaths_problems(request, answer, status))
     elif answer.get("negative_cycle") is not None:          # a shortest path made ever cheaper: three walks
         nc = answer["negative_cycle"]
         start = nc["cycle"]["source"]
@@ -1323,6 +1325,49 @@ def _bottleneck_problems(request: dict, answer: dict, status: str) -> list[str]:
     bound = answer.get("bound")
     if status == INTERRUPTED and bound is not None and value is not None and _better(request["objective"], value, bound):
         out.append("an interrupted answer's value is never better than its bound")
+    return out
+
+
+def _kpaths_problems(request: dict, answer: dict, status: str) -> list[str]:
+    """The k shortest paths' own consistency, read without the records: count their number, at most k; exhausted
+    (fewer than k exist) known exactly when complete; each path's length its hops, its hops chaining from its source
+    to its target, no node twice, its cost written as costs are (exact beside the nearest float in rational mode)."""
+    out = []
+    paths = answer["paths"]
+    if answer["count"] != len(paths) or len(paths) > request["k"]:
+        out.append("count is the number of paths, at most k")
+    if (answer["exhausted"] is None) != (status != COMPLETED) or (
+            status == COMPLETED and answer["exhausted"] is not (len(paths) < request["k"])):
+        out.append("exhausted says, exactly when complete, whether fewer than k paths exist")
+    costs = request["costs"]
+    rational = costs is not None and any(isinstance(x, float) for t in costs.values() for x in t.values())
+    for n, x in enumerate(paths):
+        at, seen = x["source"], [x["source"]]
+        for h in x["hops"]:
+            if h["from"] != at:
+                out.append(f"path {n}: its hops chain")
+            at = h["to"]
+            seen.append(at)
+        if at != x["target"] or x["length"] != len(x["hops"]) or len(set(seen)) != len(seen):
+            out.append(f"path {n}: its length is its hops, which end at its target and visit no node twice")
+        if rational != ("cost_exact" in x):
+            out.append(f"path {n}: cost_exact appears exactly in rational mode")
+        elif rational:
+            exact = Fraction(x["cost_exact"])
+            try:
+                nearest = float(exact)
+            except OverflowError:
+                nearest = None
+            if str(exact) != x["cost_exact"] or x["cost"] != nearest:
+                out.append(f"path {n}: cost is the nearest float to cost_exact (null on overflow)")
+        elif type(x["cost"]) is not int:
+            out.append(f"path {n}: an integer-cost path costs an integer")
+    if out:
+        return out
+    keys = [((Fraction(x["cost_exact"]) if rational else x["cost"]), x["length"],
+             (x["source"],) + tuple(h["edge"] for h in x["hops"])) for x in paths]
+    if any(a >= b for a, b in zip(keys, keys[1:])):
+        out.append("the paths are distinct and in the order of (cost, hops, start node and edge IDs)")
     return out
 
 

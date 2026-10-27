@@ -63,6 +63,8 @@ states consistently, and required costs only for edges actually in scope. Revisi
   edges (subgraph monomorphism: substructure search), enumerated over the semi-join-reduced candidates; every pattern
   request now states `injective`, so pattern requests made before have other `request_id`s and `result_id`s, with the
   same answers (section 4)
+- the `k_shortest_paths` operation: the first k simple paths from a source to a target in the order of (cost, hops,
+  start node and edge IDs), by Yen's algorithm, each a checked witness (section 4)
 - the `spanning_forest` operation: a minimum (or maximum) spanning forest by Kruskal's algorithm in the order of
   (weight, edge ID), unique in that order, which proves itself against the records by the cycle property (section 4)
 - the `cycle_basis` operation: a minimum cycle basis (ring perception: the smallest set of smallest rings, for every
@@ -185,6 +187,7 @@ no wildcard: a scope lists what it follows.
 | `critical_path` | `scope` (a hop from u to v: u comes first), `sources` (only what they reach; null: every node), `costs` (as for shortest paths; null: every hop takes 1), `answer` (`path`, the default: the makespan and a critical path; `schedule`: every node's times too), `certificate` (default false) | `max_expansions` |
 | `d_separation` | `x`, `y`, `given` (default none; the three disjoint), `scope` (a hop from u to v: u is a parent, a direct cause, of v), `certificate` (default false) | `max_expansions` |
 | `incidence` | `rows`, `columns` (`{"node_types", "nodes"}` each, at least one constraint, disjoint), `scope`, `coefficients` (as weights: `{"by_relation": ...}` or `{"by_edge": ...}`, any finite numbers), `kernels` (a subset of `left` and `right`; default none), `certificate` (default false) | `max_expansions` |
+| `k_shortest_paths` | `sources`, `targets`, `scope`, `costs` (as for shortest paths, non-negative; null: every hop 1), `k` (1 to 1,000,000; default 10) | `max_expansions` |
 | `cycle_basis` | `scope` (each edge in it a link between its ends, either way), `weights` (as costs: non-negative; null: every link 1), `certificate` (default false) | `max_expansions` |
 | `spanning_forest` | `scope` (each edge in it a link between its ends, either way), `weights` (as weights: any finite numbers; null: every link 1), `objective` (`min`, the default, or `max`) | `max_expansions` |
 | `derivation` | `targets`, `scope` (from a node to what it needs), `all_of` (node types that need every input; null: every node needs one), `grounds` (nodes given; null: every node with no input that needs one), `costs` (as for shortest paths when `objective` is `min_sum`, any finite numbers otherwise; null: every hop costs 1), `objective` (`min_sum`, the default, `min_max` or `max_min`), `certificate` (default false) | `max_expansions` |
@@ -811,6 +814,22 @@ whose trees join the ends of every other link in scope (so they span each piece)
 comes after every edge of the tree path between its ends in that order, are the forest Kruskal's algorithm keeps.
 A checker finds those paths' last edges by binary lifting, in O((n + m) log n).
 
+**K shortest paths.** The first k simple paths from a source to a target: alternative reaction pathways, backup routes,
+the next best derivations. A path visits no node twice; other sources and targets may lie on it, and a source that is
+a target is a path of no hops. Paths are ranked in a strict order: by cost (as for shortest paths, non-negative and
+exact; without costs every hop costs 1), then by hops, then by the start node's ID and the sequence of edge IDs, so
+parallel edges give distinct paths and ties have one order. Yen's algorithm (1971): the least path first; then, for
+each accepted path and each of its nodes (its last included), the least path that keeps the hops before that spur
+node, avoids the nodes before it, and leaves it neither by a hop nor by stopping that an accepted path with the same
+root took is a candidate, and the least candidate is the next path. A virtual start before the sources makes the
+choice of source the first step. Each least path is Dijkstra's search on the full order (extending paths to a node by
+one hop keeps their order, so a least path extends a least path); each settled state is one expansion. Answer:
+`{"paths": [{"source", "target", "length", "hops", "cost", ["cost_exact"]}], "count", "exhausted"}`, hops as a
+shortest path's; `exhausted` is true when fewer than k simple paths exist (all of them are listed), false when k are
+listed, null when interrupted. An interrupted search lists the paths accepted so far: a prefix of the order. Each path
+is a witness a checker confirms; that no simple path is missing before the last one listed is Yen's theorem, checked
+by oracle tests, not a certificate, and such answers are not revalidated (`not_certified`).
+
 **Cycle basis.** A minimum cycle basis: the rings of a molecule, the independent loops of a reaction or citation
 network. Each edge in scope is a link between its ends, read undirected; a loop is a cycle of one link and two
 parallel links a cycle of two. The cycle space, over GF(2), has dimension `rank` = links less nodes plus connected
@@ -897,6 +916,8 @@ The result contract reports how an execution ended. It carries no scientific ans
   - that shortest-path costs are the exact sum of the hop costs; with a negative cost, that a negative cycle's three
     walks chain from a source to its start, around it at the negative cost it states, and on to a target, and that
     an interrupted answer gives no lower bound
+  - for k shortest paths, each path's hops chaining in scope from a source to a target, no node twice, at the exact
+    cost of its hops; the paths distinct and in the strict order; k of them unless `exhausted`
   - for a cycle basis, each cycle a simple cycle of links in scope through the nodes it lists in order, with its exact
     weight; the cycles independent (by GF(2) elimination) and, when complete, `rank` of them, the dimension the
     records give; and with witnesses, each cycle odd against its own and every earlier cycle even against it, its
@@ -951,7 +972,7 @@ The result contract reports how an execution ended. It carries no scientific ans
 
   A typed or shortest path negative without a certificate, and a pattern's rows and total, are left to the oracle
   tests.
-- `graph_runtime.conformance.run_conformance(execute)` runs 183 language-neutral cases (`conformance/cases.json`),
+- `graph_runtime.conformance.run_conformance(execute)` runs 185 language-neutral cases (`conformance/cases.json`),
   with expectations written by hand from their graphs, against any backend's `execute`. A completed answer must
   match exactly and bind the case's projection and normalized request. Named `witness_edges` expectations check
   the canonical witness choice, including ties. An interrupted answer may list only what the full answer holds.
