@@ -294,6 +294,13 @@ def check_case(case: Mapping, data: Mapping, graph: Mapping) -> list[str]:
         elif "negative_cycle_cost" in exp and _cost(cycle["cycle"], "cost") != exp["negative_cycle_cost"]:
             problems.append(f"negative cycle cost {_cost(cycle['cycle'], 'cost')!r}, expected "
                             f"{exp['negative_cycle_cost']!r}")
+    if "forest_edges" in exp and done:                      # a spanning forest: unique in its order
+        if list(answer.get("edges") or []) != exp["forest_edges"] or answer.get("trees") != exp["trees"]:
+            problems.append(f"forest {answer.get('edges')} in {answer.get('trees')} trees, expected "
+                            f"{exp['forest_edges']} in {exp['trees']}")
+        want = exp["forest_weight"]
+        if _cost(answer, "weight") != (Fraction(want) if isinstance(want, str) else want):
+            problems.append(f"forest weight {_cost(answer, 'weight')!r}, expected {want!r}")
     if "witness_edges" in exp and done:
         got_edges = [h["edge"] for h in (answer.get("witness") or {}).get("hops") or []]
         if got_edges != exp["witness_edges"]:

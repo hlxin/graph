@@ -57,6 +57,9 @@ Operations (docs/API_CONTRACT.md):
 * ``incidence``: ``rows``, ``columns`` (``{node_types, nodes}`` each, disjoint), ``scope``, ``coefficients`` (as
   weights: any finite numbers, by relation or by edge), ``kernels`` (a subset of ``left`` and ``right``; default
   none), ``certificate``; limit ``max_expansions``.
+* ``spanning_forest``: ``scope`` (each edge in it a link between its ends, either way), ``weights`` (any finite numbers,
+  by relation or by edge; null: every link weighs 1), ``objective`` (``min``, the default, or ``max``); limit
+  ``max_expansions``.
 
 No operation takes a field named ``kind``: a request's identity digests its fields with ``kind`` naming the record
 kind (``graph_runtime.request``).
@@ -81,7 +84,9 @@ from .projection import CONTRACT, DIRECTIONS
 
 OPERATIONS = ("reachability", "typed_path", "shortest_path", "dependency_impact", "pattern", "support",
               "bottleneck_path", "regular_path", "derivation", "periodicity", "personalized_pagerank", "components",
-              "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path", "d_separation")
+              "biconnectivity", "max_flow", "matching", "dominators", "incidence", "critical_path", "d_separation",
+              "spanning_forest")
+FOREST_OBJECTIVES = ("min", "max")
 OBJECTIVES = ("max_min", "min_max")
 PATTERN_ANSWERS = ("rows", "count", "exists")
 PATH_ANSWERS = ("witness", "reached")
@@ -110,7 +115,8 @@ _LIMITS = {"reachability": ("max_expansions", "max_results"),
            "dominators": ("max_expansions",),
            "incidence": ("max_expansions",),
            "critical_path": ("max_expansions",),
-           "d_separation": ("max_expansions",)}
+           "d_separation": ("max_expansions",),
+           "spanning_forest": ("max_expansions",)}
 _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dependency_impact": (("changed", "scope"), ("max_depth",)),
            "typed_path": (("sources", "pattern"), ("targets", "certificate")),
@@ -129,7 +135,8 @@ _PARAMS = {"reachability": (("sources", "scope"), ("max_depth",)),
            "dominators": (("sources", "scope"), ("targets", "certificate")),
            "incidence": (("rows", "columns", "scope", "coefficients"), ("kernels", "certificate")),
            "critical_path": (("scope",), ("sources", "costs", "answer", "certificate")),
-           "d_separation": (("x", "y", "scope"), ("given", "certificate"))}
+           "d_separation": (("x", "y", "scope"), ("given", "certificate")),
+           "spanning_forest": (("scope",), ("weights", "objective"))}
 _COMMON = ("contract", "operation", "mode", "projection", "limits")
 
 
@@ -355,6 +362,12 @@ def _normalize_request(raw: Mapping | Request) -> Request:
             raise _fail("invalid_request", f"x, y and given are disjoint; {sorted(overlap)[:10]} is in two of them")
         data["scope"] = _scope(raw["scope"], "scope")
         data["certificate"] = _flag(raw.get("certificate", False), "certificate")
+    elif op == "spanning_forest":
+        data["scope"] = _scope(raw["scope"], "scope")
+        data["weights"] = None if raw.get("weights") is None else _weights(raw["weights"])
+        data["objective"] = raw.get("objective", "min")
+        if data["objective"] not in FOREST_OBJECTIVES:
+            raise _fail("invalid_request", f"objective is one of {list(FOREST_OBJECTIVES)}, not {data['objective']!r}")
     elif op == "critical_path":
         data["scope"] = _scope(raw["scope"], "scope")
         data["sources"] = None if raw.get("sources") is None else _ids(raw["sources"], "sources")

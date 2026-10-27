@@ -9984,6 +9984,156 @@
     "status": "failed",
     "error_code": "invalid_request"
    }
+  },
+  {
+   "name": "forest-unweighted",
+   "covers": [
+    "spanning forest",
+    "parallel edges",
+    "an isolated node"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "spanning_forest",
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ]
+   },
+   "expect": {
+    "status": "completed",
+    "forest_edges": [
+     "e1",
+     "e2",
+     "e4"
+    ],
+    "trees": 2,
+    "forest_weight": 3
+   }
+  },
+  {
+   "name": "forest-minimum",
+   "covers": [
+    "spanning forest",
+    "weights"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "spanning_forest",
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "weights": {
+     "by_edge": {
+      "e1": 5,
+      "e2": 4,
+      "e3": 1,
+      "e4": 3,
+      "e5": 2,
+      "e6": 6
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "forest_edges": [
+     "e2",
+     "e3",
+     "e5"
+    ],
+    "trees": 2,
+    "forest_weight": 7
+   }
+  },
+  {
+   "name": "forest-maximum",
+   "covers": [
+    "spanning forest",
+    "maximum"
+   ],
+   "graph": "G1",
+   "request": {
+    "operation": "spanning_forest",
+    "scope": [
+     {
+      "relation": "USES",
+      "direction": "forward"
+     },
+     {
+      "relation": "CITES",
+      "direction": "forward"
+     }
+    ],
+    "weights": {
+     "by_edge": {
+      "e1": 5,
+      "e2": 4,
+      "e3": 1,
+      "e4": 3,
+      "e5": 2,
+      "e6": 6
+     }
+    },
+    "objective": "max"
+   },
+   "expect": {
+    "status": "completed",
+    "forest_edges": [
+     "e1",
+     "e2",
+     "e6"
+    ],
+    "trees": 2,
+    "forest_weight": 15
+   }
+  },
+  {
+   "name": "forest-rational-ties",
+   "covers": [
+    "spanning forest",
+    "rational mode",
+    "reverse traversal"
+   ],
+   "graph": "G21",
+   "request": {
+    "operation": "spanning_forest",
+    "scope": [
+     {
+      "relation": "STEP",
+      "direction": "reverse"
+     }
+    ],
+    "weights": {
+     "by_relation": {
+      "STEP": 0.5
+     }
+    }
+   },
+   "expect": {
+    "status": "completed",
+    "forest_edges": [
+     "n1",
+     "n2",
+     "n3",
+     "n4",
+     "n6"
+    ],
+    "trees": 1,
+    "forest_weight": "5/2"
+   }
   }
  ]
 }

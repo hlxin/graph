@@ -28,7 +28,7 @@ from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
-from . import algebra, causal, dominators, flows, paths, ranking, schedule, structure
+from . import algebra, causal, dominators, flows, forest, paths, ranking, schedule, structure
 from ._canonical import json_safe
 from .errors import RequestError
 from .projection import FORWARD, REVERSE, Projection
@@ -318,6 +318,16 @@ def _bind(p: Projection, req: Request) -> SimpleNamespace:
         plan.certificate = req["certificate"]
         plan.x, plan.y, plan.given = _nodes(p, req["x"], "x"), _nodes(p, req["y"], "y"), _nodes(p, req["given"], "given")
         plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+    elif op == "spanning_forest":
+        plan.fwd, plan.rev = _scope(p, req["scope"], "scope")
+        plan.maximum = req["objective"] == "max"
+        if req["weights"] is None:
+            plan.rational, plan.weight, plan.exact = False, (lambda ei: 1), (lambda x: x)
+        else:                                  # exact: integers, or rationals held as counts of 1/scale
+            table = _costs(p, req["weights"], plan.fwd, plan.rev, "weights")
+            edge, rel_w, edge_rel = table.edge, table.rel, p._edge_rel
+            plan.rational, plan.exact = table.rational, table.exact
+            plan.weight = (lambda ei: edge[ei]) if edge is not None else (lambda ei: rel_w[edge_rel[ei]])
     elif op == "critical_path":
         plan.certificate, plan.schedule, plan.costs = req["certificate"], req["answer"] == "schedule", req["costs"]
         plan.sources = None if req["sources"] is None else _nodes(p, req["sources"], "sources")
@@ -2210,4 +2220,6 @@ _OPERATIONS = {"reachability": (_search_reachability, _answer_reachability),
                "critical_path": (lambda p, plan, ctl: schedule.search(p, plan, ctl),
                                  lambda p, plan, st: schedule.answer(p, plan, st)),
                "d_separation": (lambda p, plan, ctl: causal.search(p, plan, ctl),
-                                lambda p, plan, st: causal.answer(p, plan, st))}
+                                lambda p, plan, st: causal.answer(p, plan, st)),
+               "spanning_forest": (lambda p, plan, ctl: forest.search(p, plan, ctl),
+                                   lambda p, plan, st: forest.answer(p, plan, st))}
