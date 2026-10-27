@@ -53,7 +53,8 @@ let pres;
 const warnings = [];
 const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
   "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
-const word = (n) => NUMBER_WORDS[n] || String(n);
+const TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+const word = (n) => NUMBER_WORDS[n] || (n < 100 ? TENS[Math.floor(n / 10)] + (n % 10 ? `-${NUMBER_WORDS[n % 10]}` : "") : String(n));
 const Word = (n) => word(n).charAt(0).toUpperCase() + word(n).slice(1);
 
 // ------------------------------------------------------------------------------------------------- helpers
@@ -870,7 +871,7 @@ async function scaleSlide() {
 async function timelineSlide() {
   pres.addSection({ title: "Development" });
   const s = contentSlide("Development", "Development timeline", K.timelineLede);
-  const lx = MX + 1.05, x0 = MX, tw = 6.6;
+  const lx = MX + 1.05, x0 = MX, tw = 6.2; // the rows' text column; the chart takes the rest
   const rows = K.timeline;
   const pitch = (BOTTOM - TOP) / rows.length;
   line(s, lx, TOP + pitch / 2, lx, TOP + (rows.length - 0.5) * pitch, { color: C.accent5, width: 2 });
@@ -900,7 +901,8 @@ async function timelineSlide() {
     x: x2, y: TOP + 1.35, w: w2, h: BOTTOM - TOP - 1.35, chartColors: [HEX.accent1], lineSize: 2.5,
     lineDataSymbol: "circle", lineDataSymbolSize: 7, showValue: true, dataLabelPosition: "t",
     valAxisHidden: true, catAxisLabelRotate: 315,
-    ...chartStyle({ title: "Hand-worked conformance cases", catAxisLabelFontSize: 11, dataLabelFontSize: 10 }), // 10 pt keeps 22 points' labels apart
+    // Small labels, every category shown: 25 points stay legible without overlapping.
+    ...chartStyle({ title: "Hand-worked conformance cases", catAxisLabelFontSize: 10, catAxisLabelFrequency: 1, dataLabelFontSize: 9 }),
     objectName: "conformance growth chart",
   });
   const cases = K.growth.cases;

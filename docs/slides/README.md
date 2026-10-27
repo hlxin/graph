@@ -52,6 +52,6 @@ rather than shrink it.
 - **A new increment in the history.** Add a row to `timeline` (15 rows fill the column; merge older rows to make
   room) and move `latest: true` to it; add its conformance count to `growth`, and update `growth.tests`,
   `growth.operations`, `timelineLede` and `timelineSource`.
-- **The roadmap.** `roadmapLede`, `roadmap` (up to six rows), `roadmapLater` (one line for the increments after them),
+- **The roadmap.** `roadmapLede`, `roadmap` (up to six rows), `roadmapLater` (one line below the table: the increments after them, or those done),
   `roadmapSource` and `boundaries`, from the latest plan or survey.
 - **Version, date and contract.** `meta`.
