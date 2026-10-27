@@ -38,8 +38,10 @@ rather than shrink it.
   it: set `aside` to a function in `ASIDES` in `build_deck.js` (`rankingSchematic`, `dominatorSchematic`,
   `incidenceExample`). Then:
   - raise `meta.operations` (the overview title, the architecture slide and the closing slide use it)
-  - add the name to its card in `overview` (six cards fill the 3 × 2 grid: join a related family, as max_flow and
-    matching and dominators joined "Structure and flows", rather than add a seventh)
+  - add the name to its card in `overview` (six cards fill the 3 × 2 grid: join a related family, as max_flow,
+    min_cost_flow and matching joined "Structure and flows", rather than add a seventh; when a card's names pass
+    three lines, move one to a related card, as dominators went to "Reasoning and order" and cycle_basis to "Rings
+    and crystals")
   - set `isNew: true` while it is implemented but not committed, and remove it once it is
   - move it out of `roadmap` if it was listed there
 - **A new measured result.** A comparison with networkx goes into `networkxChart` (one category per operation, GRAPH

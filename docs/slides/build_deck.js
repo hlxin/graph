@@ -815,9 +815,9 @@ async function headToHeadSlide() {
     { name: "networkx", labels: N.labels, values: N.networkx },
   ], {
     x: x2, y: TOP, w, h: ch, barDir: "bar", barGrouping: "clustered", catAxisOrientation: "maxMin", valAxisHidden: true,
-    chartColors: [HEX.accent1, HEX.accent6], barGapWidthPct: 40,
+    chartColors: [HEX.accent1, HEX.accent6], barGapWidthPct: 20, // thick bars: twelve pairs, each label beside its bar
     showValue: true, dataLabelPosition: "outEnd", dataLabelFormatCode: "0.0#",
-    ...chartStyle({ title: "Seconds, against networkx (pure Python too)", showLegend: true, legendPos: "b", legendFontFace: CHART_FONT, legendFontSize: 12, legendColor: HEX.dk1 }),
+    ...chartStyle({ title: "Seconds, against networkx (pure Python too)", dataLabelFontSize: 10, showLegend: true, legendPos: "b", legendFontFace: CHART_FONT, legendFontSize: 12, legendColor: HEX.dk1 }),
     objectName: "networkx chart",
   });
   text(s, N.caption, { x: x2, y: TOP + ch + 0.1, w, h: capH, fontSize: 13, color: C.text1 });
