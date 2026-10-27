@@ -280,9 +280,10 @@ class Projection:
         type_index = {t: i for i, t in enumerate(declared_types)}
         rel_index = {r: i for i, r in enumerate(declared_rel)}
         edge_ids = tuple(sorted(edge_recs))
-        edge_src = tuple(node_index[edge_recs[e][0]] for e in edge_ids)
-        edge_dst = tuple(node_index[edge_recs[e][1]] for e in edge_ids)
-        edge_rel = tuple(rel_index[edge_recs[e][2]] for e in edge_ids)
+        srcs, dsts, rels = zip(*map(edge_recs.__getitem__, edge_ids)) if edge_ids else ((), (), ())
+        edge_src = tuple(map(node_index.__getitem__, srcs))
+        edge_dst = tuple(map(node_index.__getitem__, dsts))
+        edge_rel = tuple(map(rel_index.__getitem__, rels))
         out: list[list[int]] = [[] for _ in node_ids]
         inc: list[list[int]] = [[] for _ in node_ids]
         for ei in range(len(edge_ids)):              # ascending edge ID: every adjacency list is in canonical order
@@ -317,8 +318,8 @@ class Projection:
         put(p, "_edge_src", edge_src)
         put(p, "_edge_dst", edge_dst)
         put(p, "_edge_rel", edge_rel)
-        put(p, "_out", tuple(tuple(x) for x in out))
-        put(p, "_in", tuple(tuple(x) for x in inc))
+        put(p, "_out", tuple(map(tuple, out)))
+        put(p, "_in", tuple(map(tuple, inc)))
         put(p, "_type_parents", MappingProxyType(tparents))
         put(p, "_relation_parents", MappingProxyType(rparents))
         put(p, "_rel_cover", cover)
@@ -459,22 +460,20 @@ def _identity(p: Projection, node_types_of: Mapping[str, tuple[str, ...]]) -> st
               "relation_parents": {k: list(v) for k, v in p._relation_parents.items()},
               "node_count": len(p._node_ids), "edge_count": len(p._edge_ids)}
     h.update(canonical_json(header).encode("utf-8") + b"\n")
-    # each line as canonical_json writes it (the same string encoder), hashed a chunk of lines at a time
-    enc, ids, rels, lines = encode_text, p._node_ids, p._relations, []
-
-    def flush() -> None:
-        if lines:
-            h.update(("\n".join(lines) + "\n").encode("utf-8"))
-            lines.clear()
-    for nid in ids:
-        lines.append(f"[{enc(nid)},[{','.join(map(enc, node_types_of[nid]))}]]")
-        if len(lines) == 8192:
-            flush()
-    for eid, s, t, r in zip(p._edge_ids, p._edge_src, p._edge_dst, p._edge_rel):
-        lines.append(f"[{enc(eid)},{enc(ids[s])},{enc(ids[t])},{enc(rels[r])}]")
-        if len(lines) == 8192:
-            flush()
-    flush()
+    # each line as canonical_json writes it (the same string encoder), hashed a chunk of lines at a time; a node ID,
+    # relation or type is encoded once, however many lines name it
+    enc, ids, chunk = encode_text, p._node_ids, 8192
+    node_text = list(map(enc, ids))
+    rel_text = list(map(enc, p._relations))
+    type_text = {t: enc(t) for t in p._node_types}
+    for at in range(0, len(ids), chunk):
+        h.update("".join([f"[{node_text[i]},[{','.join([type_text[t] for t in node_types_of[ids[i]]])}]]\n"
+                          for i in range(at, min(at + chunk, len(ids)))]).encode("utf-8"))
+    for at in range(0, len(p._edge_ids), chunk):
+        part = slice(at, at + chunk)
+        h.update("".join([f"[{enc(e)},{node_text[s]},{node_text[t]},{rel_text[r]}]\n" for e, s, t, r in
+                          zip(p._edge_ids[part], p._edge_src[part], p._edge_dst[part], p._edge_rel[part])])
+                 .encode("utf-8"))
     out = "sha256:" + h.hexdigest()
     assert is_digest(out)
     return out
