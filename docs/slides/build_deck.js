@@ -505,7 +505,7 @@ async function overviewSlide() {
     await iconCircle(s, f.icon, x + 0.22, y + 0.22, 0.55, { label: f.family });
     text(s, f.family, { x: x + 0.92, y: y + 0.22, w: w - 1.1, h: 0.55, fontSize: 20, bold: true, color: C.text1, valign: "middle" });
     if (f.isNew) pill(s, "new", x + w - 0.22 - 0.6, y + 0.36, { w: 0.6 });
-    const ops = f.ops.join(" · ");
+    const ops = f.ops.join("\u00A0· "); // the dot stays with the name before it, so no line starts with one
     const opsH = height(ops, w - 0.44, 12, 1.15, { mono: true });
     text(s, [{ text: ops, options: { fontFace: MONO, fontSize: 12, color: C.accent1, bold: true } }], { x: x + 0.22, y: y + 0.92, w: w - 0.44, h: opsH + 0.05 });
     const ansY = y + 0.92 + opsH + 0.15;
@@ -818,6 +818,76 @@ const ASIDES = {
     check("incidence example results", ry - y + need, h - 0.1);
     text(s, runs, { x: x + 0.3, y: ry, w: w - 0.6, h: y + h - ry - 0.15 });
   },
+  // A worked example: the conformance network G26 (r0 takes up A; r1: A → B; r2: B → C; r3: A → C; r4 exports C),
+  // its two elementary modes in amber, each with the minor that proves it (run on the runtime at 60d5cc6). Below, the
+  // benchmark's times (git log 60d5cc6).
+  fluxModesExample(s, x, y, w, h) {
+    card(s, x, y, w, h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: "flux modes example" });
+    text(s, [
+      { text: "WORKED EXAMPLE", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1, breakLine: true } },
+      { text: "Two routes from uptake to export", options: { fontSize: 16, bold: true, color: C.text1 } },
+    ], { x: x + 0.3, y: y + 0.25, w: w - 0.6, h: 0.65 });
+    const r = 0.16, iw = w - 0.6, cg = 0.3, cw = (iw - cg) / 2, gy = y + 1.05;
+    const modes = [
+      { on: ["r0", "r3", "r4"], vector: "r0 + r3 + r4", minor: "minor A, C × r0, r3" },
+      { on: ["r0", "r1", "r2", "r4"], vector: "r0 + r1 + r2 + r4", minor: "minor A, B, C × r0, r1, r2" },
+    ];
+    modes.forEach((m, k) => {
+      const gx = x + 0.3 + k * (cw + cg);
+      const N = { A: [gx + 0.5, gy + 0.75], B: [gx + cw / 2, gy + 0.12], C: [gx + cw - 0.5, gy + 0.75] };
+      const lit = (rx) => m.on.includes(rx);
+      const arrow = ([x1, y1], [x2, y2], rx, trim1, trim2) => {
+        const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+        line(s, x1 + ux * trim1, y1 + uy * trim1, x2 - ux * trim2, y2 - uy * trim2,
+          { color: lit(rx) ? C.accent2 : C.accent5, width: lit(rx) ? 2.5 : 1.25, endArrowType: "triangle" });
+      };
+      // Uptake from outside, the three internal reactions, export to outside.
+      arrow([gx, N.A[1]], N.A, "r0", 0, r + 0.02);
+      arrow(N.A, N.B, "r1", r, r + 0.02);
+      arrow(N.B, N.C, "r2", r, r + 0.02);
+      arrow(N.A, N.C, "r3", r, r + 0.02);
+      arrow(N.C, [gx + cw, N.C[1]], "r4", r, 0);
+      const labels = { r0: [gx + 0.17, N.A[1] - 0.2], r1: [gx + 0.56, gy + 0.33], r2: [N.C[0] - 0.06, gy + 0.33], r3: [N.B[0], N.A[1] + 0.19], r4: [gx + cw - 0.17, N.C[1] - 0.2] };
+      for (const [rx, [lx, ly]] of Object.entries(labels)) {
+        text(s, [{ text: rx, options: { fontFace: MONO, fontSize: 12, bold: lit(rx), color: lit(rx) ? C.accent2 : C.accent6 } }],
+          { x: lx - 0.16, y: ly - 0.11, w: 0.32, h: 0.22, align: "center", valign: "middle" });
+      }
+      for (const [sp, [cx, cy]] of Object.entries(N)) {
+        const used = sp !== "B" || m.on.includes("r1");
+        s.addText(sp, {
+          shape: pres.shapes.OVAL, x: cx - r, y: cy - r, w: 2 * r, h: 2 * r, fill: { color: used ? C.accent1 : C.accent5 },
+          line: { type: "none" }, color: C.background1, fontFace: MONO, fontSize: 13, bold: true, align: "center", valign: "middle",
+          margin: 0, objectName: `mode ${k + 1} species ${sp}`,
+        });
+      }
+      // The mode and the minor that proves it.
+      const vy = gy + 1.12;
+      text(s, [
+        { text: m.vector, options: { fontFace: MONO, fontSize: 13, bold: true, color: C.accent2, breakLine: true } },
+        { text: m.minor, options: { fontSize: 12, color: C.accent6 } },
+      ], { x: gx, y: vy, w: cw, h: 0.5, align: "center" });
+      check(`flux mode ${k + 1} vector width`, m.vector.length * 13 * 0.6 / 72, cw);
+      check(`flux mode ${k + 1} minor width`, height(m.minor, cw, 12) , 0.22);
+    });
+    const ny = gy + 1.75;
+    const note = "Each minor is nonsingular: with S\u00A0v\u00A0=\u00A00, that proves the mode elementary. With r1–r3 reversible, the cycle r1\u00A0+\u00A0r2\u00A0−\u00A0r3 adds two modes, one each way.";
+    const noteH = height(note, iw, 14);
+    text(s, note, { x: x + 0.3, y: ny, w: iw, h: noteH + 0.05, fontSize: 14, color: C.text1 });
+    // The benchmark: a network whose modes double with every layer.
+    const cy = ny + noteH + 0.15, tw2 = (iw - 0.2) / 2, ch = 0.58;
+    [["0.6 s", "4,096 modes"], ["0.85 s", "all proven"]].forEach(([big, what], i) => {
+      const cx = x + 0.3 + i * (tw2 + 0.2);
+      card(s, cx, cy, tw2, ch, { name: `time ${what}` });
+      text(s, [
+        { text: `${big}  `, options: { fontSize: 22, bold: true, color: C.accent1, fontFace: "Cambria" } },
+        { text: what, options: { fontSize: 14, color: C.text1 } },
+      ], { x: cx + 0.15, y: cy, w: tw2 - 0.25, h: ch, valign: "middle" });
+    });
+    const by = cy + ch + 0.1;
+    const bench = "26 reactions whose modes double with every layer.";
+    check("flux modes example", by - y + height(bench, iw, 14), h - 0.1);
+    text(s, bench, { x: x + 0.3, y: by, w: iw, h: y + h - by - 0.1, fontSize: 14, color: C.text1 });
+  },
 };
 
 const FOOTERS = {
@@ -914,7 +984,7 @@ async function verificationSlide() {
   }
   text(s, K.reviews.map((t, i) => ({ text: t, options: { fontSize: 12, color: C.accent6, italic: true, paraSpaceAfter: 3, breakLine: i < K.reviews.length - 1 } })), { x: MX, y: BOTTOM - reviewH, w: reviewW, h: reviewH, valign: "bottom" });
   const count = (label) => (K.verification.find((v) => v.label.includes(label)) || {}).big;
-  s.addNotes(`Counts as of this build: python3 -m pytest (${count("runtime")} pass), src/graph_runtime/conformance/cases.json (${count("conformance")} cases), SCALE parity (${count("SCALE")} tests) and STATES parity (${count("STATES")} tests) in their environments; ${count("real requests")} real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3); negative costs against an independent fixpoint on 1,500 random graphs (tests/test_negative_costs.py); Datalog against an independent naive fixpoint on 400 random programs (tests/test_datalog.py); isomorphism against networkx's VF2 on 500 random cases, and the canonical identities of 300 relabeled or perturbed copies (tests/test_canonical.py). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: ${K.reviewsSource}.`);
+  s.addNotes(`Counts as of this build: python3 -m pytest (${count("runtime")} pass), src/graph_runtime/conformance/cases.json (${count("conformance")} cases), SCALE parity (${count("SCALE")} tests) and STATES parity (${count("STATES")} tests) in their environments; ${count("real requests")} real consumer requests answer the same with both engines (git log f144c48). Oracles: tests/oracle.py; regular paths against Brzozowski derivatives on 1,500 random graphs (git log f65497b); PageRank against the exact linear system over fractions on 500 graphs (git log 0d4d2b3); negative costs against an independent fixpoint on 1,500 random graphs (tests/test_negative_costs.py); Datalog against an independent naive fixpoint on 400 random programs (tests/test_datalog.py); isomorphism against networkx's VF2 on 500 random cases, and the canonical identities of 300 relabeled or perturbed copies (tests/test_canonical.py); elementary flux modes against an independent support enumeration on 250 random networks with reversible reactions (tests/test_flux_modes.py). Parity: docs/SCALE_INTEGRATION.md, docs/STATES_INTEGRATION.md. Reviews: ${K.reviewsSource}.`);
 }
 
 async function speedSlide() {
@@ -1055,52 +1125,74 @@ async function timelineSlide() {
 async function roadmapSlide() {
   pres.addSection({ title: "Roadmap" });
   const s = contentSlide("Roadmap", K.roadmapTitle || "Roadmap: the next increments", K.roadmapLede);
-  const cols = [
-    { key: "name", label: "INCREMENT", w: 2.95 },
-    { key: "answers", label: "WHAT IT ANSWERS", w: 3.55 },
-    { key: "cert", label: "CERTIFICATE", w: 3.55 },
-    { key: "ref", label: "REFERENCES", w: CW - 2.95 - 3.55 - 3.55 },
-  ];
-  const hy = TOP - 0.08;
-  let cx = MX;
-  for (const c of cols) {
-    text(s, [{ text: c.label, options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: cx + (c.key === "name" ? 0.85 : 0.15), y: hy, w: c.w - 0.2, h: 0.25 });
-    cx += c.w;
-  }
-  // Below the table: the increments done as a grid (roadmapDone), or the increments after them in one line
+  const n = K.roadmap.length, hy = TOP - 0.08, gap = 0.1;
+  // Below the table, or in its place once no row is left: the increments done as a grid (roadmapDone), and what
+  // comes next in a card at the bottom (roadmapNext); without the grid, the increments after the table in one line
   // (roadmapLater).
   const done = K.roadmapDone || [];
-  const DG = { cols: 3, gap: 0.2, rowGap: 0.1, h: 0.62, label: 0.33, above: 0.3 };
+  const DG = n ? { cols: 3, gap: 0.2, rowGap: 0.1, h: 0.62, label: 0.33, above: 0.3 }
+    : { cols: 3, gap: 0.2, rowGap: 0.14, h: 0.68, label: 0.42, above: 0 };
   const doneRows = Math.ceil(done.length / DG.cols);
   const doneH = done.length ? DG.above + DG.label + doneRows * DG.h + (doneRows - 1) * DG.rowGap : 0;
   const laterH = !done.length && K.roadmapLater ? height(K.roadmapLater, CW, 14) + 0.12 : 0;
-  const ry = hy + 0.32, n = K.roadmap.length, gap = 0.1;
-  const rh = Math.min(1.9, (BOTTOM - laterH - doneH - ry - gap * (n - 1)) / n);
-  for (let i = 0; i < n; i++) {
-    const r = K.roadmap[i];
-    const y = ry + i * (rh + gap);
-    card(s, MX, y, CW, rh, { name: `roadmap ${r.name}` });
-    await iconCircle(s, r.icon, MX + 0.18, y + (rh - 0.48) / 2, 0.48, { label: r.name });
-    let x = MX;
+  const NX = { pad: 0.2, d: 0.5, label: 0.3, gap: 0.3 };
+  const nextTW = CW - 2 * NX.pad - NX.d - 0.25;
+  const nextH = K.roadmapNext ? 2 * NX.pad + NX.label + height(K.roadmapNext, nextTW, 14) : 0;
+  let y = hy;
+  if (n) {
+    const cols = [
+      { key: "name", label: "INCREMENT", w: 2.95 },
+      { key: "answers", label: "WHAT IT ANSWERS", w: 3.55 },
+      { key: "cert", label: "CERTIFICATE", w: 3.55 },
+      { key: "ref", label: "REFERENCES", w: CW - 2.95 - 3.55 - 3.55 },
+    ];
+    let cx = MX;
     for (const c of cols) {
-      const isName = c.key === "name";
-      const tx = x + (isName ? 0.85 : 0.15), tw = c.w - (isName ? 0.95 : 0.25);
-      const size = c.key === "ref" ? 12 : isName ? 15 : 14;
-      check(`roadmap ${r.name} ${c.key}`, height(r[c.key], tw, size), rh - 0.08);
-      text(s, [{ text: r[c.key], options: { fontSize: size, bold: isName, color: c.key === "ref" ? C.accent6 : C.text1, italic: c.key === "ref" } }], { x: tx, y, w: tw, h: rh, valign: "middle" });
-      x += c.w;
+      text(s, [{ text: c.label, options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: cx + (c.key === "name" ? 0.85 : 0.15), y: hy, w: c.w - 0.2, h: 0.25 });
+      cx += c.w;
     }
+    const ry = hy + 0.32;
+    const rh = Math.min(1.9, (BOTTOM - laterH - doneH - (nextH ? nextH + NX.gap : 0) - ry - gap * (n - 1)) / n);
+    for (let i = 0; i < n; i++) {
+      const r = K.roadmap[i];
+      const ty = ry + i * (rh + gap);
+      card(s, MX, ty, CW, rh, { name: `roadmap ${r.name}` });
+      await iconCircle(s, r.icon, MX + 0.18, ty + (rh - 0.48) / 2, 0.48, { label: r.name });
+      let x = MX;
+      for (const c of cols) {
+        const isName = c.key === "name";
+        const tx = x + (isName ? 0.85 : 0.15), tw = c.w - (isName ? 0.95 : 0.25);
+        const size = c.key === "ref" ? 12 : isName ? 15 : 14;
+        check(`roadmap ${r.name} ${c.key}`, height(r[c.key], tw, size), rh - 0.08);
+        text(s, [{ text: r[c.key], options: { fontSize: size, bold: isName, color: c.key === "ref" ? C.accent6 : C.text1, italic: c.key === "ref" } }], { x: tx, y: ty, w: tw, h: rh, valign: "middle" });
+        x += c.w;
+      }
+    }
+    y = ry + n * rh + (n - 1) * gap;
   }
   if (laterH) text(s, rich(K.roadmapLater, { fontSize: 14, color: C.text1 }), { x: MX + 0.15, y: BOTTOM - laterH + 0.12, w: CW - 0.3, h: laterH - 0.12, valign: "middle", objectName: "roadmap later" });
   if (done.length) {
-    const dy = ry + n * rh + (n - 1) * gap + DG.above;
-    text(s, [{ text: `DONE FROM THE SURVEY (${done.length})`, options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: MX + 0.18, y: dy, w: CW - 0.36, h: 0.25 });
+    const dy = y + DG.above;
+    const all = !n ? ` (${done.length} OF ${done.length})` : ` (${done.length})`;
+    text(s, [{ text: `DONE FROM THE SURVEY${all}`, options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: MX + 0.18, y: dy, w: 5.5, h: 0.25, valign: "middle" });
+    // A legend when some are marked: green, every answer can be proven; amber, a part tested but not certified.
+    if (done.some((d) => d.uncertified)) {
+      const items = [[C.accent1, "every answer can be proven"], [C.accent2, "a part tested, not certified"]];
+      const lw = [2.45, 2.5], ld = 0.24;
+      let lx = MX + CW - lw.reduce((a, b) => a + b, 0);
+      for (let i = 0; i < items.length; i++) {
+        const [fill, label] = items[i];
+        await iconCircle(s, "LuCheck", lx, dy, ld, { fill, label: `legend ${label}` });
+        text(s, [{ text: label, options: { fontSize: 12, color: C.accent6, italic: true } }], { x: lx + ld + 0.1, y: dy - 0.02, w: lw[i] - ld - 0.15, h: ld + 0.04, valign: "middle" });
+        lx += lw[i];
+      }
+    }
     const cw = (CW - DG.gap * (DG.cols - 1)) / DG.cols, d = 0.36;
     for (let i = 0; i < done.length; i++) {
-      const { name, note } = done[i];
+      const { name, note, uncertified } = done[i];
       const cx = MX + (i % DG.cols) * (cw + DG.gap), cy = dy + DG.label + Math.floor(i / DG.cols) * (DG.h + DG.rowGap);
       card(s, cx, cy, cw, DG.h, { fill: C.background1, line: { color: C.background2, width: 1.5 }, name: `done ${name}` });
-      await iconCircle(s, "LuCheck", cx + 0.18, cy + (DG.h - d) / 2, d, { label: `done ${name}` });
+      await iconCircle(s, "LuCheck", cx + 0.18, cy + (DG.h - d) / 2, d, { fill: uncertified ? C.accent2 : C.accent1, label: `done ${name}` });
       const tx = cx + 0.18 + d + 0.18, tw = cx + cw - 0.15 - tx;
       check(`roadmap done ${name}`, height(name, tw, 14, 1.22, { bold: true }) + height(note, tw, 12), DG.h - 0.1);
       text(s, [
@@ -1108,7 +1200,16 @@ async function roadmapSlide() {
         { text: note, options: { fontSize: 12, color: C.accent6, italic: true } },
       ], { x: tx, y: cy, w: tw, h: DG.h, valign: "middle" });
     }
-    check("roadmap done grid", dy + DG.label + doneRows * DG.h + (doneRows - 1) * DG.rowGap, BOTTOM);
+    y = dy + DG.label + doneRows * DG.h + (doneRows - 1) * DG.rowGap;
+  }
+  if (nextH) {
+    const ny = BOTTOM - nextH;
+    check("roadmap next", y + NX.gap - hy, ny - hy);
+    card(s, MX, ny, CW, nextH, { name: "roadmap next" });
+    await iconCircle(s, "LuCompass", MX + NX.pad, ny + (nextH - NX.d) / 2, NX.d, { label: "next" });
+    const tx = MX + NX.pad + NX.d + 0.25;
+    text(s, [{ text: "WHAT REMAINS OPEN", options: { fontSize: 11, bold: true, color: C.accent6, charSpacing: 1 } }], { x: tx, y: ny + NX.pad, w: nextTW, h: 0.25, valign: "middle" });
+    text(s, rich(K.roadmapNext, { fontSize: 14, color: C.text1 }), { x: tx, y: ny + NX.pad + NX.label, w: nextTW, h: nextH - 2 * NX.pad - NX.label + 0.05, objectName: "roadmap next text" });
   }
   s.addNotes(`Sources: ${K.roadmapSource}`);
 }

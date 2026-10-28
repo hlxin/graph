@@ -36,7 +36,7 @@ rather than shrink it.
   reference, `proofLabel` and `proof`). A family slide holds two or three operations; for more, add another family
   entry (it becomes a new slide, in the order of `families`). A family of one operation can carry a picture beside
   it: set `aside` to a function in `ASIDES` in `build_deck.js` (`rankingSchematic`, `dominatorSchematic`,
-  `incidenceExample`, `twoHopSchematic`, `datalogExample`, `canonicalExample`). Beside two operations, narrow it
+  `incidenceExample`, `fluxModesExample`, `twoHopSchematic`, `datalogExample`, `canonicalExample`). Beside two operations, narrow it
   with `asideW` (inches; 5.0 by default), as the isomorphism slide does with 4.0, so the cards keep a three-column
   width and its text budget. Then:
   - raise `meta.operations` (the overview title, the architecture slide and the closing slide use it)
@@ -56,11 +56,15 @@ rather than shrink it.
   include). Say when the machine was loaded; give ratios where absolute times are unreliable.
 - **New verification counts** (tests, conformance cases, parity tests): `verification`; review notes: `reviews`, with
   their sources in `reviewsSource`.
-- **A new increment in the history.** Add a row to `timeline` (18 rows, day headings included, fill the column;
+- **A new increment in the history.** Add a row to `timeline` (19 rows, day headings included, fill the column;
   merge older rows to make room) and move `latest: true` to it; add its conformance count to `growth`, and update `growth.tests`,
-  `growth.operations`, `timelineLede` and `timelineSource`.
+  `growth.operations`, `timelineLede` and `timelineSource`. The conformance chart holds 30 points, the most whose
+  labels stay legible: merge neighbouring points (as `cyc.+pairs` follows the merged timeline row) rather than add one,
+  and say so in `timelineSource`.
 - **The roadmap.** `roadmapTitle`, `roadmapLede`, `roadmap` (the rows to go), `roadmapDone` (the increments done,
-  `{name, note}`, a three-column grid below the table; with eleven items it leaves room for one row; without it,
-  `roadmapLater` gives one line below the table instead), `roadmapSource` and `boundaries`, from the latest plan or
-  survey.
+  `{name, note, uncertified}`, a three-column grid below the table; `uncertified: true` marks in amber an increment with
+  a part tested but not certified, and adds a legend; with eleven items it leaves room for one row; without it,
+  `roadmapLater` gives one line below the table instead), `roadmapNext` (what remains open, a card at the bottom),
+  `roadmapSource` and `boundaries`, from the latest plan or survey. With `roadmap` empty, as now that the survey's
+  twelve are done, the table and its headings go and the grid takes their place.
 - **Version, date and contract.** `meta`.
