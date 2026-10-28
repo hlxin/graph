@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "graph-runtime"
+version = "0.1.0.dev0"
+description = "GRAPH (Graph Runtime for Analysis, Provenance, Hypotheses): reusable graph algorithms for scientific software."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Hongliang Xin" }]
+keywords = ["graph", "graph algorithms", "provenance", "knowledge graph", "certificates", "scientific software"]
+dependencies = []                    # the runtime is the standard library only (retrieval: an extra)
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[project.urls]
+Repository = "https://github.com/hlxin/graph"
+
+[project.scripts]
+graph-runtime = "graph_runtime.cli:main"
+
+[project.optional-dependencies]
+# retrieval: graph_runtime.retrieval alone needs numpy; nothing else imports it
+retrieval = ["numpy>=1.22"]
+# networkx: an independent oracle in the tests, never a runtime dependency; jsonschema: the contract schemas' tests
+dev = ["pytest>=7", "networkx>=3.0", "jsonschema>=4.18", "numpy>=1.22"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+graph_runtime = ["schemas/*.json", "conformance/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

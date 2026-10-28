@@ -1,0 +1,106 @@
+{
+  "assessments": [],
+  "assumptions": [
+    "The revision changes values that model:yield-model uses.",
+    "The ranking is recomputed with the same model version and settings."
+  ],
+  "basis": [
+    {
+      "ref": "sha256:342e4ee8e386895a279b9f369d8bc16cc2a85617dfbcdd247c60eaf7d663b40a",
+      "type": "result"
+    },
+    {
+      "ref": "input:feedstock-table-v1",
+      "type": "node"
+    },
+    {
+      "ref": "dep:model-input",
+      "type": "edge"
+    },
+    {
+      "ref": "model:yield-model",
+      "type": "node"
+    },
+    {
+      "ref": "dep:prediction-A-model",
+      "type": "edge"
+    },
+    {
+      "ref": "prediction:catalyst-A",
+      "type": "node"
+    },
+    {
+      "ref": "dep:ranking-A",
+      "type": "edge"
+    },
+    {
+      "ref": "ranking:screen-1",
+      "type": "node"
+    }
+  ],
+  "contract": "graph-runtime/v0.2",
+  "dependencies": [
+    {
+      "ref": "input:feedstock-table-v1",
+      "type": "node"
+    },
+    {
+      "ref": "ranking:screen-1",
+      "type": "node"
+    }
+  ],
+  "epistemic_status": "unverified",
+  "extensions": null,
+  "id": "hc:sha256:7c12a8c19bc675ba65b71849a11823470f78dfa3625c510705f476b2c9530441",
+  "kind": "hypothesis_candidate",
+  "lifecycle": [
+    {
+      "at": "2026-10-25T00:00:00Z",
+      "reason": "formed from the dependency impact of the revised input",
+      "state": "active",
+      "superseded_by": null
+    }
+  ],
+  "previous": null,
+  "producer": {
+    "name": "examples/synthetic_revision",
+    "version": "1"
+  },
+  "projection": "sha256:70dc4e7ba77a933a52ff9e306dd8faacaac9dbab961cd1836a811e25d631fee3",
+  "proposed_relations": [],
+  "proposed_tests": [
+    {
+      "description": "Recompute ranking:screen-1 from the revised input with the same model version, and compare the order of the two predictions.",
+      "id": "recompute-ranking",
+      "outcomes": [
+        {
+          "bearing": "supports",
+          "observation": "the two predictions change order"
+        },
+        {
+          "bearing": "opposes",
+          "observation": "the order is unchanged"
+        },
+        {
+          "bearing": "inconclusive",
+          "observation": "the recomputation fails, or the predictions tie"
+        }
+      ]
+    }
+  ],
+  "record_digest": "sha256:c6b37a1653b1bcb490423ea647f3759a70da94c44171d7240830604135b8987a",
+  "revision": 1,
+  "scope": "Synthetic example: the order within ranking:screen-1 only. No claim about any real catalyst.",
+  "scores": [
+    {
+      "calibration": null,
+      "candidate_set": "synthetic-revision-candidates",
+      "direction": "higher_first",
+      "interpretation": "ordering",
+      "method": "synthetic-priority",
+      "method_version": "0",
+      "value": 0.8
+    }
+  ],
+  "statement": "Revising input:feedstock-table-v1 might change the order of prediction:catalyst-A and prediction:catalyst-B in ranking:screen-1."
+}

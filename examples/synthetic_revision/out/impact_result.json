@@ -1,0 +1,104 @@
+{
+  "answer": {
+    "affected": [
+      {
+        "depth": 1,
+        "node": "model:yield-model",
+        "via": {
+          "direction": "reverse",
+          "edge": "dep:model-input",
+          "from": "input:feedstock-table-v1",
+          "relation": "DEPENDS_ON"
+        }
+      },
+      {
+        "depth": 2,
+        "node": "prediction:catalyst-A",
+        "via": {
+          "direction": "reverse",
+          "edge": "dep:prediction-A-model",
+          "from": "model:yield-model",
+          "relation": "DEPENDS_ON"
+        }
+      },
+      {
+        "depth": 2,
+        "node": "prediction:catalyst-B",
+        "via": {
+          "direction": "reverse",
+          "edge": "dep:prediction-B-model",
+          "from": "model:yield-model",
+          "relation": "DEPENDS_ON"
+        }
+      },
+      {
+        "depth": 3,
+        "node": "ranking:screen-1",
+        "via": {
+          "direction": "reverse",
+          "edge": "dep:ranking-A",
+          "from": "prediction:catalyst-A",
+          "relation": "DEPENDS_ON"
+        }
+      },
+      {
+        "depth": 4,
+        "node": "report:summary",
+        "via": {
+          "direction": "reverse",
+          "edge": "dep:report-ranking",
+          "from": "ranking:screen-1",
+          "relation": "DEPENDS_ON"
+        }
+      }
+    ],
+    "changed": [
+      "input:feedstock-table-v1"
+    ],
+    "count": 5
+  },
+  "complete": true,
+  "contract": "graph-runtime/v0.2",
+  "error": null,
+  "interruption": null,
+  "kind": "graph_runtime.result",
+  "limitations": [
+    "Complete for this request on projection sha256:70dc4e7ba77a933a52ff9e306dd8faacaac9dbab961cd1836a811e25d631fee3: an absence here is an absence in this projection, not in the literature or the physical world.",
+    "A witness shows a connection in this projection only; what it means scientifically is for the consuming application to assess."
+  ],
+  "mode": "exact",
+  "operation": "dependency_impact",
+  "projection": "sha256:70dc4e7ba77a933a52ff9e306dd8faacaac9dbab961cd1836a811e25d631fee3",
+  "request": {
+    "changed": [
+      "input:feedstock-table-v1"
+    ],
+    "contract": "graph-runtime/v0.2",
+    "limits": {
+      "max_expansions": 1000000,
+      "max_results": 100000
+    },
+    "max_depth": null,
+    "mode": "exact",
+    "operation": "dependency_impact",
+    "projection": "sha256:70dc4e7ba77a933a52ff9e306dd8faacaac9dbab961cd1836a811e25d631fee3",
+    "scope": [
+      {
+        "direction": "reverse",
+        "relation": "DEPENDS_ON"
+      }
+    ]
+  },
+  "request_id": "sha256:5a8f74744e234bbbf454fc8e4a5e5bf17da1c4c9491edc5b5c46ddc8068fd9ce",
+  "result_id": "sha256:342e4ee8e386895a279b9f369d8bc16cc2a85617dfbcdd247c60eaf7d663b40a",
+  "runtime": {
+    "name": "graph-runtime",
+    "version": "0.1.0.dev0"
+  },
+  "stats": {
+    "discovered": 6,
+    "edges_examined": 6,
+    "expansions": 6
+  },
+  "status": "completed"
+}

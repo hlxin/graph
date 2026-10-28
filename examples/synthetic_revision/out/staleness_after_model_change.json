@@ -1,0 +1,112 @@
+{
+  "candidate": "hc:sha256:7c12a8c19bc675ba65b71849a11823470f78dfa3625c510705f476b2c9530441",
+  "note": "stale true: re-examine the candidate (that does not make it false, and nothing in it changes); false: every reference GRAPH tracks was decided unaffected, for the question asked (the snapshot, or the revisions in the impact); null: some could not be decided (undecided says why). External references are outside GRAPH's view (outside).",
+  "outside": [],
+  "question": "dependencies",
+  "reasons": [
+    {
+      "code": "input_affected",
+      "field": "dependencies",
+      "message": "dependencies names ranking:screen-1, which depends on a revised node",
+      "ref": "ranking:screen-1",
+      "type": "node",
+      "witness": [
+        {
+          "direction": "reverse",
+          "edge": "dep:prediction-A-model",
+          "from": "model:yield-model",
+          "relation": "DEPENDS_ON",
+          "to": "prediction:catalyst-A"
+        },
+        {
+          "direction": "reverse",
+          "edge": "dep:ranking-A",
+          "from": "prediction:catalyst-A",
+          "relation": "DEPENDS_ON",
+          "to": "ranking:screen-1"
+        }
+      ]
+    },
+    {
+      "code": "input_revised",
+      "field": "basis",
+      "message": "basis names model:yield-model, which was revised",
+      "ref": "model:yield-model",
+      "type": "node"
+    },
+    {
+      "code": "input_affected",
+      "field": "basis",
+      "message": "basis names prediction:catalyst-A, which depends on a revised node",
+      "ref": "prediction:catalyst-A",
+      "type": "node",
+      "witness": [
+        {
+          "direction": "reverse",
+          "edge": "dep:prediction-A-model",
+          "from": "model:yield-model",
+          "relation": "DEPENDS_ON",
+          "to": "prediction:catalyst-A"
+        }
+      ]
+    },
+    {
+      "code": "input_affected",
+      "field": "basis",
+      "message": "basis names ranking:screen-1, which depends on a revised node",
+      "ref": "ranking:screen-1",
+      "type": "node",
+      "witness": [
+        {
+          "direction": "reverse",
+          "edge": "dep:prediction-A-model",
+          "from": "model:yield-model",
+          "relation": "DEPENDS_ON",
+          "to": "prediction:catalyst-A"
+        },
+        {
+          "direction": "reverse",
+          "edge": "dep:ranking-A",
+          "from": "prediction:catalyst-A",
+          "relation": "DEPENDS_ON",
+          "to": "ranking:screen-1"
+        }
+      ]
+    }
+  ],
+  "relative_to": {
+    "changed": [
+      "model:yield-model"
+    ],
+    "impact": "sha256:d11a3909a4c5ba61e81bd36f840cae60aa45f227731be5ce5e8c57ed57390dcc",
+    "projection": "sha256:70dc4e7ba77a933a52ff9e306dd8faacaac9dbab961cd1836a811e25d631fee3"
+  },
+  "revision": 1,
+  "stale": true,
+  "undecided": [
+    {
+      "field": "basis",
+      "ref": "sha256:342e4ee8e386895a279b9f369d8bc16cc2a85617dfbcdd247c60eaf7d663b40a",
+      "type": "result",
+      "why": "dependency impact follows nodes; it does not decide a result reference"
+    },
+    {
+      "field": "basis",
+      "ref": "dep:model-input",
+      "type": "edge",
+      "why": "dependency impact follows nodes; it does not decide an edge reference"
+    },
+    {
+      "field": "basis",
+      "ref": "dep:prediction-A-model",
+      "type": "edge",
+      "why": "dependency impact follows nodes; it does not decide an edge reference"
+    },
+    {
+      "field": "basis",
+      "ref": "dep:ranking-A",
+      "type": "edge",
+      "why": "dependency impact follows nodes; it does not decide an edge reference"
+    }
+  ]
+}
