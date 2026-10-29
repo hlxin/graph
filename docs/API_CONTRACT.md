@@ -7,7 +7,7 @@ Every operation binds an immutable **projection** and a normalized **request**, 
 runtime is exact-only and runs in process, on the CPU, with the standard library.
 
 Revision `v0.1` tightened transport validation, ordered node-set answers by ascending ID, counted source search
-states consistently, and required costs only for edges actually in scope. Revision `v0.2`, in development, adds:
+states consistently, and required costs only for edges actually in scope. Revision `v0.2` adds:
 
 - type and relation hierarchies (section 1)
 - the `pattern` operation: tree patterns, enumerated without dead ends and counted without listing (section 4)

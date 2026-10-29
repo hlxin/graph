@@ -15,13 +15,13 @@ The applications that use it (SCALE, STATES, RATES, Cathanor) keep their scienti
 authoritative records and workflows. GRAPH imports none of their vocabularies; each application reaches it through an
 adapter it owns ([docs/DESIGN.md](docs/DESIGN.md)). The runtime is the Python standard library only.
 
-Status: **in development** (`0.1.0.dev0`, contract `graph-runtime/v0.2`), not yet released on PyPI. MIT licensed.
+Version `0.2.0`, contract `graph-runtime/v0.2`, on PyPI as `graph-runtime-sci`. MIT licensed.
 
 ## Install
 
 ```bash
-pip install git+https://github.com/hlxin/graph       # until the first release on PyPI as graph-runtime-sci
-pip install 'graph-runtime-sci[retrieval] @ git+https://github.com/hlxin/graph'   # with the optional text search (numpy)
+pip install graph-runtime-sci                    # then: import graph_runtime
+pip install 'graph-runtime-sci[retrieval]'       # with the optional text search (numpy)
 ```
 
 ## Quick start

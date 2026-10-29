@@ -90,10 +90,10 @@
     ]
   },
   "request_id": "sha256:5a8f74744e234bbbf454fc8e4a5e5bf17da1c4c9491edc5b5c46ddc8068fd9ce",
-  "result_id": "sha256:14bc71e38a42def4c4bd11f14999af132942311af78f07c8b188f5006e24fde6",
+  "result_id": "sha256:ee93966c7421ccfb3af784fdbc03df16e06a5cfd4de1229e75c76e1223ffd15b",
   "runtime": {
     "name": "graph-runtime-sci",
-    "version": "0.1.0.dev0"
+    "version": "0.2.0"
   },
   "stats": {
     "discovered": 6,
