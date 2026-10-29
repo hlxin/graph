@@ -20,8 +20,8 @@ Status: **in development** (`0.1.0.dev0`, contract `graph-runtime/v0.2`), not ye
 ## Install
 
 ```bash
-pip install git+https://github.com/hlxin/graph       # until the first release on PyPI as graph-runtime
-pip install 'graph-runtime[retrieval] @ git+https://github.com/hlxin/graph'   # with the optional text search (numpy)
+pip install git+https://github.com/hlxin/graph       # until the first release on PyPI as graph-runtime-sci
+pip install 'graph-runtime-sci[retrieval] @ git+https://github.com/hlxin/graph'   # with the optional text search (numpy)
 ```
 
 ## Quick start

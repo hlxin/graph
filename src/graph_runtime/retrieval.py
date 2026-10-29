@@ -6,7 +6,7 @@ start a traversal (:func:`seeds`); a traversal's records can in turn restrict a 
 heuristic ranking, not evidence. What is exact is the computation: the same items, query and settings give the same
 hits, in the same order, with the same scores, on every machine.
 
-Needs numpy (``pip install 'graph-runtime[retrieval]'``). Nothing else in GRAPH imports it.
+Needs numpy (``pip install 'graph-runtime-sci[retrieval]'``). Nothing else in GRAPH imports it.
 
 * :class:`Tokenizer`: lower-cased words, plus what an application adds for its vocabulary. Aliases are
   case-sensitive (a formula and its name: CO is carbon monoxide, Co cobalt) and variants are spellings. Its id is
@@ -55,7 +55,7 @@ def _np():
     try:
         import numpy
     except ImportError as e:  # pragma: no cover - the extra is installed wherever the tests run
-        raise RetrievalError("needs_numpy", "retrieval needs numpy: pip install 'graph-runtime[retrieval]'") from e
+        raise RetrievalError("needs_numpy", "retrieval needs numpy: pip install 'graph-runtime-sci[retrieval]'") from e
     return numpy
 
 

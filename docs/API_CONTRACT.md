@@ -1146,7 +1146,7 @@ than cycle i, which a checker recomputes in the parity graph, the basis is minim
 | `error` | `{"code", "message", ["detail"]}` for `unsupported`, `failed` and `stale_snapshot` |
 | `stats` | `expansions`, `edges_examined` and `discovered`: deterministic counters; discovered counts the source states plus newly retained search states, including changed nodes even when absent from the impact answer |
 | `limitations` | what the answer does not claim, in words |
-| `runtime`, `contract`, `kind` | `graph-runtime` and its version, `graph-runtime/v0.2`, `graph_runtime.result` |
+| `runtime`, `contract`, `kind` | `graph-runtime-sci` and its version, `graph-runtime/v0.2`, `graph_runtime.result` |
 | `result_id` | the digest of everything but `timing` |
 | `timing` | wall-clock seconds for `bind_s`, `search_s`, `witness_s`, `result_s` and `total_s`; errors may report only result and total time; not part of `result_id` |
 

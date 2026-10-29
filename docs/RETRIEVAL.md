@@ -2,7 +2,7 @@
 
 `graph_runtime.retrieval` is SCALE's evidence search (`tools/passages.py`) made generic. It ranks text items that
 name a projection's records. Its hits name the nodes where a traversal starts, and a traversal's records can in turn
-restrict a search. It is optional: it needs numpy (`pip install 'graph-runtime[retrieval]'`), and nothing
+restrict a search. It is optional: it needs numpy (`pip install 'graph-runtime-sci[retrieval]'`), and nothing
 else in GRAPH imports it.
 
 Relevance is a heuristic ranking, not evidence. What is exact is the computation: the same items, query and settings

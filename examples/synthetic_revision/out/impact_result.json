@@ -90,9 +90,9 @@
     ]
   },
   "request_id": "sha256:5a8f74744e234bbbf454fc8e4a5e5bf17da1c4c9491edc5b5c46ddc8068fd9ce",
-  "result_id": "sha256:342e4ee8e386895a279b9f369d8bc16cc2a85617dfbcdd247c60eaf7d663b40a",
+  "result_id": "sha256:14bc71e38a42def4c4bd11f14999af132942311af78f07c8b188f5006e24fde6",
   "runtime": {
-    "name": "graph-runtime",
+    "name": "graph-runtime-sci",
     "version": "0.1.0.dev0"
   },
   "stats": {

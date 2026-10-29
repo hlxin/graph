@@ -6,7 +6,7 @@
   ],
   "basis": [
     {
-      "ref": "sha256:342e4ee8e386895a279b9f369d8bc16cc2a85617dfbcdd247c60eaf7d663b40a",
+      "ref": "sha256:14bc71e38a42def4c4bd11f14999af132942311af78f07c8b188f5006e24fde6",
       "type": "result"
     },
     {
@@ -51,7 +51,7 @@
   ],
   "epistemic_status": "unverified",
   "extensions": null,
-  "id": "hc:sha256:7c12a8c19bc675ba65b71849a11823470f78dfa3625c510705f476b2c9530441",
+  "id": "hc:sha256:bf259853236f8b662ff85a0fcd7899eb8fbb0ab97766d38de6f52bb165323c04",
   "kind": "hypothesis_candidate",
   "lifecycle": [
     {
@@ -88,7 +88,7 @@
       ]
     }
   ],
-  "record_digest": "sha256:c6b37a1653b1bcb490423ea647f3759a70da94c44171d7240830604135b8987a",
+  "record_digest": "sha256:731a43fea3cb51006e32680f5150e0bc610b8b50e53a4ed6ebfbf650949fc7aa",
   "revision": 1,
   "scope": "Synthetic example: the order within ranking:screen-1 only. No claim about any real catalyst.",
   "scores": [

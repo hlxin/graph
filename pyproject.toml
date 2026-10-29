@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "graph-runtime"
+name = "graph-runtime-sci"
 version = "0.1.0.dev0"
 description = "GRAPH (Graph Runtime for Analysis, Provenance, Hypotheses): reusable graph algorithms for scientific software."
 readme = "README.md"

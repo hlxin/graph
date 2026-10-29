@@ -1,5 +1,5 @@
 {
-  "candidate": "hc:sha256:7c12a8c19bc675ba65b71849a11823470f78dfa3625c510705f476b2c9530441",
+  "candidate": "hc:sha256:bf259853236f8b662ff85a0fcd7899eb8fbb0ab97766d38de6f52bb165323c04",
   "note": "stale true: re-examine the candidate (that does not make it false, and nothing in it changes); false: every reference GRAPH tracks was decided unaffected, for the question asked (the snapshot, or the revisions in the impact); null: some could not be decided (undecided says why). External references are outside GRAPH's view (outside).",
   "outside": [],
   "question": "dependencies",
@@ -78,7 +78,7 @@
     "changed": [
       "model:yield-model"
     ],
-    "impact": "sha256:d11a3909a4c5ba61e81bd36f840cae60aa45f227731be5ce5e8c57ed57390dcc",
+    "impact": "sha256:3d43d6f9cea2819499d152872b6f32962d5eaaef8b1fcbb962c2f07c21208fd5",
     "projection": "sha256:70dc4e7ba77a933a52ff9e306dd8faacaac9dbab961cd1836a811e25d631fee3"
   },
   "revision": 1,
@@ -86,7 +86,7 @@
   "undecided": [
     {
       "field": "basis",
-      "ref": "sha256:342e4ee8e386895a279b9f369d8bc16cc2a85617dfbcdd247c60eaf7d663b40a",
+      "ref": "sha256:14bc71e38a42def4c4bd11f14999af132942311af78f07c8b188f5006e24fde6",
       "type": "result",
       "why": "dependency impact follows nodes; it does not decide a result reference"
     },
