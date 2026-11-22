@@ -301,8 +301,8 @@ def test_a_long_path_is_certified_in_linear_time():
 
 
 def test_checking_potentials_is_linear_in_a_scope_of_many_relations():
-    """A chain whose every edge has its own relation, all in scope: the potentials' check
-    read the hops into each listed node through a reversed scope it rebuilt per node, 8,000 by 8,000 (7 s)."""
+    """A chain whose every edge has its own relation, all in scope: the potentials' check reads the hops into each
+    listed node through a scope reversed once, not once per node (8,000 by 8,000)."""
     n = 8000
     nodes = [f"v{i:05d}" for i in range(n)]
     rels = [f"R{i:05d}" for i in range(n - 1)]

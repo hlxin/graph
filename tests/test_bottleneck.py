@@ -169,9 +169,9 @@ def test_revalidation_of_bottleneck_answers_agrees_with_fresh_runs():
 
 
 def test_a_shorter_path_at_the_same_value_breaks_the_certificate():
-    """s-a-t, then a direct s-t at the same weight. The threshold proves only
-    that nothing is strictly better, so the old two-hop answer was said to hold, by certificate and by diff, and a
-    resealed copy on the new records passed every check. The layers below the witness now prove its fewest hops."""
+    """s-a-t, then a direct s-t at the same weight. The threshold proves only that nothing is strictly better; the
+    layers below the witness prove its fewest hops. So the two-hop answer does not hold on the new records, by
+    certificate or by diff, and a resealed copy of it there does not verify."""
     nodes = ["s", "a", "t"]
     edges = [{"id": "sa", "source": "s", "target": "a", "relation": "R"},
              {"id": "at", "source": "a", "target": "t", "relation": "R"}]

@@ -20,7 +20,7 @@ PYTHONDONTWRITEBYTECODE=1 ../STATES/.venv/bin/python benchmarks/consumers.py sta
 ## Layout
 
 - `src/graph_runtime/`: the runtime. `projection` (immutable views, hierarchies, identity), `request`
-  (normalization), `engine` (the seven operations, limits), `result` (the result contract), `verify` (independent
+  (normalization), `engine` (the operations, limits), `result` (the result contract), `verify` (independent
   witness, closure and certificate checks), `revalidate` (cached results on edited projections), `hypotheses`
   (candidates), `schemas/` (the JSON Schema), `conformance/` (hand-written backend cases), `tools` / `mcp` / `cli`
   (the JSON tool surface, its MCP server and command line), `retrieval` (optional text search, needs numpy).
@@ -52,5 +52,4 @@ copied from the engine's output. Raise `CONTRACT` in `projection.py` when a cons
 
 `hlxin/graph` on GitHub. Commit or push only when asked. SCALE (`../scale`) and STATES (`../STATES`) are
 read-only from here: run their code only with `PYTHONDONTWRITEBYTECODE=1` and `-p no:cacheprovider`, and never write
-into them (other work may be in progress there). A change to SCALE goes through SCALE's own process
-(`../scale/AGENTS.md`).
+into them. A change to SCALE goes through SCALE's own process (`../scale/AGENTS.md`).

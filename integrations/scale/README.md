@@ -4,12 +4,12 @@
 evidence, so that the GRAPH runtime never does. It is staged here until SCALE takes it in under its own review. It
 only reads SCALE documents and schemas.
 
-It provides two read-only workflows:
+Its read-only workflows include:
 
 - `trace`: a competency question's chain of edge steps as a typed path, with original link IDs and their evidence.
 - `resting_records`: the records resting on retracted sources, as dependency impact.
 
-Both match SCALE's own engine and lifecycle on SCALE's documents. [docs/SCALE_INTEGRATION.md](../../docs/SCALE_INTEGRATION.md)
+They match SCALE's own engine and lifecycle on SCALE's documents. [docs/SCALE_INTEGRATION.md](../../docs/SCALE_INTEGRATION.md)
 describes the mapping and the parity results.
 
 ```bash

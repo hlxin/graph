@@ -180,9 +180,8 @@ def test_a_long_path_needs_no_quadratic_memory():
 
 
 def test_the_first_path_is_linear_on_a_chain():
-    """k = 1 on a chain: every hop built its key's IDs as the prefix's tuple
-    plus one, copying the whole prefix, so 16,000, 32,000 and 64,000 nodes took 0.7, 2.7 and 7.6 s for one path. A key
-    now extends its prefix by one linked cell, and compares as the tuple it stands for."""
+    """k = 1 on a chain: a key extends its prefix by one linked cell and compares as the tuple it stands for, so no
+    hop copies the whole prefix and the time for one path grows linearly with the chain."""
     import time
 
     def timed(n):
@@ -223,9 +222,8 @@ def test_the_contract_alone_refuses_a_misordered_or_repeated_list():
 
 
 def test_a_second_path_costs_about_what_the_first_does():
-    """k = 2 on an 8,000-node chain: there is no second path, but every spur rebuilt its
-    root, its cost, its avoided nodes and its full key, and compared it with every accepted path (9.4 s, against
-    0.1 s for k = 1). The root now grows by one hop per spur."""
+    """k = 2 on an 8,000-node chain: there is no second path. The root grows by one hop per spur (its cost, its
+    avoided nodes and its key are not rebuilt), so looking for a second path costs about what the first does."""
     import time
     n = 8000
     nodes = [f"v{i:05d}" for i in range(n)]

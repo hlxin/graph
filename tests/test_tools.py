@@ -141,8 +141,8 @@ def test_mcp_initialize_list_and_call():
 
 def test_mcp_over_stdio():
     """A batch is answered by one array of its responses, in order, leaving out notifications (JSON-RPC 2.0); a batch
-    of notifications only is answered by nothing. Each response used to be a line of its own, which a client reading
-    one JSON value per batch cannot take."""
+    of notifications only is answered by nothing. The array is one line, for a client that reads one JSON value per
+    batch."""
     lines = [json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}), "not json", "[]",
              json.dumps([{"jsonrpc": "2.0", "id": 2, "method": "ping"}, {"jsonrpc": "2.0", "method": "note"}]),
              json.dumps([{"jsonrpc": "2.0", "method": "note"}]),
@@ -238,8 +238,8 @@ def test_a_batch_answers_each_request_in_order(kit):
 
 
 def test_summaries_carry_a_negative_cycle_and_a_matching_cost():
-    """An unbounded shortest path summarized as found with nothing else, and a
-    weighted matching's cost left out."""
+    """The summary of an unbounded shortest path carries its negative cycle, and the summary of a weighted matching
+    its cost."""
     from graph_runtime import Projection, execute
     from graph_runtime.tools import summarize
     p = Projection.build(nodes=["s"], edges=[{"id": "e", "source": "s", "target": "s", "relation": "R"}])
@@ -255,9 +255,9 @@ def test_summaries_carry_a_negative_cycle_and_a_matching_cost():
 
 
 def test_graph_verify_checks_an_edgeless_periodic_cell_as_one():
-    """With no edge carrying a shift, the records alone do not say they are a
-    periodic cell, and graph_verify left out the snapshot's dimensions: a reachability result was refused ('a@0' is
-    not an input node) and a periodicity result crashed the checker. Both now check out as verify_result finds."""
+    """With no edge carrying a shift, the records alone do not say they are a periodic cell: graph_verify takes the
+    dimensions from the snapshot, so a reachability result (whose 'a@0' is an image, not an input node) and a
+    periodicity result check out as verify_result finds."""
     from graph_runtime import execute, verify_result
     from graph_runtime.periodic import PeriodicProjection
     p = PeriodicProjection.build(nodes=["a"], edges=[], relations=["r"], dimensions=1)

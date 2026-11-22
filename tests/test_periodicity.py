@@ -173,9 +173,9 @@ def test_periodic_records_validate_against_the_schema():
 
 
 def test_the_reduction_is_charged_polled_and_linear():
-    """4000 loops at shift [1] on one node. The Hermite reduction carried a
-    4000 by 4000 matrix of combinations and ran after the last check, so a budget of 1 and a 20 ms timeout still
-    completed after seconds. Combinations are sparse now, and each row operation is one expansion, polled."""
+    """4000 loops at shift [1] on one node. The Hermite reduction keeps its combinations sparse, and each row
+    operation is one expansion, polled: a budget or a cancellation interrupts it, and its time is linear in the
+    loops."""
     import itertools
     import time
 
@@ -202,12 +202,12 @@ def test_the_reduction_is_charged_polled_and_linear():
         execute(q, r)
         return time.perf_counter() - start
     small, large = min(timed(2000) for _ in range(3)), min(timed(16000) for _ in range(3))
-    assert large < 24 * max(small, 0.002)                          # linear is 8; the dense matrix was 64
+    assert large < 24 * max(small, 0.002)                          # linear is 8; a dense matrix, 64
 
 
 def test_many_seeds_of_a_finite_component_are_told_apart_in_linear_time():
-    """Each seed of a finite component is its own copy; telling a seed's component by testing it against every
-    component found so far was quadratic in the seeds. Offsets are now keyed by their coset's representative."""
+    """Each seed of a finite component is its own copy. Offsets are keyed by their coset's representative, so a
+    seed's component is told without testing it against every component found so far (quadratic in the seeds)."""
     import time
 
     def timed(n):

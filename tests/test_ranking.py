@@ -198,9 +198,8 @@ def test_alpha_is_a_probability_strictly_between_0_and_1(alpha):
 
 
 def test_a_listed_node_outranked_by_an_unlisted_one_is_refused():
-    """a -> b with alpha 3/4 and top 1: a's PageRank is 3/4 and b's 3/16. Listing b
-    instead of a, with its true interval and nothing certified, passed every check: the intervals hold, but b is
-    not the top node by lower bound."""
+    """a -> b with alpha 3/4 and top 1: a's PageRank is 3/4 and b's 3/16. Listing b instead of a, with its true
+    interval and nothing certified, is refused: the intervals hold, but b is not the top node by lower bound."""
     import copy
     from graph_runtime._canonical import thaw
     from test_certificates import reseal

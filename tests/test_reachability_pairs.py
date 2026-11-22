@@ -260,8 +260,8 @@ def test_a_projection_keeps_a_few_indexes():
 
 
 def test_certifying_many_negatives_takes_linear_time():
-    """The projection declares R: without it every request failed (unknown_relation), and the timer measured the check
-    of an error result."""
+    """Every pair of an edgeless graph is unreachable. The projection declares R, so each request completes with a
+    certificate, and the timer measures the check of that certificate."""
     def checked(n):
         ids = [f"v{i:05d}" for i in range(n)]
         p = Projection.build(nodes=ids, edges=[], relations=["R"])

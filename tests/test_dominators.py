@@ -163,8 +163,8 @@ def test_summaries_and_schema():
 
 
 def test_deep_trees_are_checked_in_linear_time_and_cycles_refused():
-    """A chain of 20,000 nodes: the result is read and verified without walking shared ancestors again (a quadratic
-    walk took seconds); a tree whose dominators form a cycle is refused."""
+    """A chain of 20,000 nodes: the result is read and verified without walking shared ancestors again (which would
+    be quadratic); a tree whose dominators form a cycle is refused."""
     import time
     from graph_runtime.result import contract_problems
     n = 20_000

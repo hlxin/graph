@@ -139,7 +139,7 @@ def test_a_binding_costs_the_smallest_side_not_every_hop():
         {"from": "r", "var": "b", "scope": [("R", "forward")]},
         {"from": "a", "to": "b", "scope": [("L", "forward")]}]))
     assert res.status == COMPLETED and res.answer["total"] == n
-    assert time.perf_counter() - start < 3              # about 0.06 s; reindexing per binding took 13 s
+    assert time.perf_counter() - start < 3              # about 0.06 s; reindexing per binding is n**2
 
 
 def test_closing_steps_are_checked():

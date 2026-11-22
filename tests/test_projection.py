@@ -161,8 +161,8 @@ def test_stale_bindings():
 
 
 def test_a_declared_vocabulary_is_checked_in_linear_time():
-    """The declared relations (and node types) were made into a set again for
-    every name used, so 8,000 declared relations took 3.3 s against 0.02 s inferred."""
+    """8,000 declared relations and node types: checking the names used against a declared vocabulary costs about
+    what inferring the vocabulary does, not one pass over the declared names for every name used."""
     import time
 
     def timed(n, declared):

@@ -1,5 +1,5 @@
-"""Regressions at the edges: three-valued staleness, malformed requests and results, costs beyond the floats, and
-validation gaps in observations, dates, attributes and histories."""
+"""Edge cases: malformed requests and results, answers too large for JSON, costs beyond the floats, frozen requests,
+and source records that state an established status."""
 
 import json
 

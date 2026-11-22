@@ -137,8 +137,8 @@ def test_hierarchies_match_an_independent_expansion():
 
 
 def test_hierarchies_deeper_than_the_recursion_limit():
-    """Validating a hierarchy was iterative, but its closure was a recursive
-    walk, so a valid chain of 1500 types (or relations) raised RecursionError. The contract sets no depth."""
+    """A chain of 3000 types, and one of 3000 relations: a hierarchy is validated and closed iteratively, so one
+    deeper than Python's recursion limit is built, queried, verified and read back. The contract sets no depth."""
     from graph_runtime import execute, verify_result
     n = 3000
     tp = {f"t{i:05d}": [f"t{i + 1:05d}"] for i in range(n)}

@@ -267,8 +267,8 @@ def test_a_total_beyond_the_floats_is_written_exactly():
 
 
 def test_reading_a_cycle_costs_its_edges_not_every_edge_index():
-    """One loop in scope among 320,000 out of scope: a cycle's edge bitset was read bit
-    by bit up to its highest edge index, quadratic in the edges out of scope (0.52 s at 80,000)."""
+    """One loop in scope among 320,000 out of scope: reading a cycle from its edge bitset costs the cycle's edges,
+    not every edge index up to its highest."""
     import time
     m = 320_000
     edges = [{"id": f"a{i:06d}", "source": "x", "target": "x", "relation": "OUT"} for i in range(m)]

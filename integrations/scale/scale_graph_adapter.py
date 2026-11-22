@@ -1,11 +1,11 @@
-"""SCALE's adapter to GRAPH: scale-catal documents as GRAPH projections, and one read-only workflow on them.
+"""SCALE's adapter to GRAPH: scale-catal documents as GRAPH projections, and read-only workflows on them.
 
 This adapter belongs to SCALE, not to GRAPH: it reads SCALE's vocabulary (labels and what they are, edge types and
 what specializes them, evidence) so that the GRAPH runtime never has to. It is staged in the GRAPH repository
 until SCALE takes it in under its own review (docs/SCALE_INTEGRATION.md). It reads SCALE documents and schemas and
 changes nothing.
 
-The workflow (a bounded evidence traversal): a competency question's chain of edge steps (match a label, then follow
+The first workflow (a bounded evidence traversal): a competency question's chain of edge steps (match a label, then follow
 one edge type per step, in its direction, to a label) runs as a GRAPH typed path from each matched record. Each
 record gets a witness (the original link IDs, in step order) or a complete negative, and the evidence those links
 cite. SCALE keeps everything else a plan does: filters on values, units and contexts, retraction, date and

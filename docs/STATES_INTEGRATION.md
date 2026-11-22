@@ -84,7 +84,7 @@ costs. The adapter has two ways to make one:
   ports and interruptions as the lift on every compared context (760, `test_the_periodic_cell_answers_every_context_as_the_lift_does`).
 
 Measured with `benchmarks/consumers.py` on 42 contexts (shells 1 to 3 of the example records with contacts), on a
-machine under heavy load from other work, so compare the columns rather than the absolute times. Every answer
+machine under heavy load, so compare the columns rather than the absolute times. Every answer
 agreed:
 
 | Contexts | STATES's `extract_context` | GRAPH through a lift (lift, then query) | GRAPH on the cell (projection, then query) |

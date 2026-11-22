@@ -201,9 +201,9 @@ def test_revalidation_of_signed_answers_agrees_with_fresh_runs():
 
 
 def test_a_shorter_least_cost_walk_breaks_the_certificate():
-    """s-a-t at costs 1 and -1, then a direct s-t at 0. Feasible potentials
-    prove the least cost only, so the old two-hop walk was said to hold, and a resealed copy on the new records passed
-    every check. The layers below the witness over the tight hops now prove its fewest hops."""
+    """s-a-t at costs 1 and -1, then a direct s-t at 0. Feasible potentials prove the least cost only; the layers
+    below the witness over the tight hops prove its fewest hops. So the two-hop walk does not hold on the new
+    records, by certificate or by diff, and a resealed copy of it there does not verify."""
     nodes = ["s", "a", "t"]
     edges = [{"id": "sa", "source": "s", "target": "a", "relation": "R"},
              {"id": "at", "source": "a", "target": "t", "relation": "M"}]
@@ -281,9 +281,9 @@ def test_an_unrelated_edit_does_not_read_the_whole_certificate():
 
 
 def test_the_fewest_hop_witness_is_charged_and_polled():
-    """A chain of 100 nodes at cost -1: after the search, the walk of fewest hops among
-    the least-cost ones was a breadth-first search the budget never saw, so 300 expansions completed, and a
-    cancellation as it began went unheard. Now each node it expands is one expansion."""
+    """A chain of 100 nodes at cost -1: after the search, the walk of fewest hops among the least-cost ones is found
+    by a breadth-first search. Each node it expands is one expansion, so a budget of 300 interrupts the request, and
+    a cancellation as it begins is heard."""
     from graph_runtime import CancelToken
     n = 100
     nodes = [f"n{i:03d}" for i in range(n)]
